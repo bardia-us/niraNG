@@ -104,7 +104,7 @@ class SubscriptionRepository(private val context: Context) {
             connectTimeout = 12_000
             readTimeout = 20_000
             instanceFollowRedirects = true
-            setRequestProperty("User-Agent", "niraNG/1.0.6 Android")
+            setRequestProperty("User-Agent", "niraNG/1.0.7 Android")
             setRequestProperty("Accept", "text/plain, application/json")
             // A user-triggered refresh is an authoritative full sync. Sending
             // cache validators here made a valid 304 look like a failed update
@@ -119,9 +119,8 @@ class SubscriptionRepository(private val context: Context) {
 
             val bytes = connection.inputStream.use { it.readBytes() }
             if (bytes.size > MAX_SUBSCRIPTION_BYTES) throw IOException("Subscription response is too large")
-            val servers = SubscriptionSyncPolicy.carryForwardLatency(
-                previousServers = snapshot.servers,
-                refreshedServers = SubscriptionParser.parse(bytes.toString(Charsets.UTF_8)),
+            val servers = SubscriptionSyncPolicy.resetLatency(
+                SubscriptionParser.parse(bytes.toString(Charsets.UTF_8)),
             )
             if (servers.isEmpty()) throw IOException("Subscription contains no supported servers")
 

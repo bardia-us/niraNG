@@ -7,32 +7,21 @@ import org.junit.Test
 
 class SubscriptionSyncPolicyTest {
     @Test
-    fun `unchanged configs keep their last measured latency`() {
-        val previous = server("same").apply {
+    fun `every refreshed config returns to not tested`() {
+        val refreshed = server("same").apply {
             pingMs = 87
             pingStatus = "success"
         }
 
-        val result = SubscriptionSyncPolicy.carryForwardLatency(
-            previousServers = listOf(previous),
-            refreshedServers = listOf(server("same")),
-        ).single()
+        val result = SubscriptionSyncPolicy.resetLatency(listOf(refreshed)).single()
 
-        assertEquals(87L, result.pingMs)
-        assertEquals("success", result.pingStatus)
+        assertNull(result.pingMs)
+        assertEquals("idle", result.pingStatus)
     }
 
     @Test
     fun `new or changed configs start without a cached ping`() {
-        val previous = server("old").apply {
-            pingMs = 87
-            pingStatus = "success"
-        }
-
-        val result = SubscriptionSyncPolicy.carryForwardLatency(
-            previousServers = listOf(previous),
-            refreshedServers = listOf(server("new")),
-        ).single()
+        val result = SubscriptionSyncPolicy.resetLatency(listOf(server("new"))).single()
 
         assertNull(result.pingMs)
         assertEquals("idle", result.pingStatus)

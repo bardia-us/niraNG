@@ -3,16 +3,10 @@ package dev.nirang.client.subscription
 import dev.nirang.client.model.ServerRecord
 
 internal object SubscriptionSyncPolicy {
-    fun carryForwardLatency(
-        previousServers: List<ServerRecord>,
-        refreshedServers: List<ServerRecord>,
-    ): List<ServerRecord> {
-        val previousById = previousServers.associateBy(ServerRecord::id)
+    fun resetLatency(refreshedServers: List<ServerRecord>): List<ServerRecord> {
         refreshedServers.forEach { server ->
-            previousById[server.id]?.let { cached ->
-                server.pingMs = cached.pingMs
-                server.pingStatus = cached.pingStatus
-            }
+            server.pingMs = null
+            server.pingStatus = "idle"
         }
         return refreshedServers
     }

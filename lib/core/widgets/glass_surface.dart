@@ -57,8 +57,8 @@ class GlassSurface extends ConsumerWidget {
           ? content
           : BackdropFilter(
               filter: ImageFilter.blur(
-                sigmaX: dark ? blur : blur.clamp(0, 6),
-                sigmaY: dark ? blur : blur.clamp(0, 6),
+                sigmaX: dark ? blur : blur.clamp(0, 14),
+                sigmaY: dark ? blur : blur.clamp(0, 14),
               ),
               child: content,
             ),

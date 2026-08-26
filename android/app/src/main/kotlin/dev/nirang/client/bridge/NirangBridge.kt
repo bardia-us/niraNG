@@ -8,6 +8,7 @@ import android.os.Looper
 import dev.nirang.client.BuildConfig
 import dev.nirang.client.logs.SafeLog
 import dev.nirang.client.model.ConnectionState
+import dev.nirang.client.model.ServerEligibility
 import dev.nirang.client.ping.PingManager
 import dev.nirang.client.settings.NativeSettings
 import dev.nirang.client.subscription.SubscriptionRepository
@@ -54,8 +55,10 @@ class NirangBridge(
             }
             "pingServer" -> {
                 val id = call.argument<String>("id")
-                if (id == null || repository.server(id) == null) result.error("not_found", "Server not found", null)
-                else {
+                val server = id?.let(repository::server)
+                if (server == null) {
+                    result.error("not_found", "Server not found", null)
+                } else {
                     pingManager.testSingle(id)
                     result.success(true)
                 }
@@ -94,7 +97,7 @@ class NirangBridge(
         if (!disposed.compareAndSet(false, true)) return
         methodChannel.setMethodCallHandler(null)
         eventChannel.setStreamHandler(null)
-        pingManager.cancel()
+        pingManager.close()
         executor.shutdownNow()
     }
 
@@ -145,21 +148,24 @@ class NirangBridge(
 
     private fun selectServer(call: MethodCall, result: MethodChannel.Result) {
         val id = call.argument<String>("id")
-        if (id == null || !repository.select(id)) {
+        val server = id?.let(repository::server)
+        if (id == null || server == null) {
             result.error("not_found", "Server not found", null)
             return
         }
-        SafeLog.info(activity, "Server selected")
-        val servers = repository.safeServers()
         val connection = ConnectionStore.snapshot()
         val activeId = connection["serverId"] as? String
         val state = ConnectionStore.state()
         if (activeId != null && activeId != id && state in ACTIVE_CONNECTION_STATES) {
-            val server = repository.server(id)!!
-            ConnectionStore.transition(ConnectionState.SWITCHING, server.id, server.name)
             NirangVpnService.switchServer(activity, server.id)
+            SafeLog.info(activity, "Server switch queued")
+        } else {
+            repository.select(id)
+            SafeLog.info(activity, "Server selected")
         }
-        result.success(servers)
+        // While connected, selection remains on the verified active server.
+        // The service emits the new selection only after Xray starts it.
+        result.success(repository.safeServers())
     }
 
     private fun deleteServer(call: MethodCall, result: MethodChannel.Result) {
@@ -193,8 +199,13 @@ class NirangBridge(
             return
         }
         val requested = call.argument<String>("id") ?: repository.selectedServer()?.id
-        if (requested == null || repository.server(requested) == null) {
+        val server = requested?.let(repository::server)
+        if (requested == null || server == null) {
             result.error("no_server", "Select a server first", null)
+            return
+        }
+        ServerEligibility.rejectionReason(server)?.let { reason ->
+            result.error("not_connectable", reason, null)
             return
         }
         repository.select(requested)

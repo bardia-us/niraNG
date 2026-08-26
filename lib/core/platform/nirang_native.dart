@@ -22,8 +22,11 @@ class NirangNative {
       )) ??
       {};
 
-  static Future<void> selectServer(String id) =>
-      _methods.invokeMethod('selectServer', {'id': id});
+  static Future<List<dynamic>> selectServer(String id) async =>
+      (await _methods.invokeMethod<List<dynamic>>('selectServer', {
+        'id': id,
+      })) ??
+      const [];
   static Future<Map<dynamic, dynamic>> deleteServer(String id) async =>
       (await _methods.invokeMethod<Map<dynamic, dynamic>>('deleteServer', {
         'id': id,

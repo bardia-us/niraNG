@@ -69,7 +69,9 @@ class _ConnectionCard extends StatelessWidget {
     final countryCode = connection.publicCountry?.trim().toUpperCase();
     final publicIp = connection.publicIp;
     final publicIpValue = publicIp == null
-        ? (connection.isConnected ? context.s('checking') : '—')
+        ? (connection.isConnected && !connection.publicIpChecked
+              ? context.s('checking')
+              : '—')
         : countryCode != null && countryCode.length == 2
         ? '($countryCode) $publicIp'
         : publicIp;
@@ -204,6 +206,7 @@ class _ConnectionCard extends StatelessWidget {
                     value: switch (selected.status) {
                       'testing' => context.s('testing'),
                       'timeout' => context.s('timeout'),
+                      'failed' => context.s('failed'),
                       _ => selected.ping == null ? '—' : '${selected.ping} ms',
                     },
                     onTap: () => _perform(

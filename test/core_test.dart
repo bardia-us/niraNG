@@ -62,11 +62,13 @@ void main() {
       'publicIp': '213.165.41.160',
       'publicCountry': 'NL',
       'publicCity': 'Amsterdam',
+      'publicIpChecked': true,
     });
 
     expect(connection.publicIp, '213.165.41.160');
     expect(connection.publicCountry, 'NL');
     expect(connection.publicCity, 'Amsterdam');
+    expect(connection.publicIpChecked, isTrue);
   });
 
   test('settings updates are granular and preserve unrelated values', () {

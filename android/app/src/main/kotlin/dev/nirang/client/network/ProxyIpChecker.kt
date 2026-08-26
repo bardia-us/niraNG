@@ -13,9 +13,9 @@ object ProxyIpChecker {
     fun check(providerUrl: String): Result {
         val proxy = Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", XrayConfigBuilder.LOCAL_HTTP_PROXY_PORT))
         val connection = URL(providerUrl).openConnection(proxy) as HttpURLConnection
-        connection.connectTimeout = 8_000
-        connection.readTimeout = 10_000
-        connection.setRequestProperty("User-Agent", "niraNG/1.0.6")
+        connection.connectTimeout = 4_000
+        connection.readTimeout = 5_000
+        connection.setRequestProperty("User-Agent", "niraNG/1.0.7")
         return try {
             if (connection.responseCode !in 200..299) return Result(null, null, null)
             val body = connection.inputStream.bufferedReader().use { it.readText() }.take(32_000).trim()

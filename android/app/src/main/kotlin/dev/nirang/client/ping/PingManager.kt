@@ -3,6 +3,7 @@ package dev.nirang.client.ping
 import android.content.Context
 import dev.nirang.client.bridge.NativeEvents
 import dev.nirang.client.logs.SafeLog
+import dev.nirang.client.model.ServerEligibility
 import dev.nirang.client.settings.NativeSettings
 import dev.nirang.client.subscription.SubscriptionRepository
 import dev.nirang.client.xray.XrayConfigBuilder
@@ -10,6 +11,7 @@ import dev.nirang.client.xray.XrayCore
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 import java.util.concurrent.Semaphore
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 class PingManager(
@@ -17,6 +19,7 @@ class PingManager(
     private val repository: SubscriptionRepository,
 ) {
     private val executor = Executors.newFixedThreadPool(MAX_CONCURRENCY)
+    private val probeExecutor = Executors.newFixedThreadPool(MAX_CONCURRENCY)
     private val generation = AtomicInteger(0)
     private val pending = AtomicInteger(0)
     private val tasks = mutableListOf<Future<*>>()
@@ -49,6 +52,12 @@ class PingManager(
         cancelTasks(emitEvent = true)
     }
 
+    fun close() {
+        cancelTasks(emitEvent = false)
+        executor.shutdownNow()
+        probeExecutor.shutdownNow()
+    }
+
     private fun cancelTasks(emitEvent: Boolean) {
         generation.incrementAndGet()
         pending.set(0)
@@ -66,9 +75,21 @@ class PingManager(
             acquired = true
             if (generation.get() != expectedGeneration || Thread.currentThread().isInterrupted) return
             val server = repository.server(serverId) ?: return
+            if (ServerEligibility.rejectionReason(server) != null) {
+                repository.updatePing(serverId, null, "failed")
+                emit(serverId, null, "failed")
+                return
+            }
             val delay = runCatching {
                 val config = XrayConfigBuilder.buildProbeConfig(server, NativeSettings(context))
-                XrayCore.measureOutboundDelay(config, TEST_URL)
+                val probe = probeExecutor.submit<Long> {
+                    XrayCore.measureOutboundDelay(config, TEST_URL)
+                }
+                try {
+                    probe.get(PING_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                } finally {
+                    if (!probe.isDone) probe.cancel(true)
+                }
             }.getOrDefault(-1L)
             if (generation.get() != expectedGeneration || Thread.currentThread().isInterrupted) return
             val status = if (delay >= 0) "success" else "timeout"
@@ -89,6 +110,7 @@ class PingManager(
 
     companion object {
         private const val MAX_CONCURRENCY = 32
+        private const val PING_TIMEOUT_SECONDS = 6L
         private const val TEST_URL = "https://www.google.com/generate_204"
     }
 }

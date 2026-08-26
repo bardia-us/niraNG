@@ -11,6 +11,7 @@ object ConnectionStore {
     private var publicIp: String? = null
     private var publicCountry: String? = null
     private var publicCity: String? = null
+    private var publicIpChecked = false
     private var error: String? = null
 
     fun transition(next: ConnectionState, id: String? = serverId, name: String? = serverName, message: String? = null) {
@@ -19,15 +20,24 @@ object ConnectionStore {
             serverId = id
             serverName = name
             error = message?.take(240)
-            if (next in setOf(ConnectionState.PREPARING, ConnectionState.CONNECTING, ConnectionState.SWITCHING)) {
+            if (
+                next in setOf(
+                    ConnectionState.PREPARING,
+                    ConnectionState.CONNECTING,
+                    ConnectionState.SWITCHING,
+                    ConnectionState.RECONNECTING,
+                )
+            ) {
                 publicIp = null
                 publicCountry = null
                 publicCity = null
+                publicIpChecked = false
             }
             if (next == ConnectionState.DISCONNECTED) {
                 publicIp = null
                 publicCountry = null
                 publicCity = null
+                publicIpChecked = false
                 serverId = null
                 serverName = null
             }
@@ -35,13 +45,30 @@ object ConnectionStore {
         NativeEvents.emit("connectionState", snapshot())
     }
 
-    fun setPublicIp(ip: String?, country: String?, city: String?) {
-        synchronized(lock) {
+    fun beginPublicIpRefresh(expectedServerId: String): Boolean {
+        val accepted = synchronized(lock) {
+            if (state != ConnectionState.CONNECTED || serverId != expectedServerId) return@synchronized false
+            publicIp = null
+            publicCountry = null
+            publicCity = null
+            publicIpChecked = false
+            true
+        }
+        if (accepted) NativeEvents.emit("connectionState", snapshot())
+        return accepted
+    }
+
+    fun setPublicIp(expectedServerId: String, ip: String?, country: String?, city: String?): Boolean {
+        val accepted = synchronized(lock) {
+            if (state != ConnectionState.CONNECTED || serverId != expectedServerId) return@synchronized false
             publicIp = ip
             publicCountry = country
             publicCity = city
+            publicIpChecked = true
+            true
         }
-        NativeEvents.emit("connectionState", snapshot())
+        if (accepted) NativeEvents.emit("connectionState", snapshot())
+        return accepted
     }
 
     fun state(): ConnectionState = synchronized(lock) { state }
@@ -54,6 +81,7 @@ object ConnectionStore {
             "publicIp" to publicIp,
             "publicCountry" to publicCountry,
             "publicCity" to publicCity,
+            "publicIpChecked" to publicIpChecked,
             "error" to error,
         )
     }

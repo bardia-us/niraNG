@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/formatters.dart';
 import '../../core/localization/app_strings.dart';
+import '../../core/widgets/glass_dialog.dart';
 import '../../core/platform/native_models.dart';
 import '../../core/update_checker.dart';
 import '../vpn/app_controller.dart';
@@ -28,7 +29,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           isRefreshing: app?.isRefreshing ?? false,
           deletedCount: app?.deletedServerCount ?? 0,
           coreVersion: app?.coreVersion ?? 'Bundled',
-          appVersion: app?.appVersion ?? '1.0.6',
+          appVersion: app?.appVersion ?? '1.0.7',
         );
       }),
     );
@@ -454,7 +455,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       }
       final viewRelease = await showDialog<bool>(
         context: context,
-        builder: (dialogContext) => AlertDialog(
+        builder: (dialogContext) => NirangAlertDialog(
           icon: const Icon(Icons.new_releases_outlined),
           title: Text(context.s('newVersionAvailable')),
           content: Text('${release.latestVersion}'),
@@ -623,7 +624,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     return showDialog<String>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
+        builder: (context, setDialogState) => NirangAlertDialog(
           title: Text(title),
           contentPadding: const EdgeInsets.fromLTRB(8, 12, 8, 0),
           content: Column(
@@ -722,7 +723,7 @@ class _TextValueDialogState extends State<_TextValueDialog> {
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
+  Widget build(BuildContext context) => NirangAlertDialog(
     title: Text(widget.title),
     content: Form(
       key: _formKey,
@@ -799,7 +800,7 @@ class _CustomRulesDialogState extends State<_CustomRulesDialog> {
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
+  Widget build(BuildContext context) => NirangAlertDialog(
     title: Text(context.s('custom')),
     content: Form(
       key: _formKey,

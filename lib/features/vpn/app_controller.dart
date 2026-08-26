@@ -65,23 +65,8 @@ class AppController extends AsyncNotifier<AppSnapshot> {
   }
 
   Future<void> selectServer(String id) async {
-    final previous = _current?.servers;
-    _set(
-      (value) => value.copyWith(
-        servers: [
-          for (final server in value.servers)
-            server.copyWith(selected: server.id == id),
-        ],
-      ),
-    );
-    try {
-      await NirangNative.selectServer(id);
-    } catch (_) {
-      if (previous != null) {
-        _set((value) => value.copyWith(servers: previous));
-      }
-      rethrow;
-    }
+    final servers = await NirangNative.selectServer(id);
+    _set((value) => value.copyWith(servers: _servers(servers)));
   }
 
   Future<void> deleteServer(String id) async {
@@ -244,7 +229,7 @@ class AppController extends AsyncNotifier<AppSnapshot> {
     logs: _logs(map['logs'] as List<dynamic>? ?? const []),
     lastUpdated: _number(map['lastUpdated']),
     coreVersion: '${map['coreVersion'] ?? 'Unavailable'}',
-    appVersion: '${map['appVersion'] ?? '1.0.6'}',
+    appVersion: '${map['appVersion'] ?? '1.0.7'}',
     subscriptionConfigured: map['subscriptionConfigured'] == true,
     telegramEligible: map['telegramEligible'] == true,
     subscriptionError: map['subscriptionError']?.toString(),

@@ -88,6 +88,7 @@ class ConnectionInfo {
     this.publicIp,
     this.publicCountry,
     this.publicCity,
+    this.publicIpChecked = false,
     this.error,
   });
 
@@ -98,6 +99,7 @@ class ConnectionInfo {
     publicIp: map['publicIp']?.toString(),
     publicCountry: map['publicCountry']?.toString(),
     publicCity: map['publicCity']?.toString(),
+    publicIpChecked: map['publicIpChecked'] == true,
     error: map['error']?.toString(),
   );
 
@@ -107,6 +109,7 @@ class ConnectionInfo {
   final String? publicIp;
   final String? publicCountry;
   final String? publicCity;
+  final bool publicIpChecked;
   final String? error;
 
   bool get isConnected => state == 'connected';
@@ -330,7 +333,7 @@ class AppSnapshot {
     this.logs = const [],
     this.lastUpdated = 0,
     this.coreVersion = 'Unavailable',
-    this.appVersion = '1.0.6',
+    this.appVersion = '1.0.7',
     this.subscriptionConfigured = false,
     this.telegramEligible = false,
     this.subscriptionError,

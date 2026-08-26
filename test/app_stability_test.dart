@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nirang/core/platform/native_models.dart';
+import 'package:nirang/core/widgets/glass_dialog.dart';
 import 'package:nirang/features/vpn/app_controller.dart';
 import 'package:nirang/main.dart';
 
@@ -657,12 +658,12 @@ void main() {
       await tester.tap(find.text('Theme'));
       await tester.pumpAndSettle();
 
-      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(find.byType(NirangAlertDialog), findsOneWidget);
       for (var i = 1; i <= 20; i++) {
         controller.emitServerUpdate(i + 100);
         await tester.pump();
       }
-      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(find.byType(NirangAlertDialog), findsOneWidget);
       expect(tester.takeException(), isNull);
 
       await tester.tap(find.text('Dark'));

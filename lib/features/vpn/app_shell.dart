@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/diagnostics.dart';
 import '../../core/localization/app_strings.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/glass_dialog.dart';
 import '../logs/logs_screen.dart';
 import '../servers/servers_screen.dart';
 import '../settings/settings_screen.dart';
@@ -208,7 +209,7 @@ class _AppShellState extends ConsumerState<AppShell> {
     final enable = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => NirangAlertDialog(
         icon: const Icon(Icons.bolt_rounded),
         title: Text(context.s('performanceMode')),
         content: Text(context.s('performanceModeDialogBody')),
@@ -237,7 +238,7 @@ class _AppShellState extends ConsumerState<AppShell> {
     final decision = await showDialog<String>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
+        builder: (context, setDialogState) => NirangAlertDialog(
           icon: const Icon(Icons.campaign_outlined),
           title: Text(context.s('joinTelegramTitle')),
           content: Column(

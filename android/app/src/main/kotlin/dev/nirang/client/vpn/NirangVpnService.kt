@@ -17,6 +17,7 @@ import dev.nirang.client.R
 import dev.nirang.client.bridge.NativeEvents
 import dev.nirang.client.logs.SafeLog
 import dev.nirang.client.model.ConnectionState
+import dev.nirang.client.model.ServerEligibility
 import dev.nirang.client.network.ProxyIpChecker
 import dev.nirang.client.settings.NativeSettings
 import dev.nirang.client.subscription.SubscriptionRepository
@@ -47,6 +48,9 @@ class NirangVpnService : VpnService() {
         super.onCreate()
         SafeLog.initialize(this)
         ensureNotificationChannel()
+        if (!XrayCore.isRunning() && ConnectionStore.state() != ConnectionState.DISCONNECTED) {
+            ConnectionStore.transition(ConnectionState.DISCONNECTED)
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -69,6 +73,9 @@ class NirangVpnService : VpnService() {
 
     override fun onDestroy() {
         if (vpnInterface != null || XrayCore.isRunning()) cleanupResources()
+        if (ConnectionStore.state() != ConnectionState.DISCONNECTED) {
+            ConnectionStore.transition(ConnectionState.DISCONNECTED)
+        }
         worker.shutdownNow()
         super.onDestroy()
     }
@@ -83,6 +90,10 @@ class NirangVpnService : VpnService() {
         val server = requestedServerId?.let(repository::server) ?: repository.selectedServer()
         if (server == null) {
             failAndStop("No server is available")
+            return
+        }
+        ServerEligibility.rejectionReason(server)?.let { reason ->
+            failAndStop(reason)
             return
         }
         repository.select(server.id)
@@ -115,7 +126,7 @@ class NirangVpnService : VpnService() {
             updateNotification(getString(R.string.vpn_connected), server.name)
             SafeLog.info(this, "VPN started")
             SafeLog.info(this, "Xray started")
-            worker.execute { checkPublicIp(settings.ipCheckUrl) }
+            worker.execute { refreshPublicIp(settings.ipCheckUrl, server.id) }
         } catch (error: Throwable) {
             if (tryStartLastWorkingServer(settings, repository)) return
             failAndStop(error.message ?: "Connection failed")
@@ -161,7 +172,7 @@ class NirangVpnService : VpnService() {
             )
             updateNotification(getString(R.string.vpn_connected), fallback.name)
             SafeLog.warning(this, "Previous working server restored")
-            worker.execute { checkPublicIp(settings.ipCheckUrl) }
+            worker.execute { refreshPublicIp(settings.ipCheckUrl, fallback.id) }
             true
         }.getOrElse { false }
     }
@@ -202,8 +213,6 @@ class NirangVpnService : VpnService() {
             return
         }
 
-        ConnectionStore.transition(ConnectionState.SWITCHING, nextServer.id, nextServer.name)
-        updateNotification("Switching", nextServer.name)
         val nextConfig = runCatching {
             val settings = NativeSettings(this)
             val iranCidrs = routingCidrs(settings)
@@ -220,17 +229,22 @@ class NirangVpnService : VpnService() {
             }
         if (latestSwitchId.get() != null) return
 
+        ConnectionStore.transition(ConnectionState.SWITCHING, nextServer.id, nextServer.name)
+        updateNotification("Switching", nextServer.name)
         try {
             XrayCore.stop()
             XrayCore.start(this, nextConfig, tunnelFd)
+            check(XrayCore.isRunning()) { "Xray core did not verify the switched server" }
             currentServerId = nextServer.id
             currentServerName = nextServer.name
             currentConfig = nextConfig
+            repository.select(nextServer.id)
+            NativeEvents.emit("servers", repository.safeServers())
             ConnectionStore.transition(ConnectionState.CONNECTED, nextServer.id, nextServer.name)
             markLastWorking(nextServer.id)
             updateNotification(getString(R.string.vpn_connected), nextServer.name)
             SafeLog.info(this, "VPN server switched")
-            checkPublicIp(NativeSettings(this).ipCheckUrl)
+            worker.execute { refreshPublicIp(NativeSettings(this).ipCheckUrl, nextServer.id) }
         } catch (switchError: Throwable) {
             SafeLog.warning(this, "Server switch failed; restoring previous server")
             runCatching {
@@ -328,7 +342,9 @@ class NirangVpnService : VpnService() {
                 ConnectionStore.transition(ConnectionState.CONNECTED, currentServerId, currentServerName)
                 updateNotification(getString(R.string.vpn_connected), currentServerName)
                 SafeLog.info(this, "VPN reconnected")
-                checkPublicIp(NativeSettings(this).ipCheckUrl)
+                worker.execute {
+                    currentServerId?.let { refreshPublicIp(NativeSettings(this).ipCheckUrl, it) }
+                }
                 return
             } catch (_: Throwable) {
                 // Continue with bounded exponential backoff.
@@ -337,12 +353,21 @@ class NirangVpnService : VpnService() {
         failAndStop("Unable to reconnect after network change")
     }
 
-    private fun checkPublicIp(providerUrl: String) {
-        runCatching { ProxyIpChecker.check(providerUrl) }
-            .onSuccess { result ->
-                ConnectionStore.setPublicIp(result.ip, result.countryCode, result.city)
+    private fun refreshPublicIp(providerUrl: String, expectedServerId: String) {
+        if (!ConnectionStore.beginPublicIpRefresh(expectedServerId)) return
+        repeat(PUBLIC_IP_ATTEMPTS) { attempt ->
+            if (currentServerId != expectedServerId || ConnectionStore.state() != ConnectionState.CONNECTED) return
+            val result = runCatching { ProxyIpChecker.check(providerUrl) }.getOrNull()
+            if (result?.ip?.isNotBlank() == true) {
+                if (ConnectionStore.setPublicIp(expectedServerId, result.ip, result.countryCode, result.city)) {
+                    SafeLog.info(this, "Public IP refreshed")
+                }
+                return
             }
-            .onFailure { SafeLog.warning(this, "Public IP check failed") }
+            if (attempt + 1 < PUBLIC_IP_ATTEMPTS) Thread.sleep(PUBLIC_IP_RETRY_DELAY_MS)
+        }
+        ConnectionStore.setPublicIp(expectedServerId, null, null, null)
+        SafeLog.warning(this, "Public IP check failed")
     }
 
     private fun routingCidrs(settings: NativeSettings): List<String> =
@@ -375,7 +400,10 @@ class NirangVpnService : VpnService() {
         runCatching { vpnInterface?.close() }
         vpnInterface = null
         currentConfig = null
+        currentServerId = null
+        currentServerName = null
         currentMode = "vpn"
+        latestSwitchId.set(null)
         unregisterNetworkCallback()
     }
 
@@ -428,6 +456,8 @@ class NirangVpnService : VpnService() {
         private const val NOTIFICATION_ID = 4107
         private const val VPN_STATE_PREFS = "nirang_vpn_state"
         private const val LAST_WORKING_SERVER_ID = "lastWorkingServerId"
+        private const val PUBLIC_IP_ATTEMPTS = 3
+        private const val PUBLIC_IP_RETRY_DELAY_MS = 700L
 
         fun start(context: Context, serverId: String) {
             val intent = Intent(context, NirangVpnService::class.java)

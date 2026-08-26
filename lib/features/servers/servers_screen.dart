@@ -7,6 +7,7 @@ import '../../core/localization/app_strings.dart';
 import '../../core/platform/native_models.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/glass_surface.dart';
+import '../../core/widgets/glass_dialog.dart';
 import '../vpn/app_controller.dart';
 import 'server_information_screen.dart';
 
@@ -79,39 +80,51 @@ class ServersScreen extends ConsumerWidget {
                                       .withValues(alpha: .22),
                           ),
                         ),
-                        child: ListTile(
-                          leading: _SelectionIndicator(
-                            selected: server.selected,
-                            reducedEffects: view.performanceMode,
-                          ),
-                          title: Text(
-                            server.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          subtitle: Text(
-                            '${server.protocol}  ${server.transport}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              _Latency(server: server),
-                              IconButton(
-                                tooltip: context.s('serverActions'),
-                                onPressed: () =>
-                                    _serverActions(context, controller, server),
-                                icon: const Icon(Icons.more_vert_rounded),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(13),
+                          child: Material(
+                            type: MaterialType.transparency,
+                            child: ListTile(
+                              splashColor: Theme.of(
+                                context,
+                              ).colorScheme.primary.withValues(alpha: .10),
+                              leading: _SelectionIndicator(
+                                selected: server.selected,
+                                reducedEffects: view.performanceMode,
                               ),
-                            ],
+                              title: Text(
+                                server.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              subtitle: Text(
+                                '${server.protocol}  ${server.transport}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  _Latency(server: server),
+                                  IconButton(
+                                    tooltip: context.s('serverActions'),
+                                    onPressed: () => _serverActions(
+                                      context,
+                                      controller,
+                                      server,
+                                    ),
+                                    icon: const Icon(Icons.more_vert_rounded),
+                                  ),
+                                ],
+                              ),
+                              onTap: () => _perform(
+                                context,
+                                () => controller.selectServer(server.id),
+                              ),
+                              onLongPress: () =>
+                                  _serverActions(context, controller, server),
+                            ),
                           ),
-                          onTap: () => _perform(
-                            context,
-                            () => controller.selectServer(server.id),
-                          ),
-                          onLongPress: () =>
-                              _serverActions(context, controller, server),
                         ),
                       ),
                     );
@@ -158,7 +171,7 @@ class ServersScreen extends ConsumerWidget {
         minimum: const EdgeInsets.fromLTRB(8, 0, 8, 8),
         child: GlassSurface(
           radius: 22,
-          blur: 8,
+          blur: 16,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(8, 8, 8, 10),
             child: Column(
@@ -236,7 +249,7 @@ class ServersScreen extends ConsumerWidget {
       case 'delete':
         final confirmed = await showDialog<bool>(
           context: context,
-          builder: (context) => AlertDialog(
+          builder: (context) => NirangAlertDialog(
             title: Text(context.s('deleteServer')),
             content: Text('${context.s('deleteServerBody')}\n\n${server.name}'),
             actions: [
@@ -414,12 +427,22 @@ class _Latency extends StatelessWidget {
         style: TextStyle(color: Theme.of(context).colorScheme.error),
       );
     }
+    if (server.status == 'failed') {
+      return Text(
+        context.s('failed'),
+        style: TextStyle(color: Theme.of(context).colorScheme.error),
+      );
+    }
     final ping = server.ping;
     if (ping == null) return const SizedBox.shrink();
-    final color = ping < 150
+    final color = ping <= 199
         ? context.semanticColors.success
-        : ping < 300
+        : ping <= 349
         ? context.semanticColors.warning
+        : ping <= 599
+        ? (Theme.of(context).brightness == Brightness.dark
+              ? const Color(0xFFF0A35A)
+              : const Color(0xFFCF6B1C))
         : Theme.of(context).colorScheme.error;
     return SizedBox(
       width: 58,

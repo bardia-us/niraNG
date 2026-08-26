@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/formatters.dart';
 import '../../core/localization/app_strings.dart';
+import '../../core/widgets/glass_dialog.dart';
 import '../../core/platform/native_models.dart';
 import '../../core/theme/app_theme.dart';
 import '../vpn/app_controller.dart';
@@ -79,7 +80,7 @@ class LogsScreen extends ConsumerWidget {
   Future<void> _confirmClear(BuildContext context, WidgetRef ref) async {
     final clear = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => NirangAlertDialog(
         title: Text(context.s('clearLogs')),
         content: Text(context.s('clearLogsBody')),
         actions: [
