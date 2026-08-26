@@ -59,7 +59,7 @@ class GitHubUpdateChecker {
       final request = await client.getUrl(Uri.parse(nirangLatestReleaseApi));
       request.headers
         ..set(HttpHeaders.acceptHeader, 'application/vnd.github+json')
-        ..set(HttpHeaders.userAgentHeader, 'niraNG-update-checker/1.0.7');
+        ..set(HttpHeaders.userAgentHeader, 'niraNG-update-checker/1.0.8');
       final response = await request.close().timeout(
         const Duration(seconds: 10),
       );

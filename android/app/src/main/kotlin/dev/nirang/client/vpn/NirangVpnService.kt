@@ -27,13 +27,10 @@ import dev.nirang.client.xray.IranCidrRepository
 import java.net.InetAddress
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicReference
 
 class NirangVpnService : VpnService() {
     private val worker = Executors.newSingleThreadExecutor()
     private val startGuard = AtomicBoolean(false)
-    private val latestSwitchId = AtomicReference<String?>(null)
-    private val switchDrainScheduled = AtomicBoolean(false)
     private var vpnInterface: ParcelFileDescriptor? = null
     private var currentConfig: String? = null
     private var currentServerId: String? = null
@@ -48,7 +45,10 @@ class NirangVpnService : VpnService() {
         super.onCreate()
         SafeLog.initialize(this)
         ensureNotificationChannel()
-        if (!XrayCore.isRunning() && ConnectionStore.state() != ConnectionState.DISCONNECTED) {
+        if (
+            !XrayCore.isRunning() &&
+            ConnectionStore.state() !in setOf(ConnectionState.DISCONNECTED, ConnectionState.RESTARTING, ConnectionState.ERROR)
+        ) {
             ConnectionStore.transition(ConnectionState.DISCONNECTED)
         }
     }
@@ -56,12 +56,22 @@ class NirangVpnService : VpnService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> worker.execute { stopInternal(false) }
+            ACTION_STOP_PRESERVING_ERROR -> worker.execute { stopInternal(true) }
+            ACTION_STOP_FOR_RESTART -> {
+                val generation = intent.getLongExtra(EXTRA_RESTART_GENERATION, 0L)
+                val serverId = intent.getStringExtra(EXTRA_SERVER_ID)
+                val serverName = intent.getStringExtra(EXTRA_SERVER_NAME)
+                worker.execute { stopForRestartInternal(generation, serverId, serverName) }
+            }
             ACTION_START -> {
                 startForeground(NOTIFICATION_ID, buildNotification(getString(R.string.vpn_connecting), null))
                 val serverId = intent.getStringExtra(EXTRA_SERVER_ID)
-                worker.execute { startInternal(serverId) }
+                val allowFallback = intent.getBooleanExtra(EXTRA_ALLOW_FALLBACK, true)
+                worker.execute { startInternal(serverId, allowFallback) }
             }
-            ACTION_SWITCH -> intent.getStringExtra(EXTRA_SERVER_ID)?.let(::queueSwitch)
+            ACTION_SWITCH -> intent.getStringExtra(EXTRA_SERVER_ID)?.let {
+                VpnRestartCoordinator.request(applicationContext, it)
+            }
         }
         return START_NOT_STICKY
     }
@@ -73,14 +83,14 @@ class NirangVpnService : VpnService() {
 
     override fun onDestroy() {
         if (vpnInterface != null || XrayCore.isRunning()) cleanupResources()
-        if (ConnectionStore.state() != ConnectionState.DISCONNECTED) {
+        if (ConnectionStore.state() !in setOf(ConnectionState.DISCONNECTED, ConnectionState.RESTARTING, ConnectionState.ERROR)) {
             ConnectionStore.transition(ConnectionState.DISCONNECTED)
         }
         worker.shutdownNow()
         super.onDestroy()
     }
 
-    private fun startInternal(requestedServerId: String?) {
+    private fun startInternal(requestedServerId: String?, allowFallback: Boolean) {
         if (!startGuard.compareAndSet(false, true)) return
         if (ConnectionStore.state() in setOf(ConnectionState.CONNECTING, ConnectionState.CONNECTED, ConnectionState.SWITCHING, ConnectionState.RECONNECTING)) {
             startGuard.set(false)
@@ -128,7 +138,7 @@ class NirangVpnService : VpnService() {
             SafeLog.info(this, "Xray started")
             worker.execute { refreshPublicIp(settings.ipCheckUrl, server.id) }
         } catch (error: Throwable) {
-            if (tryStartLastWorkingServer(settings, repository)) return
+            if (allowFallback && tryStartLastWorkingServer(settings, repository)) return
             failAndStop(error.message ?: "Connection failed")
             return
         } finally {
@@ -177,105 +187,9 @@ class NirangVpnService : VpnService() {
         }.getOrElse { false }
     }
 
-    private fun queueSwitch(serverId: String) {
-        latestSwitchId.set(serverId)
-        if (!switchDrainScheduled.compareAndSet(false, true)) return
-        runCatching {
-            worker.execute {
-                try {
-                    while (!Thread.currentThread().isInterrupted) {
-                        // Coalesce rapid taps before touching the running core.
-                        Thread.sleep(90)
-                        val next = latestSwitchId.getAndSet(null) ?: break
-                        switchInternal(next)
-                    }
-                } finally {
-                    switchDrainScheduled.set(false)
-                    if (latestSwitchId.get() != null) queueSwitch(latestSwitchId.get()!!)
-                }
-            }
-        }.onFailure { switchDrainScheduled.set(false) }
-    }
-
-    private fun switchInternal(serverId: String) {
-        val repository = SubscriptionRepository(this)
-        val nextServer = repository.server(serverId) ?: return
-        if (nextServer.id == currentServerId && XrayCore.isRunning()) {
-            ConnectionStore.transition(ConnectionState.CONNECTED, currentServerId, currentServerName)
-            return
-        }
-        val oldId = currentServerId
-        val oldName = currentServerName
-        val oldConfig = currentConfig
-        val tunnelFd = vpnInterface?.fd ?: if (currentMode == "proxy") 0 else null
-        if (oldId == null || oldConfig == null || tunnelFd == null || !XrayCore.isRunning()) {
-            SafeLog.warning(this, "Server switch ignored because the tunnel is not active")
-            return
-        }
-
-        val nextConfig = runCatching {
-            val settings = NativeSettings(this)
-            val iranCidrs = routingCidrs(settings)
-            if (currentMode == "vpn") {
-                XrayConfigBuilder.buildVpnConfig(nextServer, settings, iranCidrs)
-            } else {
-                XrayConfigBuilder.buildProxyConfig(nextServer, settings, iranCidrs)
-            }
-        }
-            .getOrElse { error ->
-                restorePreviousSelection(repository, oldId, oldName, "New server configuration is invalid")
-                SafeLog.warning(this, "Server switch rejected: ${error.javaClass.simpleName}")
-                return
-            }
-        if (latestSwitchId.get() != null) return
-
-        ConnectionStore.transition(ConnectionState.SWITCHING, nextServer.id, nextServer.name)
-        updateNotification("Switching", nextServer.name)
-        try {
-            XrayCore.stop()
-            XrayCore.start(this, nextConfig, tunnelFd)
-            check(XrayCore.isRunning()) { "Xray core did not verify the switched server" }
-            currentServerId = nextServer.id
-            currentServerName = nextServer.name
-            currentConfig = nextConfig
-            repository.select(nextServer.id)
-            NativeEvents.emit("servers", repository.safeServers())
-            ConnectionStore.transition(ConnectionState.CONNECTED, nextServer.id, nextServer.name)
-            markLastWorking(nextServer.id)
-            updateNotification(getString(R.string.vpn_connected), nextServer.name)
-            SafeLog.info(this, "VPN server switched")
-            worker.execute { refreshPublicIp(NativeSettings(this).ipCheckUrl, nextServer.id) }
-        } catch (switchError: Throwable) {
-            SafeLog.warning(this, "Server switch failed; restoring previous server")
-            runCatching {
-                XrayCore.stop()
-                XrayCore.start(this, oldConfig, tunnelFd)
-            }.onSuccess {
-                currentServerId = oldId
-                currentServerName = oldName
-                currentConfig = oldConfig
-                restorePreviousSelection(repository, oldId, oldName, "Switch failed; previous server restored")
-                updateNotification(getString(R.string.vpn_connected), oldName)
-            }.onFailure {
-                failAndStop(switchError.message ?: "Unable to switch server")
-            }
-        }
-    }
-
     private fun markLastWorking(serverId: String) {
         getSharedPreferences(VPN_STATE_PREFS, MODE_PRIVATE)
             .edit().putString(LAST_WORKING_SERVER_ID, serverId).apply()
-    }
-
-    private fun restorePreviousSelection(
-        repository: SubscriptionRepository,
-        oldId: String,
-        oldName: String?,
-        message: String,
-    ) {
-        repository.select(oldId)
-        NativeEvents.emit("servers", repository.safeServers())
-        ConnectionStore.transition(ConnectionState.CONNECTED, oldId, oldName, message)
     }
 
     private fun buildVpnInterface(serverName: String, settings: NativeSettings): ParcelFileDescriptor? {
@@ -395,6 +309,15 @@ class NirangVpnService : VpnService() {
         stopSelf()
     }
 
+    private fun stopForRestartInternal(generation: Long, serverId: String?, serverName: String?) {
+        cleanupResources()
+        ConnectionStore.transition(ConnectionState.RESTARTING, serverId, serverName)
+        SafeLog.info(this, "VPN service stopped for restart")
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        VpnRestartCoordinator.onServiceStopped(generation)
+        stopSelf()
+    }
+
     private fun cleanupResources() {
         runCatching { XrayCore.stop() }
         runCatching { vpnInterface?.close() }
@@ -403,7 +326,6 @@ class NirangVpnService : VpnService() {
         currentServerId = null
         currentServerName = null
         currentMode = "vpn"
-        latestSwitchId.set(null)
         unregisterNetworkCallback()
     }
 
@@ -450,8 +372,13 @@ class NirangVpnService : VpnService() {
     companion object {
         const val ACTION_START = "dev.nirang.client.action.START_VPN"
         const val ACTION_STOP = "dev.nirang.client.action.STOP_VPN"
+        const val ACTION_STOP_PRESERVING_ERROR = "dev.nirang.client.action.STOP_VPN_PRESERVING_ERROR"
+        const val ACTION_STOP_FOR_RESTART = "dev.nirang.client.action.STOP_VPN_FOR_RESTART"
         const val ACTION_SWITCH = "dev.nirang.client.action.SWITCH_VPN"
         const val EXTRA_SERVER_ID = "serverId"
+        const val EXTRA_SERVER_NAME = "serverName"
+        const val EXTRA_RESTART_GENERATION = "restartGeneration"
+        const val EXTRA_ALLOW_FALLBACK = "allowFallback"
         private const val CHANNEL_ID = "nirang_vpn"
         private const val NOTIFICATION_ID = 4107
         private const val VPN_STATE_PREFS = "nirang_vpn_state"
@@ -459,10 +386,11 @@ class NirangVpnService : VpnService() {
         private const val PUBLIC_IP_ATTEMPTS = 3
         private const val PUBLIC_IP_RETRY_DELAY_MS = 700L
 
-        fun start(context: Context, serverId: String) {
+        fun start(context: Context, serverId: String, allowFallback: Boolean = true) {
             val intent = Intent(context, NirangVpnService::class.java)
                 .setAction(ACTION_START)
                 .putExtra(EXTRA_SERVER_ID, serverId)
+                .putExtra(EXTRA_ALLOW_FALLBACK, allowFallback)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent) else context.startService(intent)
         }
 
@@ -470,12 +398,32 @@ class NirangVpnService : VpnService() {
             context.startService(Intent(context, NirangVpnService::class.java).setAction(ACTION_STOP))
         }
 
-        fun switchServer(context: Context, serverId: String) {
+        internal fun stopPreservingError(context: Context) {
+            context.startService(
+                Intent(context, NirangVpnService::class.java).setAction(ACTION_STOP_PRESERVING_ERROR),
+            )
+        }
+
+        internal fun stopForRestart(
+            context: Context,
+            generation: Long,
+            serverId: String,
+            serverName: String,
+        ) {
             context.startService(
                 Intent(context, NirangVpnService::class.java)
-                    .setAction(ACTION_SWITCH)
-                    .putExtra(EXTRA_SERVER_ID, serverId),
+                    .setAction(ACTION_STOP_FOR_RESTART)
+                    .putExtra(EXTRA_RESTART_GENERATION, generation)
+                    .putExtra(EXTRA_SERVER_ID, serverId)
+                    .putExtra(EXTRA_SERVER_NAME, serverName),
             )
+        }
+
+        fun restart(context: Context, serverId: String): Boolean =
+            VpnRestartCoordinator.request(context, serverId)
+
+        fun switchServer(context: Context, serverId: String) {
+            restart(context, serverId)
         }
     }
 }

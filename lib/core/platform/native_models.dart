@@ -116,6 +116,7 @@ class ConnectionInfo {
   bool get isBusy => const {
     'preparing',
     'connecting',
+    'restarting',
     'switching',
     'reconnecting',
     'stopping',
@@ -333,7 +334,7 @@ class AppSnapshot {
     this.logs = const [],
     this.lastUpdated = 0,
     this.coreVersion = 'Unavailable',
-    this.appVersion = '1.0.7',
+    this.appVersion = '1.0.8',
     this.subscriptionConfigured = false,
     this.telegramEligible = false,
     this.subscriptionError,

@@ -24,6 +24,7 @@ object ConnectionStore {
                 next in setOf(
                     ConnectionState.PREPARING,
                     ConnectionState.CONNECTING,
+                    ConnectionState.RESTARTING,
                     ConnectionState.SWITCHING,
                     ConnectionState.RECONNECTING,
                 )

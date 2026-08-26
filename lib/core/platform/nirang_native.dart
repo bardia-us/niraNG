@@ -40,6 +40,8 @@ class NirangNative {
   static Future<void> connect(String? id) =>
       _methods.invokeMethod('connect', {'id': id});
   static Future<void> disconnect() => _methods.invokeMethod('disconnect');
+  static Future<void> restartService() =>
+      _methods.invokeMethod('restartService');
   static Future<void> pingServer(String id) =>
       _methods.invokeMethod('pingServer', {'id': id});
   static Future<void> pingAll() => _methods.invokeMethod('pingAll');

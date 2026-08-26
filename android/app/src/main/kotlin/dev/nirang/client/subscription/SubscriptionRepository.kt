@@ -104,7 +104,7 @@ class SubscriptionRepository(private val context: Context) {
             connectTimeout = 12_000
             readTimeout = 20_000
             instanceFollowRedirects = true
-            setRequestProperty("User-Agent", "niraNG/1.0.7 Android")
+            setRequestProperty("User-Agent", "niraNG/1.0.8 Android")
             setRequestProperty("Accept", "text/plain, application/json")
             // A user-triggered refresh is an authoritative full sync. Sending
             // cache validators here made a valid 304 look like a failed update

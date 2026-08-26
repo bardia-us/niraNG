@@ -15,6 +15,7 @@ import dev.nirang.client.subscription.SubscriptionRepository
 import dev.nirang.client.subscription.SubscriptionScheduler
 import dev.nirang.client.vpn.ConnectionStore
 import dev.nirang.client.vpn.NirangVpnService
+import dev.nirang.client.vpn.RestartPolicy
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
@@ -53,6 +54,7 @@ class NirangBridge(
                 NirangVpnService.stop(activity)
                 result.success(true)
             }
+            "restartService" -> restartService(result)
             "pingServer" -> {
                 val id = call.argument<String>("id")
                 val server = id?.let(repository::server)
@@ -212,15 +214,43 @@ class NirangBridge(
         requestVpnPermission(requested, result)
     }
 
+    private fun restartService(result: MethodChannel.Result) {
+        val snapshot = ConnectionStore.snapshot()
+        val serverId = snapshot["serverId"] as? String
+        if (ConnectionStore.state() != ConnectionState.CONNECTED || serverId == null) {
+            result.error("not_connected", "VPN is not connected", null)
+            return
+        }
+        if (!NirangVpnService.restart(activity, serverId)) {
+            result.error("not_found", "Active server is no longer available", null)
+            return
+        }
+        result.success(true)
+    }
+
     private fun updateSettings(call: MethodCall, result: MethodChannel.Result) {
         val values = call.arguments as? Map<*, *> ?: emptyMap<String, Any>()
         executor.execute {
             runCatching {
-                NativeSettings(activity).update(values)
+                val nativeSettings = NativeSettings(activity)
+                val before = nativeSettings.toMap()
+                nativeSettings.update(values)
                 if (values.containsKey("autoUpdate") || values.containsKey("updateIntervalHours")) {
                     SubscriptionScheduler.reconcile(activity)
                 }
-                NativeSettings(activity).toMap()
+                val settings = NativeSettings(activity).toMap()
+                val changedKeys = values.keys.mapNotNull { it as? String }
+                    .filterTo(mutableSetOf()) { before[it] != settings[it] }
+                val connection = ConnectionStore.snapshot()
+                val activeId = connection["serverId"] as? String
+                if (
+                    activeId != null &&
+                    RestartPolicy.requiresRestart(changedKeys) &&
+                    ConnectionStore.state() in RESTART_ELIGIBLE_STATES
+                ) {
+                    NirangVpnService.restart(activity, activeId)
+                }
+                settings
             }.onSuccess { settings ->
                 postToFlutter { result.success(settings) }
             }.onFailure { error ->
@@ -303,8 +333,10 @@ class NirangBridge(
             ConnectionState.PREPARING,
             ConnectionState.CONNECTING,
             ConnectionState.CONNECTED,
+            ConnectionState.RESTARTING,
             ConnectionState.SWITCHING,
             ConnectionState.RECONNECTING,
         )
+        private val RESTART_ELIGIBLE_STATES = ACTIVE_CONNECTION_STATES
     }
 }

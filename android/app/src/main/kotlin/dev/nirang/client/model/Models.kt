@@ -8,6 +8,7 @@ enum class ConnectionState(val wireValue: String) {
     PREPARING("preparing"),
     CONNECTING("connecting"),
     CONNECTED("connected"),
+    RESTARTING("restarting"),
     SWITCHING("switching"),
     RECONNECTING("reconnecting"),
     STOPPING("stopping"),

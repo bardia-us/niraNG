@@ -238,12 +238,25 @@ class _ConnectionAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (connection.isConnected) {
-      return FilledButton.tonalIcon(
-        onPressed: connection.isBusy
-            ? null
-            : () => _perform(context, controller.disconnect),
-        icon: const Icon(Icons.stop_rounded, size: 18),
-        label: Text(context.s('disconnect')),
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          FilledButton.tonalIcon(
+            onPressed: () => _perform(context, controller.disconnect),
+            icon: const Icon(Icons.stop_rounded, size: 18),
+            label: Text(context.s('disconnect')),
+          ),
+          const SizedBox(height: 5),
+          OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+            ),
+            onPressed: () => _perform(context, controller.restartService),
+            icon: const Icon(Icons.restart_alt_rounded, size: 17),
+            label: Text(context.s('restartService')),
+          ),
+        ],
       );
     }
     return FilledButton.icon(
@@ -476,6 +489,7 @@ Color _statusColor(BuildContext context, String state) => switch (state) {
   'error' => Theme.of(context).colorScheme.error,
   'connecting' ||
   'preparing' ||
+  'restarting' ||
   'switching' ||
   'reconnecting' ||
   'stopping' => context.semanticColors.warning,

@@ -50,6 +50,7 @@ class _FakeAppController extends AppController {
   int pingRequests = 0;
   int settingsUpdates = 0;
   int logRefreshes = 0;
+  int restartRequests = 0;
 
   @override
   Future<AppSnapshot> build() async => AppSnapshot(
@@ -94,6 +95,11 @@ class _FakeAppController extends AppController {
     state = AsyncData(
       current.copyWith(settings: current.settings.withUpdates(values)),
     );
+  }
+
+  @override
+  Future<void> restartService() async {
+    restartRequests++;
   }
 
   @override
@@ -343,6 +349,61 @@ void main() {
     expect(find.text('Amsterdam'), findsOneWidget);
     final ipText = tester.widget<Text>(find.text('(NL) 213.165.41.160'));
     expect(ipText.overflow, isNull);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('restart service is offered only for a connected VPN', (
+    tester,
+  ) async {
+    late _FakeAppController controller;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => controller = _FakeAppController(
+              connection: const ConnectionInfo(
+                state: 'connected',
+                serverId: 'a',
+                serverName: 'Server A',
+              ),
+            ),
+          ),
+        ],
+        child: const NirangApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Restart Service'), findsOneWidget);
+    await tester.tap(find.text('Restart Service'));
+    await tester.pump();
+    expect(controller.restartRequests, 1);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('restart service is hidden during a restart transition', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _FakeAppController(
+              connection: const ConnectionInfo(
+                state: 'restarting',
+                serverId: 'a',
+                serverName: 'Server A',
+              ),
+            ),
+          ),
+        ],
+        child: const NirangApp(),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Restart Service'), findsNothing);
+    expect(find.text('Restarting…'), findsWidgets);
     expect(tester.takeException(), isNull);
   });
 
