@@ -11,6 +11,7 @@ import 'core/diagnostics.dart';
 import 'core/platform/native_models.dart';
 import 'core/platform/nirang_native.dart';
 import 'core/theme/app_theme.dart';
+import 'core/theme/app_scroll_behavior.dart';
 import 'features/vpn/app_controller.dart';
 import 'features/vpn/app_shell.dart';
 
@@ -89,6 +90,9 @@ class NirangApp extends ConsumerWidget {
         milliseconds: appearance.performanceMode ? 70 : 120,
       ),
       themeAnimationCurve: Curves.easeOutCubic,
+      scrollBehavior: NirangScrollBehavior(
+        reducedEffects: appearance.performanceMode,
+      ),
       locale: Locale(appearance.language),
       supportedLocales: AppStrings.supportedLocales,
       localizationsDelegates: const [

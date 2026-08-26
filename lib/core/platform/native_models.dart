@@ -154,7 +154,7 @@ class SubscriptionUsage {
 class NativeSettings {
   const NativeSettings({
     this.connectionMode = 'vpn',
-    this.routingMode = 'global',
+    this.routingMode = 'bypassIran',
     this.customDomains = '',
     this.customIps = '',
     this.enableLocalDns = true,
@@ -167,7 +167,7 @@ class NativeSettings {
     this.domainStrategy = 'AsIs',
     this.sniffingEnabled = true,
     this.routeOnly = false,
-    this.enableIpv6 = false,
+    this.enableIpv6 = true,
     this.preferIpv6 = false,
     this.vpnMtu = 1500,
     this.autoUpdate = true,
@@ -183,7 +183,7 @@ class NativeSettings {
 
   factory NativeSettings.fromMap(Map<dynamic, dynamic> map) => NativeSettings(
     connectionMode: '${map['connectionMode'] ?? 'vpn'}',
-    routingMode: '${map['routingMode'] ?? 'global'}',
+    routingMode: '${map['routingMode'] ?? 'bypassIran'}',
     customDomains: '${map['customDomains'] ?? ''}',
     customIps: '${map['customIps'] ?? ''}',
     enableLocalDns: map['enableLocalDns'] != false,
@@ -196,7 +196,7 @@ class NativeSettings {
     domainStrategy: '${map['domainStrategy'] ?? 'AsIs'}',
     sniffingEnabled: map['sniffingEnabled'] != false,
     routeOnly: map['routeOnly'] == true,
-    enableIpv6: map['enableIpv6'] == true,
+    enableIpv6: map['enableIpv6'] != false,
     preferIpv6: map['preferIpv6'] == true,
     vpnMtu: _int(map['vpnMtu']) ?? 1500,
     autoUpdate: map['autoUpdate'] != false,
@@ -327,7 +327,7 @@ class AppSnapshot {
     this.logs = const [],
     this.lastUpdated = 0,
     this.coreVersion = 'Unavailable',
-    this.appVersion = '1.0.4',
+    this.appVersion = '1.0.5',
     this.subscriptionConfigured = false,
     this.telegramEligible = false,
     this.subscriptionError,

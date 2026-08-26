@@ -148,3 +148,66 @@ abstract final class AppTheme {
     );
   }
 }
+
+abstract final class NirangVisualEffects {
+  static BoxDecoration shellBackground(
+    ThemeData theme, {
+    required bool reducedEffects,
+  }) {
+    final background = theme.scaffoldBackgroundColor;
+    if (reducedEffects) return BoxDecoration(color: background);
+
+    final scheme = theme.colorScheme;
+    if (theme.brightness == Brightness.dark) {
+      return BoxDecoration(
+        gradient: RadialGradient(
+          center: const Alignment(.72, -.82),
+          radius: 1.45,
+          colors: [
+            scheme.primary.withValues(alpha: .14),
+            scheme.secondary.withValues(alpha: .055),
+            background,
+          ],
+          stops: const [0, .38, 1],
+        ),
+      );
+    }
+
+    // Keep every light-mode gradient stop opaque. Transparent gradient stops
+    // can be composited as black by some Android GPU drivers when combined
+    // with a backdrop filter.
+    final primaryGlow = Color.alphaBlend(
+      scheme.primary.withValues(alpha: .075),
+      background,
+    );
+    final secondaryGlow = Color.alphaBlend(
+      scheme.secondary.withValues(alpha: .028),
+      background,
+    );
+    return BoxDecoration(
+      color: background,
+      gradient: RadialGradient(
+        center: const Alignment(.78, -.94),
+        radius: 1.55,
+        colors: [primaryGlow, secondaryGlow, background],
+        stops: const [0, .48, 1],
+      ),
+    );
+  }
+
+  static double chromeBlur(ThemeData theme, double darkValue) =>
+      theme.brightness == Brightness.dark ? darkValue : 6;
+
+  static Color chromeColor(
+    ThemeData theme, {
+    required bool reducedEffects,
+    required double darkAlpha,
+  }) {
+    final alpha = reducedEffects
+        ? .96
+        : theme.brightness == Brightness.dark
+        ? darkAlpha
+        : .88;
+    return theme.colorScheme.surface.withValues(alpha: alpha);
+  }
+}

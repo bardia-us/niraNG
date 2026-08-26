@@ -33,10 +33,17 @@ const _serverB = ServerInfo(
 );
 
 class _FakeAppController extends AppController {
-  _FakeAppController({this.language = 'en', this.logCount = 0});
+  _FakeAppController({
+    this.language = 'en',
+    this.logCount = 0,
+    this.themeMode = 'system',
+    this.performanceMode = false,
+  });
 
   final String language;
   final int logCount;
+  final String themeMode;
+  final bool performanceMode;
   int pingRequests = 0;
   int settingsUpdates = 0;
   int logRefreshes = 0;
@@ -45,7 +52,14 @@ class _FakeAppController extends AppController {
   Future<AppSnapshot> build() async => AppSnapshot(
     servers: const [_serverA, _serverB],
     subscriptionConfigured: true,
-    settings: NativeSettings(language: language, performanceModePrompted: true),
+    settings: NativeSettings(
+      language: language,
+      routingMode: 'global',
+      enableIpv6: false,
+      themeMode: themeMode,
+      performanceMode: performanceMode,
+      performanceModePrompted: true,
+    ),
     logs: List.generate(
       logCount,
       (index) => LogEntry(
@@ -264,6 +278,33 @@ void main() {
       ),
       findsOneWidget,
     );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('servers header uses localized blur only with full effects', (
+    tester,
+  ) async {
+    late _FakeAppController controller;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => controller = _FakeAppController(themeMode: 'light'),
+          ),
+        ],
+        child: const NirangApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.dns_outlined));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Servers (2)'), findsOneWidget);
+    expect(find.byType(BackdropFilter), findsWidgets);
+
+    await controller.updateSettings({'performanceMode': true});
+    await tester.pumpAndSettle();
+    expect(find.byType(BackdropFilter), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

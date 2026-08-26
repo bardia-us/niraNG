@@ -24,6 +24,11 @@ class GlassSurface extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
     final dark = Theme.of(context).brightness == Brightness.dark;
     final reducedEffects = ref.watch(performanceModeProvider);
+    final lightTop = scheme.surface.withValues(alpha: .88);
+    final lightBottom = Color.alphaBlend(
+      scheme.primaryContainer.withValues(alpha: .065),
+      scheme.surface,
+    ).withValues(alpha: .84);
     final content = DecoratedBox(
       decoration: BoxDecoration(
         gradient: reducedEffects
@@ -32,8 +37,10 @@ class GlassSurface extends ConsumerWidget {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  scheme.surface.withValues(alpha: dark ? .74 : .79),
-                  scheme.primaryContainer.withValues(alpha: dark ? .12 : .18),
+                  dark ? scheme.surface.withValues(alpha: .74) : lightTop,
+                  dark
+                      ? scheme.primaryContainer.withValues(alpha: .12)
+                      : lightBottom,
                 ],
               ),
         color: reducedEffects
@@ -49,7 +56,10 @@ class GlassSurface extends ConsumerWidget {
       child: reducedEffects
           ? content
           : BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+              filter: ImageFilter.blur(
+                sigmaX: dark ? blur : blur.clamp(0, 6),
+                sigmaY: dark ? blur : blur.clamp(0, 6),
+              ),
               child: content,
             ),
     );

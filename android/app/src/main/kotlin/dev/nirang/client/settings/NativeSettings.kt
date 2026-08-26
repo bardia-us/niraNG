@@ -9,8 +9,12 @@ import java.net.InetAddress
 class NativeSettings(context: Context) {
     private val prefs = context.getSharedPreferences("nirang_settings", Context.MODE_PRIVATE)
 
+    init {
+        migrateInstallDefaults()
+    }
+
     val connectionMode: String get() = safeString("connectionMode", "vpn").takeIf(ALLOWED_CONNECTION_MODES::contains) ?: "vpn"
-    val routingMode: String get() = when (safeString("routingMode", "global")) {
+    val routingMode: String get() = when (safeString("routingMode", FRESH_INSTALL_DEFAULTS.routingMode)) {
         "bypassIran" -> "bypassIran"
         "custom" -> "custom"
         else -> "global"
@@ -27,7 +31,7 @@ class NativeSettings(context: Context) {
     val domainStrategy: String get() = safeString("domainStrategy", "AsIs").takeIf(ALLOWED_DOMAIN_STRATEGIES::contains) ?: "AsIs"
     val sniffingEnabled: Boolean get() = safeBoolean("sniffingEnabled", true)
     val routeOnly: Boolean get() = safeBoolean("routeOnly", false)
-    val enableIpv6: Boolean get() = safeBoolean("enableIpv6", false)
+    val enableIpv6: Boolean get() = safeBoolean("enableIpv6", FRESH_INSTALL_DEFAULTS.enableIpv6)
     val preferIpv6: Boolean get() = safeBoolean("preferIpv6", false)
     val vpnMtu: Int get() = safeInt("vpnMtu", 1500).takeIf { it in 1280..9000 } ?: 1500
     val autoUpdate: Boolean get() = safeBoolean("autoUpdate", true)
@@ -183,6 +187,18 @@ class NativeSettings(context: Context) {
         editor.apply()
     }
 
+    private fun migrateInstallDefaults() = synchronized(DEFAULTS_MIGRATION_LOCK) {
+        val schemaVersion = runCatching { prefs.getInt(DEFAULTS_SCHEMA_KEY, 0) }.getOrDefault(0)
+        if (schemaVersion >= DEFAULTS_SCHEMA_VERSION) return@synchronized
+
+        val defaults = InstallDefaults.forExistingState(prefs.all.isNotEmpty())
+        val editor = prefs.edit()
+        if (!prefs.contains("routingMode")) editor.putString("routingMode", defaults.routingMode)
+        if (!prefs.contains("domainStrategy")) editor.putString("domainStrategy", defaults.domainStrategy)
+        if (!prefs.contains("enableIpv6")) editor.putBoolean("enableIpv6", defaults.enableIpv6)
+        editor.putInt(DEFAULTS_SCHEMA_KEY, DEFAULTS_SCHEMA_VERSION).commit()
+    }
+
     private fun safeString(key: String, fallback: String): String = safePreference(key, fallback) { prefs.getString(key, fallback) ?: fallback }
     private fun safeBoolean(key: String, fallback: Boolean): Boolean = safePreference(key, fallback) { prefs.getBoolean(key, fallback) }
     private fun safeInt(key: String, fallback: Int): Int = safePreference(key, fallback) { prefs.getInt(key, fallback) }
@@ -194,6 +210,10 @@ class NativeSettings(context: Context) {
     }
 
     companion object {
+        private const val DEFAULTS_SCHEMA_KEY = "installDefaultsSchema"
+        private const val DEFAULTS_SCHEMA_VERSION = 1
+        private val DEFAULTS_MIGRATION_LOCK = Any()
+        private val FRESH_INSTALL_DEFAULTS = InstallDefaults.forExistingState(false)
         private const val DEFAULT_REMOTE_DNS = "https://dns.google/dns-query"
         private const val DEFAULT_VPN_DNS = "1.1.1.1"
         private const val DEFAULT_VPN_ADDRESS = "10.10.14.1/30"

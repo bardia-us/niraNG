@@ -84,6 +84,14 @@ void main() {
     expect(updated.enableFakeDns, isTrue);
   });
 
+  test('fresh Dart settings use the v1.0.5 network defaults', () {
+    const settings = NativeSettings();
+
+    expect(settings.domainStrategy, 'AsIs');
+    expect(settings.routingMode, 'bypassIran');
+    expect(settings.enableIpv6, isTrue);
+  });
+
   test('semantic release versions compare without lexical mistakes', () {
     expect(
       SemanticVersion.parse(
@@ -108,6 +116,31 @@ void main() {
       AppTheme.light.dialogTheme.backgroundColor,
       isNot(AppPalette.darkCanvas),
     );
+  });
+
+  test('light full effects use only bright opaque gradient stops', () {
+    final decoration = NirangVisualEffects.shellBackground(
+      AppTheme.light,
+      reducedEffects: false,
+    );
+    final gradient = decoration.gradient! as RadialGradient;
+
+    expect(gradient.colors, isNotEmpty);
+    for (final color in gradient.colors) {
+      expect(color.a, 1);
+      expect(color.computeLuminance(), greaterThan(.75));
+    }
+  });
+
+  test('performance themes use solid backgrounds without a gradient', () {
+    for (final theme in [AppTheme.lightPerformance, AppTheme.darkPerformance]) {
+      final decoration = NirangVisualEffects.shellBackground(
+        theme,
+        reducedEffects: true,
+      );
+      expect(decoration.gradient, isNull);
+      expect(decoration.color, theme.scaffoldBackgroundColor);
+    }
   });
 
   testWidgets('Persian localization is RTL and translated', (tester) async {

@@ -244,7 +244,7 @@ class AppController extends AsyncNotifier<AppSnapshot> {
     logs: _logs(map['logs'] as List<dynamic>? ?? const []),
     lastUpdated: _number(map['lastUpdated']),
     coreVersion: '${map['coreVersion'] ?? 'Unavailable'}',
-    appVersion: '${map['appVersion'] ?? '1.0.4'}',
+    appVersion: '${map['appVersion'] ?? '1.0.5'}',
     subscriptionConfigured: map['subscriptionConfigured'] == true,
     telegramEligible: map['telegramEligible'] == true,
     subscriptionError: map['subscriptionError']?.toString(),

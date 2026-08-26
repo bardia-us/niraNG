@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -31,54 +33,24 @@ class ServersScreen extends ConsumerWidget {
       subscriptionConfigured: view.configured,
     );
     final controller = ref.read(appControllerProvider.notifier);
-    return Column(
+    const headerHeight = 64.0;
+    return Stack(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 10, 8),
-          child: Row(
-            children: [
-              Text(
-                '${app.servers.length} ${context.s('serverCount')}',
-                style: Theme.of(context).textTheme.titleSmall,
-              ),
-              const Spacer(),
-              if (app.isPinging)
-                TextButton.icon(
-                  onPressed: controller.cancelPing,
-                  icon: const Icon(Icons.close_rounded),
-                  label: Text(context.s('cancel')),
-                )
-              else
-                TextButton.icon(
-                  onPressed: app.servers.isEmpty
-                      ? null
-                      : () => _perform(context, controller.pingAll),
-                  icon: const Icon(Icons.network_ping_rounded),
-                  label: Text(context.s('testAll')),
-                ),
-              IconButton(
-                tooltip: context.s('refresh'),
-                onPressed: app.isRefreshing
-                    ? null
-                    : () => _perform(context, controller.refreshSubscription),
-                icon: app.isRefreshing
-                    ? const SizedBox.square(
-                        dimension: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.sync_rounded),
-              ),
-            ],
-          ),
-        ),
-        const Divider(),
-        Expanded(
+        Positioned.fill(
           child: app.servers.isEmpty
-              ? _EmptyServers(app: app)
+              ? Padding(
+                  padding: const EdgeInsets.only(top: headerHeight + 10),
+                  child: _EmptyServers(app: app),
+                )
               : ListView.separated(
                   cacheExtent: 360,
                   itemCount: app.servers.length,
-                  padding: const EdgeInsets.fromLTRB(8, 4, 8, 16),
+                  padding: const EdgeInsets.fromLTRB(
+                    8,
+                    headerHeight + 16,
+                    8,
+                    16,
+                  ),
                   separatorBuilder: (_, _) => const SizedBox(height: 5),
                   itemBuilder: (context, index) {
                     final server = app.servers[index];
@@ -144,6 +116,28 @@ class ServersScreen extends ConsumerWidget {
                     );
                   },
                 ),
+        ),
+        Positioned(
+          top: 6,
+          left: 8,
+          right: 8,
+          child: RepaintBoundary(
+            child: _ServersGlassHeader(
+              height: headerHeight,
+              serverCount: app.servers.length,
+              isPinging: app.isPinging,
+              isRefreshing: app.isRefreshing,
+              reducedEffects: view.performanceMode,
+              onPing: app.servers.isEmpty
+                  ? null
+                  : app.isPinging
+                  ? controller.cancelPing
+                  : () => _perform(context, controller.pingAll),
+              onRefresh: app.isRefreshing
+                  ? null
+                  : () => _perform(context, controller.refreshSubscription),
+            ),
+          ),
         ),
       ],
     );
@@ -243,6 +237,106 @@ class ServersScreen extends ConsumerWidget {
           await _perform(context, () => controller.deleteServer(server.id));
         }
     }
+  }
+}
+
+class _ServersGlassHeader extends StatelessWidget {
+  const _ServersGlassHeader({
+    required this.height,
+    required this.serverCount,
+    required this.isPinging,
+    required this.isRefreshing,
+    required this.reducedEffects,
+    required this.onPing,
+    required this.onRefresh,
+  });
+
+  final double height;
+  final int serverCount;
+  final bool isPinging;
+  final bool isRefreshing;
+  final bool reducedEffects;
+  final VoidCallback? onPing;
+  final VoidCallback? onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final dark = theme.brightness == Brightness.dark;
+    final content = DecoratedBox(
+      decoration: BoxDecoration(
+        color: scheme.surface.withValues(
+          alpha: reducedEffects
+              ? .96
+              : dark
+              ? .70
+              : .88,
+        ),
+        border: Border.all(
+          color: scheme.outlineVariant.withValues(alpha: dark ? .48 : .62),
+        ),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: SizedBox(
+        height: height,
+        child: Padding(
+          padding: const EdgeInsetsDirectional.only(start: 14, end: 4),
+          child: Row(
+            children: [
+              Flexible(
+                child: Text(
+                  '${context.s('servers')} ($serverCount)',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              TextButton.icon(
+                onPressed: onPing,
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
+                icon: Icon(
+                  isPinging ? Icons.close_rounded : Icons.network_ping_rounded,
+                  size: 19,
+                ),
+                label: Text(
+                  isPinging ? context.s('cancel') : context.s('testAll'),
+                ),
+              ),
+              IconButton(
+                tooltip: context.s('refresh'),
+                onPressed: onRefresh,
+                visualDensity: VisualDensity.compact,
+                icon: isRefreshing
+                    ? const SizedBox.square(
+                        dimension: 19,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.sync_rounded),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: reducedEffects
+          ? content
+          : BackdropFilter(
+              filter: ImageFilter.blur(
+                sigmaX: dark ? 10 : 6,
+                sigmaY: dark ? 10 : 6,
+              ),
+              child: content,
+            ),
+    );
   }
 }
 

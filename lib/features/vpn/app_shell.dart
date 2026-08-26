@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/diagnostics.dart';
 import '../../core/localization/app_strings.dart';
+import '../../core/theme/app_theme.dart';
 import '../logs/logs_screen.dart';
 import '../servers/servers_screen.dart';
 import '../settings/settings_screen.dart';
@@ -101,11 +102,13 @@ class _AppShellState extends ConsumerState<AppShell> {
       SettingsScreen(),
       LogsScreen(),
     ];
-    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
     final reducedEffects = shellState.performanceMode;
     final navigationBar = NavigationBar(
-      backgroundColor: scheme.surface.withValues(
-        alpha: reducedEffects ? .96 : .68,
+      backgroundColor: NirangVisualEffects.chromeColor(
+        theme,
+        reducedEffects: reducedEffects,
+        darkAlpha: .68,
       ),
       selectedIndex: _index,
       onDestinationSelected: (value) {
@@ -144,34 +147,26 @@ class _AppShellState extends ConsumerState<AppShell> {
       ],
     );
     return DecoratedBox(
-      decoration: BoxDecoration(
-        color: reducedEffects
-            ? Theme.of(context).scaffoldBackgroundColor
-            : null,
-        gradient: reducedEffects
-            ? null
-            : RadialGradient(
-                center: const Alignment(.72, -.82),
-                radius: 1.45,
-                colors: [
-                  scheme.primary.withValues(alpha: .14),
-                  scheme.secondary.withValues(alpha: .055),
-                  Theme.of(context).scaffoldBackgroundColor,
-                ],
-                stops: const [0, .38, 1],
-              ),
+      decoration: NirangVisualEffects.shellBackground(
+        theme,
+        reducedEffects: reducedEffects,
       ),
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
-          backgroundColor: scheme.surface.withValues(
-            alpha: reducedEffects ? .96 : .58,
+          backgroundColor: NirangVisualEffects.chromeColor(
+            theme,
+            reducedEffects: reducedEffects,
+            darkAlpha: .58,
           ),
           flexibleSpace: reducedEffects
               ? null
               : ClipRect(
                   child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                    filter: ImageFilter.blur(
+                      sigmaX: NirangVisualEffects.chromeBlur(theme, 12),
+                      sigmaY: NirangVisualEffects.chromeBlur(theme, 12),
+                    ),
                     child: const SizedBox.expand(),
                   ),
                 ),
@@ -197,7 +192,10 @@ class _AppShellState extends ConsumerState<AppShell> {
             ? navigationBar
             : ClipRect(
                 child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+                  filter: ImageFilter.blur(
+                    sigmaX: NirangVisualEffects.chromeBlur(theme, 14),
+                    sigmaY: NirangVisualEffects.chromeBlur(theme, 14),
+                  ),
                   child: navigationBar,
                 ),
               ),
