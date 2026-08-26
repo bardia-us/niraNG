@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">niraNG</string>
+    <string name="vpn_channel_name">VPN connection</string>
+    <string name="vpn_connected">Connected</string>
+    <string name="vpn_connecting">Connecting…</string>
+    <string name="vpn_disconnect">Disconnect</string>
+</resources>

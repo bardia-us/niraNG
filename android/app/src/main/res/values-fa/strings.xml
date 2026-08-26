@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">niraNG</string>
+    <string name="vpn_channel_name">اتصال VPN</string>
+    <string name="vpn_connected">متصل</string>
+    <string name="vpn_connecting">در حال اتصال…</string>
+    <string name="vpn_disconnect">قطع اتصال</string>
+</resources>

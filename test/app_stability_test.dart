@@ -1,0 +1,551 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:nirang/core/platform/native_models.dart';
+import 'package:nirang/features/vpn/app_controller.dart';
+import 'package:nirang/main.dart';
+
+const _serverA = ServerInfo(
+  id: 'a',
+  name: 'Server A',
+  country: 'DE',
+  protocol: 'VLESS',
+  transport: 'TCP',
+  security: 'Reality',
+  port: 443,
+  selected: true,
+  status: 'success',
+  ping: 120,
+);
+
+const _serverB = ServerInfo(
+  id: 'b',
+  name: 'Server B',
+  country: 'US',
+  protocol: 'VLESS',
+  transport: 'XHTTP',
+  security: 'TLS',
+  port: 443,
+  selected: false,
+  status: 'idle',
+);
+
+class _FakeAppController extends AppController {
+  _FakeAppController({this.language = 'en', this.logCount = 0});
+
+  final String language;
+  final int logCount;
+  int pingRequests = 0;
+  int settingsUpdates = 0;
+  int logRefreshes = 0;
+
+  @override
+  Future<AppSnapshot> build() async => AppSnapshot(
+    servers: const [_serverA, _serverB],
+    subscriptionConfigured: true,
+    settings: NativeSettings(language: language),
+    logs: List.generate(
+      logCount,
+      (index) => LogEntry(
+        DateTime.fromMillisecondsSinceEpoch(1700000000000 + index),
+        index.isEven ? 'info' : 'warning',
+        'Log entry $index',
+      ),
+    ),
+  );
+
+  @override
+  Future<void> selectServer(String id) async {
+    final current = state.asData!.value;
+    state = AsyncData(
+      current.copyWith(
+        servers: [
+          for (final server in current.servers)
+            server.copyWith(selected: server.id == id),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Future<void> updateSettings(Map<String, Object?> values) async {
+    settingsUpdates++;
+    final current = state.asData!.value;
+    state = AsyncData(
+      current.copyWith(settings: current.settings.withUpdates(values)),
+    );
+  }
+
+  @override
+  Future<void> refreshLogs() async {
+    logRefreshes++;
+  }
+
+  @override
+  Future<void> clearLogs() async {
+    final current = state.asData!.value;
+    state = AsyncData(current.copyWith(logs: const []));
+  }
+
+  @override
+  Future<void> pingServer(String id) async {
+    pingRequests++;
+    _updatePing(id, status: 'testing');
+    await Future<void>.delayed(Duration.zero);
+    _updatePing(id, status: 'success', ping: 90 + pingRequests);
+  }
+
+  void _updatePing(String id, {required String status, int? ping}) {
+    final current = state.asData!.value;
+    state = AsyncData(
+      current.copyWith(
+        servers: [
+          for (final server in current.servers)
+            server.id == id
+                ? server.copyWith(status: status, ping: ping)
+                : server,
+        ],
+      ),
+    );
+  }
+
+  void emitServerUpdate(int value) {
+    final current = state.asData!.value;
+    state = AsyncData(
+      current.copyWith(
+        servers: [
+          for (final server in current.servers)
+            server.id == 'b'
+                ? server.copyWith(status: 'success', ping: value)
+                : server,
+        ],
+      ),
+    );
+  }
+}
+
+class _FreshStateController extends AppController {
+  _FreshStateController({this.startupGate});
+
+  final Future<void>? startupGate;
+
+  @override
+  Future<AppSnapshot> build() async {
+    await startupGate;
+    return const AppSnapshot(
+      subscriptionConfigured: true,
+      settings: NativeSettings(),
+    );
+  }
+}
+
+void main() {
+  testWidgets('fresh state renders before any subscription result exists', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(_FreshStateController.new),
+        ],
+        child: const NirangApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('niraNG'), findsOneWidget);
+    expect(find.byType(NavigationBar), findsOneWidget);
+    expect(find.text('Local traffic usage'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('startup loading state stays responsive and completes cleanly', (
+    tester,
+  ) async {
+    final gate = Completer<void>();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _FreshStateController(startupGate: gate.future),
+          ),
+        ],
+        child: const NirangApp(),
+      ),
+    );
+    await tester.pump();
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    gate.complete();
+    await tester.pumpAndSettle();
+    expect(find.byType(NavigationBar), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('exactly one server selection indicator follows selected state', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [appControllerProvider.overrideWith(_FakeAppController.new)],
+        child: const NirangApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.dns_outlined));
+    await tester.pumpAndSettle();
+
+    expect(find.byIcon(Icons.check_rounded), findsOneWidget);
+    expect(find.text('—'), findsNothing);
+    expect(
+      tester.getCenter(find.byIcon(Icons.check_rounded)).dx,
+      lessThan(400),
+    );
+    expect(
+      find.descendant(
+        of: find.widgetWithText(ListTile, 'Server A'),
+        matching: find.byIcon(Icons.check_rounded),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('Server B'));
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.check_rounded), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.widgetWithText(ListTile, 'Server B'),
+        matching: find.byIcon(Icons.check_rounded),
+      ),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'settings picker cancel discards changes and apply commits once',
+    (tester) async {
+      late _FakeAppController controller;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appControllerProvider.overrideWith(
+              () => controller = _FakeAppController(),
+            ),
+          ],
+          child: const NirangApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.settings_outlined));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('Theme'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.text('Theme'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Dark'));
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+
+      expect(controller.settingsUpdates, 0);
+      expect(controller.state.asData!.value.settings.themeMode, 'system');
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.text('Theme'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Dark'));
+      await tester.tap(find.text('Apply'));
+      await tester.pumpAndSettle();
+
+      expect(controller.settingsUpdates, 1);
+      expect(controller.state.asData!.value.settings.themeMode, 'dark');
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('DNS fields validate, cancel safely, and update independently', (
+    tester,
+  ) async {
+    late _FakeAppController controller;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => controller = _FakeAppController(),
+          ),
+        ],
+        child: const NirangApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.settings_outlined));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Remote DNS'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text('Remote DNS'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField), 'not a dns value');
+    await tester.tap(find.text('Save'));
+    await tester.pump();
+    expect(
+      find.text('Enter a valid IP address or DNS hostname.'),
+      findsOneWidget,
+    );
+    expect(controller.settingsUpdates, 0);
+
+    await tester.enterText(find.byType(TextFormField), '9.9.9.9');
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(controller.settingsUpdates, 0);
+
+    await tester.tap(find.text('Remote DNS'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byType(TextFormField),
+      '9.9.9.9,https://dns.google/dns-query',
+    );
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    expect(controller.settingsUpdates, 1);
+    expect(
+      controller.state.asData!.value.settings.remoteDns,
+      '9.9.9.9,https://dns.google/dns-query',
+    );
+    expect(controller.state.asData!.value.settings.enableLocalDns, isTrue);
+    expect(controller.state.asData!.value.settings.enableFakeDns, isFalse);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'MTU validates, cancels, applies, and reopens with synced state',
+    (tester) async {
+      late _FakeAppController controller;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appControllerProvider.overrideWith(
+              () => controller = _FakeAppController(),
+            ),
+          ],
+          child: const NirangApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.settings_outlined));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('VPN MTU'));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextFormField), '100');
+      await tester.tap(find.text('Save'));
+      await tester.pump();
+      expect(find.text('Valid range: 1280–9000'), findsWidgets);
+      expect(controller.settingsUpdates, 0);
+
+      await tester.enterText(find.byType(TextFormField), '1400');
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(controller.state.asData!.value.settings.vpnMtu, 1500);
+
+      await tester.tap(find.text('VPN MTU'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextFormField), '1400');
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(controller.state.asData!.value.settings.vpnMtu, 1400);
+      expect(find.textContaining('1400'), findsOneWidget);
+
+      await tester.tap(find.text('VPN MTU'));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<TextFormField>(find.byType(TextFormField))
+            .controller!
+            .text,
+        '1400',
+      );
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('routing and domain strategy preserve cancel and sync apply', (
+    tester,
+  ) async {
+    late _FakeAppController controller;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => controller = _FakeAppController(),
+          ),
+        ],
+        child: const NirangApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.settings_outlined));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Routing'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.widgetWithText(ListTile, 'Routing'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Bypass LAN'));
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(controller.state.asData!.value.settings.routingMode, 'global');
+
+    await tester.tap(find.widgetWithText(ListTile, 'Routing'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Bypass LAN'));
+    await tester.tap(find.text('Apply'));
+    await tester.pumpAndSettle();
+    expect(controller.state.asData!.value.settings.routingMode, 'bypassLan');
+
+    await tester.scrollUntilVisible(
+      find.text('Domain strategy'),
+      220,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text('Domain strategy'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('AsIs'));
+    await tester.tap(find.text('Apply'));
+    await tester.pumpAndSettle();
+    expect(controller.state.asData!.value.settings.domainStrategy, 'AsIs');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('log viewer repeatedly opens and scrolls with capped entries', (
+    tester,
+  ) async {
+    late _FakeAppController controller;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => controller = _FakeAppController(logCount: 250),
+          ),
+        ],
+        child: const NirangApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    for (var iteration = 0; iteration < 4; iteration++) {
+      await tester.tap(find.byIcon(Icons.article_outlined));
+      await tester.pumpAndSettle();
+      await tester.drag(find.byType(ListView).last, const Offset(0, -500));
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.home_outlined));
+      await tester.pumpAndSettle();
+    }
+
+    expect(controller.logRefreshes, 4);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('selection indicator stays at the directional start in RTL', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _FakeAppController(language: 'fa'),
+          ),
+        ],
+        child: const NirangApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.dns_outlined));
+    await tester.pumpAndSettle();
+
+    expect(find.byIcon(Icons.check_rounded), findsOneWidget);
+    expect(
+      tester.getCenter(find.byIcon(Icons.check_rounded)).dx,
+      greaterThan(400),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('home ping is interactive and repeated taps remain responsive', (
+    tester,
+  ) async {
+    late _FakeAppController controller;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => controller = _FakeAppController(),
+          ),
+        ],
+        child: const NirangApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('120 ms'));
+    await tester.tap(find.text('120 ms'));
+    await tester.pumpAndSettle();
+
+    expect(controller.pingRequests, 2);
+    expect(find.text('92 ms'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'server events do not rebuild MaterialApp while a settings dialog is open',
+    (tester) async {
+      late _FakeAppController controller;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appControllerProvider.overrideWith(
+              () => controller = _FakeAppController(),
+            ),
+          ],
+          child: const NirangApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.settings_outlined));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('Theme'),
+        240,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.text('Theme'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AlertDialog), findsOneWidget);
+      for (var i = 1; i <= 20; i++) {
+        controller.emitServerUpdate(i + 100);
+        await tester.pump();
+      }
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.text('Dark'));
+      await tester.tap(find.text('Apply'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
+}
