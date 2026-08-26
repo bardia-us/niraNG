@@ -20,6 +20,7 @@ class ServersScreen extends ConsumerWidget {
           isPinging: app?.isPinging ?? false,
           isRefreshing: app?.isRefreshing ?? false,
           configured: app?.subscriptionConfigured ?? false,
+          performanceMode: app?.settings.performanceMode ?? false,
         );
       }),
     );
@@ -83,7 +84,9 @@ class ServersScreen extends ConsumerWidget {
                     final server = app.servers[index];
                     return RepaintBoundary(
                       child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 140),
+                        duration: Duration(
+                          milliseconds: view.performanceMode ? 85 : 140,
+                        ),
                         curve: Curves.easeOutCubic,
                         decoration: BoxDecoration(
                           color: server.selected
@@ -106,6 +109,7 @@ class ServersScreen extends ConsumerWidget {
                         child: ListTile(
                           leading: _SelectionIndicator(
                             selected: server.selected,
+                            reducedEffects: view.performanceMode,
                           ),
                           title: Text(
                             server.name,
@@ -243,13 +247,17 @@ class ServersScreen extends ConsumerWidget {
 }
 
 class _SelectionIndicator extends StatelessWidget {
-  const _SelectionIndicator({required this.selected});
+  const _SelectionIndicator({
+    required this.selected,
+    required this.reducedEffects,
+  });
 
   final bool selected;
+  final bool reducedEffects;
 
   @override
   Widget build(BuildContext context) => AnimatedContainer(
-    duration: const Duration(milliseconds: 140),
+    duration: Duration(milliseconds: reducedEffects ? 85 : 140),
     width: 22,
     height: 22,
     decoration: BoxDecoration(

@@ -9,14 +9,26 @@ object XrayConfigBuilder {
     const val DEFAULT_LOCAL_SOCKS_PORT = 10808
     const val LOCAL_HTTP_PROXY_PORT = 10809
 
-    fun buildVpnConfig(server: ServerRecord, settings: NativeSettings): String =
-        buildConfig(server, settings, includeTun = true)
+    fun buildVpnConfig(
+        server: ServerRecord,
+        settings: NativeSettings,
+        iranCidrs: List<String> = emptyList(),
+    ): String = buildConfig(server, settings, includeTun = true, iranCidrs = iranCidrs)
 
-    fun buildProxyConfig(server: ServerRecord, settings: NativeSettings): String =
-        buildConfig(server, settings, includeTun = false)
+    fun buildProxyConfig(
+        server: ServerRecord,
+        settings: NativeSettings,
+        iranCidrs: List<String> = emptyList(),
+    ): String = buildConfig(server, settings, includeTun = false, iranCidrs = iranCidrs)
 
     fun buildProbeConfig(server: ServerRecord, settings: NativeSettings): String =
-        baseConfig(server, settings, includeTun = false)
+        baseConfig(
+            server,
+            settings,
+            includeTun = false,
+            iranCidrs = emptyList(),
+            routingModeOverride = "global",
+        )
             .apply {
                 put("inbounds", JSONArray())
                 remove("dns")
@@ -30,7 +42,7 @@ object XrayConfigBuilder {
             .also(::validateGeneratedConfig)
 
     fun buildSafeFallbackConfig(server: ServerRecord): String =
-        baseConfig(server, null, includeTun = true)
+        baseConfig(server, null, includeTun = true, iranCidrs = emptyList())
             .put("inbounds", buildInbounds(null, includeTun = true))
             .toString()
             .also(::validateGeneratedConfig)
@@ -39,7 +51,8 @@ object XrayConfigBuilder {
         server: ServerRecord,
         settings: NativeSettings,
         includeTun: Boolean,
-    ): String = baseConfig(server, settings, includeTun)
+        iranCidrs: List<String>,
+    ): String = baseConfig(server, settings, includeTun, iranCidrs)
         .put("inbounds", buildInbounds(settings, includeTun))
         .toString()
         .also(::validateGeneratedConfig)
@@ -48,6 +61,8 @@ object XrayConfigBuilder {
         server: ServerRecord,
         settings: NativeSettings?,
         includeTun: Boolean,
+        iranCidrs: List<String>,
+        routingModeOverride: String? = null,
     ): JSONObject = JSONObject().apply {
         validateServer(server)
         put("log", JSONObject().apply { put("loglevel", "warning") })
@@ -76,7 +91,18 @@ object XrayConfigBuilder {
                 put("settings", JSONObject())
             })
         })
-        put("routing", buildRouting(settings, includeTun))
+        put(
+            "routing",
+            buildRouting(
+                routingMode = routingModeOverride ?: settings?.routingMode ?: "global",
+                domainStrategy = settings?.domainStrategy ?: "AsIs",
+                customDomains = settings?.customDomains.orEmpty(),
+                customIps = settings?.customIps.orEmpty(),
+                enableLocalDns = settings?.enableLocalDns != false,
+                includeTun = includeTun,
+                iranCidrs = iranCidrs,
+            ),
+        )
     }
 
     private fun buildInbounds(settings: NativeSettings?, includeTun: Boolean): JSONArray = JSONArray().apply {
@@ -88,7 +114,10 @@ object XrayConfigBuilder {
         val sniffing = JSONObject().apply {
             put("enabled", sniffingEnabled || fakeDns)
             put("destOverride", JSONArray(overrides))
-            put("routeOnly", sniffingEnabled && (settings?.routeOnly ?: false))
+            put(
+                "routeOnly",
+                sniffingEnabled && ((settings?.routeOnly ?: false) || settings?.routingMode == "bypassIran"),
+            )
         }
         if (includeTun) {
             put(JSONObject().apply {
@@ -230,10 +259,20 @@ object XrayConfigBuilder {
         put("queryStrategy", if (settings?.enableIpv6 == true) "UseIP" else "UseIPv4")
     }
 
-    private fun buildRouting(settings: NativeSettings?, includeTun: Boolean): JSONObject = JSONObject().apply {
-        put("domainStrategy", settings?.domainStrategy ?: "IPIfNonMatch")
+    internal fun buildRouting(
+        routingMode: String,
+        domainStrategy: String = "AsIs",
+        customDomains: String = "",
+        customIps: String = "",
+        enableLocalDns: Boolean = true,
+        includeTun: Boolean = true,
+        iranCidrs: List<String> = emptyList(),
+    ): JSONObject = JSONObject().apply {
+        require(routingMode in setOf("global", "bypassIran", "custom")) { "Unsupported routing mode" }
+        require(domainStrategy in setOf("AsIs", "IPIfNonMatch", "IPOnDemand")) { "Unsupported domain strategy" }
+        put("domainStrategy", domainStrategy)
         put("rules", JSONArray().apply {
-            if (settings?.enableLocalDns != false) {
+            if (enableLocalDns) {
                 put(JSONObject().apply {
                     put("type", "field")
                     put(
@@ -245,17 +284,22 @@ object XrayConfigBuilder {
                     put("outboundTag", "dns-out")
                 })
             }
-            val privateIps = listOf("geoip:private")
-            // geoip:private is built into Xray. There is no guaranteed
-            // geosite:private tag, so LAN hostnames use data-file-free matchers.
             val privateDomains = listOf("full:localhost", "domain:localhost", "domain:local")
-            val customIps = splitRules(settings?.customIps.orEmpty())
-            val customDomains = splitRules(settings?.customDomains.orEmpty())
-            when (settings?.routingMode ?: "global") {
-                "bypassLan" -> putRoutingRule("direct", privateIps, privateDomains)
+            val parsedCustomIps = splitRules(customIps)
+            val parsedCustomDomains = splitDomainRules(customDomains)
+            when (routingMode) {
+                "bypassIran" -> {
+                    require(iranCidrs.isNotEmpty()) { "Iran CIDR assets are unavailable" }
+                    putRoutingRule(
+                        "direct",
+                        emptyList(),
+                        listOf("domain:ir") + privateDomains,
+                    )
+                    putRoutingRule("direct", PRIVATE_IPS + iranCidrs, emptyList())
+                }
                 "custom" -> {
-                    putRoutingRule("direct", privateIps, privateDomains)
-                    putRoutingRule("direct", customIps, customDomains)
+                    putRoutingRule("direct", PRIVATE_IPS, privateDomains)
+                    putRoutingRule("direct", parsedCustomIps, parsedCustomDomains)
                 }
             }
         })
@@ -288,7 +332,7 @@ object XrayConfigBuilder {
             rule.optJSONArray("ip")?.let { ips ->
                 for (ipIndex in 0 until ips.length()) {
                     val ip = ips.optString(ipIndex)
-                    require(!ip.startsWith("geoip:", true) || ip.equals("geoip:private", true)) {
+                    require(!ip.startsWith("geoip:", true)) {
                         "Generated Xray IP rule requires unavailable geoip data"
                     }
                 }
@@ -326,8 +370,31 @@ object XrayConfigBuilder {
         .map(String::trim)
         .filter(String::isNotEmpty)
 
+    private fun splitDomainRules(value: String): List<String> = value
+        .lineSequence()
+        .flatMap { line ->
+            val trimmed = line.trim()
+            if (trimmed.startsWith("regexp:", true)) sequenceOf(trimmed)
+            else trimmed.split(',').asSequence()
+        }
+        .map(String::trim)
+        .filter(String::isNotEmpty)
+        .toList()
+
     private fun JSONObject.putOptionalArray(key: String, csv: String?) {
         val values = csv?.split(',')?.map(String::trim)?.filter(String::isNotEmpty).orEmpty()
         if (values.isNotEmpty()) put(key, JSONArray(values))
     }
+
+    private val PRIVATE_IPS = listOf(
+        "10.0.0.0/8",
+        "100.64.0.0/10",
+        "127.0.0.0/8",
+        "169.254.0.0/16",
+        "172.16.0.0/12",
+        "192.168.0.0/16",
+        "::1/128",
+        "fc00::/7",
+        "fe80::/10",
+    )
 }

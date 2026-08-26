@@ -61,6 +61,10 @@ android {
         buildConfig = true
     }
 
+    sourceSets {
+        getByName("test").resources.srcDir("src/main/assets")
+    }
+
     packaging {
         jniLibs {
             useLegacyPackaging = true
@@ -93,4 +97,6 @@ dependencies {
     implementation(files("libs/libv2ray.aar"))
     implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.work:work-runtime-ktx:2.10.5")
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20250517")
 }

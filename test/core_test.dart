@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nirang/core/formatters.dart';
 import 'package:nirang/core/localization/app_strings.dart';
 import 'package:nirang/core/platform/native_models.dart';
+import 'package:nirang/core/theme/app_theme.dart';
+import 'package:nirang/core/update_checker.dart';
 
 void main() {
   test('formats persisted byte counters without speed units', () {
@@ -80,6 +82,32 @@ void main() {
     expect(updated.localSocksPort, 10818);
     expect(updated.enableLocalDns, isFalse);
     expect(updated.enableFakeDns, isTrue);
+  });
+
+  test('semantic release versions compare without lexical mistakes', () {
+    expect(
+      SemanticVersion.parse(
+        'v1.0.10',
+      ).compareTo(SemanticVersion.parse('1.0.4')),
+      greaterThan(0),
+    );
+    expect(SemanticVersion.parse('v1.0.4+5').toString(), '1.0.4');
+  });
+
+  test('light theme surfaces never inherit the dark canvas', () {
+    expect(AppTheme.light.brightness, Brightness.light);
+    expect(
+      AppTheme.light.scaffoldBackgroundColor,
+      isNot(AppPalette.darkCanvas),
+    );
+    expect(
+      AppTheme.light.colorScheme.surface.computeLuminance(),
+      greaterThan(AppTheme.dark.colorScheme.surface.computeLuminance()),
+    );
+    expect(
+      AppTheme.light.dialogTheme.backgroundColor,
+      isNot(AppPalette.darkCanvas),
+    );
   });
 
   testWidgets('Persian localization is RTL and translated', (tester) async {

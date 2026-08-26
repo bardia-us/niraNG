@@ -22,6 +22,7 @@ import dev.nirang.client.settings.NativeSettings
 import dev.nirang.client.subscription.SubscriptionRepository
 import dev.nirang.client.xray.XrayConfigBuilder
 import dev.nirang.client.xray.XrayCore
+import dev.nirang.client.xray.IranCidrRepository
 import java.net.InetAddress
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -93,11 +94,12 @@ class NirangVpnService : VpnService() {
         currentMode = settings.connectionMode
 
         try {
+            val iranCidrs = routingCidrs(settings)
             if (currentMode == "vpn" && prepare(this) != null) error("VPN permission is not granted")
             currentConfig = if (currentMode == "vpn") {
-                XrayConfigBuilder.buildVpnConfig(server, settings)
+                XrayConfigBuilder.buildVpnConfig(server, settings, iranCidrs)
             } else {
-                XrayConfigBuilder.buildProxyConfig(server, settings)
+                XrayConfigBuilder.buildProxyConfig(server, settings, iranCidrs)
             }
             vpnInterface = if (currentMode == "vpn") {
                 buildVpnInterface(server.name, settings) ?: error("Android could not establish the VPN interface")
@@ -137,7 +139,7 @@ class NirangVpnService : VpnService() {
             val fallbackConfig = if (currentMode == "vpn") {
                 XrayConfigBuilder.buildSafeFallbackConfig(fallback)
             } else {
-                XrayConfigBuilder.buildProxyConfig(fallback, settings)
+                XrayConfigBuilder.buildProxyConfig(fallback, settings, routingCidrs(settings))
             }
             ConnectionStore.transition(ConnectionState.CONNECTING, fallback.id, fallback.name)
             XrayCore.start(this, fallbackConfig, fd)
@@ -204,10 +206,11 @@ class NirangVpnService : VpnService() {
         updateNotification("Switching", nextServer.name)
         val nextConfig = runCatching {
             val settings = NativeSettings(this)
+            val iranCidrs = routingCidrs(settings)
             if (currentMode == "vpn") {
-                XrayConfigBuilder.buildVpnConfig(nextServer, settings)
+                XrayConfigBuilder.buildVpnConfig(nextServer, settings, iranCidrs)
             } else {
-                XrayConfigBuilder.buildProxyConfig(nextServer, settings)
+                XrayConfigBuilder.buildProxyConfig(nextServer, settings, iranCidrs)
             }
         }
             .getOrElse { error ->
@@ -339,6 +342,9 @@ class NirangVpnService : VpnService() {
             .onSuccess { (ip, country) -> ConnectionStore.setPublicIp(ip, country) }
             .onFailure { SafeLog.warning(this, "Public IP check failed") }
     }
+
+    private fun routingCidrs(settings: NativeSettings): List<String> =
+        if (settings.routingMode == "bypassIran") IranCidrRepository.load(applicationContext) else emptyList()
 
     private fun failAndStop(message: String) {
         val safeMessage = message

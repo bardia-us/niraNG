@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 
 import 'core/localization/app_strings.dart';
 import 'core/diagnostics.dart';
@@ -68,6 +69,7 @@ class NirangApp extends ConsumerWidget {
         return (
           themeMode: settings.themeModeValue,
           language: settings.language,
+          performanceMode: settings.performanceMode,
         );
       }),
     );
@@ -76,10 +78,16 @@ class NirangApp extends ConsumerWidget {
       navigatorObservers: [nirangRouteObserver],
       title: 'niraNG',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.light,
-      darkTheme: AppTheme.dark,
+      theme: appearance.performanceMode
+          ? AppTheme.lightPerformance
+          : AppTheme.light,
+      darkTheme: appearance.performanceMode
+          ? AppTheme.darkPerformance
+          : AppTheme.dark,
       themeMode: appearance.themeMode,
-      themeAnimationDuration: const Duration(milliseconds: 120),
+      themeAnimationDuration: Duration(
+        milliseconds: appearance.performanceMode ? 70 : 120,
+      ),
       themeAnimationCurve: Curves.easeOutCubic,
       locale: Locale(appearance.language),
       supportedLocales: AppStrings.supportedLocales,
@@ -89,6 +97,24 @@ class NirangApp extends ConsumerWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
+      builder: (context, child) {
+        final theme = Theme.of(context);
+        final dark = theme.brightness == Brightness.dark;
+        return AnnotatedRegion<SystemUiOverlayStyle>(
+          value: SystemUiOverlayStyle(
+            statusBarColor: Colors.transparent,
+            statusBarIconBrightness: dark ? Brightness.light : Brightness.dark,
+            statusBarBrightness: dark ? Brightness.dark : Brightness.light,
+            systemNavigationBarColor: theme.colorScheme.surface,
+            systemNavigationBarDividerColor: theme.colorScheme.outlineVariant,
+            systemNavigationBarIconBrightness: dark
+                ? Brightness.light
+                : Brightness.dark,
+            systemNavigationBarContrastEnforced: false,
+          ),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
       home: const AppShell(),
     );
   }

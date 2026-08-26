@@ -21,6 +21,7 @@ class AppShell extends ConsumerStatefulWidget {
 class _AppShellState extends ConsumerState<AppShell> {
   int _index = 0;
   bool _reminderQueued = false;
+  bool _performancePromptQueued = false;
 
   @override
   void initState() {
@@ -36,12 +37,23 @@ class _AppShellState extends ConsumerState<AppShell> {
           ready: value.asData != null,
           loading: value.isLoading,
           error: value.hasError ? '${value.error}' : null,
+          performanceMode:
+              value.asData?.value.settings.performanceMode ?? false,
         ),
       ),
     );
     ref.listen(appControllerProvider, (_, next) {
       next.whenData((app) {
+        if (!_performancePromptQueued &&
+            !app.settings.performanceModePrompted) {
+          _performancePromptQueued = true;
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => _showPerformanceModePrompt(),
+          );
+          return;
+        }
         if (!_reminderQueued &&
+            app.settings.performanceModePrompted &&
             app.telegramEligible &&
             !app.connection.isBusy &&
             !app.isPinging) {
@@ -90,29 +102,79 @@ class _AppShellState extends ConsumerState<AppShell> {
       LogsScreen(),
     ];
     final scheme = Theme.of(context).colorScheme;
+    final reducedEffects = shellState.performanceMode;
+    final navigationBar = NavigationBar(
+      backgroundColor: scheme.surface.withValues(
+        alpha: reducedEffects ? .96 : .68,
+      ),
+      selectedIndex: _index,
+      onDestinationSelected: (value) {
+        NirangDiagnostics.currentFeature = const [
+          'home',
+          'servers',
+          'settings',
+          'logs',
+        ][value];
+        setState(() => _index = value);
+        if (value == 3) {
+          ref.read(appControllerProvider.notifier).refreshLogs();
+        }
+      },
+      destinations: [
+        NavigationDestination(
+          icon: const Icon(Icons.home_outlined),
+          selectedIcon: const Icon(Icons.home_rounded),
+          label: context.s('home'),
+        ),
+        NavigationDestination(
+          icon: const Icon(Icons.dns_outlined),
+          selectedIcon: const Icon(Icons.dns_rounded),
+          label: context.s('servers'),
+        ),
+        NavigationDestination(
+          icon: const Icon(Icons.settings_outlined),
+          selectedIcon: const Icon(Icons.settings_rounded),
+          label: context.s('settings'),
+        ),
+        NavigationDestination(
+          icon: const Icon(Icons.article_outlined),
+          selectedIcon: const Icon(Icons.article_rounded),
+          label: context.s('logs'),
+        ),
+      ],
+    );
     return DecoratedBox(
       decoration: BoxDecoration(
-        gradient: RadialGradient(
-          center: const Alignment(.72, -.82),
-          radius: 1.45,
-          colors: [
-            scheme.primary.withValues(alpha: .14),
-            scheme.secondary.withValues(alpha: .055),
-            Theme.of(context).scaffoldBackgroundColor,
-          ],
-          stops: const [0, .38, 1],
-        ),
+        color: reducedEffects
+            ? Theme.of(context).scaffoldBackgroundColor
+            : null,
+        gradient: reducedEffects
+            ? null
+            : RadialGradient(
+                center: const Alignment(.72, -.82),
+                radius: 1.45,
+                colors: [
+                  scheme.primary.withValues(alpha: .14),
+                  scheme.secondary.withValues(alpha: .055),
+                  Theme.of(context).scaffoldBackgroundColor,
+                ],
+                stops: const [0, .38, 1],
+              ),
       ),
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
-          backgroundColor: scheme.surface.withValues(alpha: .58),
-          flexibleSpace: ClipRect(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-              child: const SizedBox.expand(),
-            ),
+          backgroundColor: scheme.surface.withValues(
+            alpha: reducedEffects ? .96 : .58,
           ),
+          flexibleSpace: reducedEffects
+              ? null
+              : ClipRect(
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                    child: const SizedBox.expand(),
+                  ),
+                ),
           title: Row(
             children: [
               ClipRRect(
@@ -131,51 +193,44 @@ class _AppShellState extends ConsumerState<AppShell> {
           ),
         ),
         body: IndexedStack(index: _index, children: pages),
-        bottomNavigationBar: ClipRect(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-            child: NavigationBar(
-              backgroundColor: scheme.surface.withValues(alpha: .68),
-              selectedIndex: _index,
-              onDestinationSelected: (value) {
-                NirangDiagnostics.currentFeature = const [
-                  'home',
-                  'servers',
-                  'settings',
-                  'logs',
-                ][value];
-                setState(() => _index = value);
-                if (value == 3) {
-                  ref.read(appControllerProvider.notifier).refreshLogs();
-                }
-              },
-              destinations: [
-                NavigationDestination(
-                  icon: const Icon(Icons.home_outlined),
-                  selectedIcon: const Icon(Icons.home_rounded),
-                  label: context.s('home'),
+        bottomNavigationBar: reducedEffects
+            ? navigationBar
+            : ClipRect(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+                  child: navigationBar,
                 ),
-                NavigationDestination(
-                  icon: const Icon(Icons.dns_outlined),
-                  selectedIcon: const Icon(Icons.dns_rounded),
-                  label: context.s('servers'),
-                ),
-                NavigationDestination(
-                  icon: const Icon(Icons.settings_outlined),
-                  selectedIcon: const Icon(Icons.settings_rounded),
-                  label: context.s('settings'),
-                ),
-                NavigationDestination(
-                  icon: const Icon(Icons.article_outlined),
-                  selectedIcon: const Icon(Icons.article_rounded),
-                  label: context.s('logs'),
-                ),
-              ],
-            ),
-          ),
-        ),
+              ),
       ),
     );
+  }
+
+  Future<void> _showPerformanceModePrompt() async {
+    if (!mounted) return;
+    final enable = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(Icons.bolt_rounded),
+        title: Text(context.s('performanceMode')),
+        content: Text(context.s('performanceModeDialogBody')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(context.s('keepFullEffects')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(context.s('enable')),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || enable == null) return;
+    await ref.read(appControllerProvider.notifier).updateSettings({
+      'performanceMode': enable,
+      'performanceModePrompted': true,
+    });
   }
 
   Future<void> _showTelegramReminder() async {

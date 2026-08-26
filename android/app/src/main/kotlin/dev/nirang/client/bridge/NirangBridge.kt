@@ -85,6 +85,7 @@ class NirangBridge(
                 result.success(true)
             }
             "openTelegram" -> openTelegram(result)
+            "openExternalUrl" -> openExternalUrl(call, result)
             else -> result.notImplemented()
         }
     }
@@ -227,6 +228,24 @@ class NirangBridge(
             activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(BuildConfig.TELEGRAM_URL)))
         }.onSuccess { result.success(true) }
             .onFailure { result.error("unavailable", "No application can open the Telegram link", null) }
+    }
+
+    private fun openExternalUrl(call: MethodCall, result: MethodChannel.Result) {
+        val uri = call.argument<String>("url")?.let(Uri::parse)
+        if (uri == null) {
+            result.error("invalid_url", "Only official niraNG release links are allowed", null)
+            return
+        }
+        val allowed = uri.scheme.equals("https", true) &&
+            uri.host.equals("github.com", true) &&
+            uri.path?.startsWith("/bardia-us/niraNG/releases/") == true
+        if (!allowed) {
+            result.error("invalid_url", "Only official niraNG release links are allowed", null)
+            return
+        }
+        runCatching { activity.startActivity(Intent(Intent.ACTION_VIEW, uri)) }
+            .onSuccess { result.success(true) }
+            .onFailure { result.error("unavailable", "No application can open the release link", null) }
     }
 
     private fun bootstrap(): Map<String, Any?> {

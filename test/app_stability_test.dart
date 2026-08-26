@@ -45,7 +45,7 @@ class _FakeAppController extends AppController {
   Future<AppSnapshot> build() async => AppSnapshot(
     servers: const [_serverA, _serverB],
     subscriptionConfigured: true,
-    settings: NativeSettings(language: language),
+    settings: NativeSettings(language: language, performanceModePrompted: true),
     logs: List.generate(
       logCount,
       (index) => LogEntry(
@@ -136,12 +136,54 @@ class _FreshStateController extends AppController {
     await startupGate;
     return const AppSnapshot(
       subscriptionConfigured: true,
-      settings: NativeSettings(),
+      settings: NativeSettings(performanceModePrompted: true),
+    );
+  }
+}
+
+class _PerformancePromptController extends AppController {
+  @override
+  Future<AppSnapshot> build() async =>
+      const AppSnapshot(settings: NativeSettings());
+
+  @override
+  Future<void> updateSettings(Map<String, Object?> values) async {
+    final current = state.asData!.value;
+    state = AsyncData(
+      current.copyWith(settings: current.settings.withUpdates(values)),
     );
   }
 }
 
 void main() {
+  testWidgets('performance mode prompt is recorded after one explicit choice', (
+    tester,
+  ) async {
+    late _PerformancePromptController controller;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => controller = _PerformancePromptController(),
+          ),
+        ],
+        child: const NirangApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Performance Mode'), findsOneWidget);
+    await tester.tap(find.text('Keep full effects'));
+    await tester.pumpAndSettle();
+
+    expect(
+      controller.state.asData!.value.settings.performanceModePrompted,
+      isTrue,
+    );
+    expect(controller.state.asData!.value.settings.performanceMode, isFalse);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('fresh state renders before any subscription result exists', (
     tester,
   ) async {
@@ -404,17 +446,17 @@ void main() {
     );
     await tester.tap(find.widgetWithText(ListTile, 'Routing'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Bypass LAN'));
+    await tester.tap(find.text('Bypass Iran'));
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
     expect(controller.state.asData!.value.settings.routingMode, 'global');
 
     await tester.tap(find.widgetWithText(ListTile, 'Routing'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Bypass LAN'));
+    await tester.tap(find.text('Bypass Iran'));
     await tester.tap(find.text('Apply'));
     await tester.pumpAndSettle();
-    expect(controller.state.asData!.value.settings.routingMode, 'bypassLan');
+    expect(controller.state.asData!.value.settings.routingMode, 'bypassIran');
 
     await tester.scrollUntilVisible(
       find.text('Domain strategy'),
@@ -423,10 +465,13 @@ void main() {
     );
     await tester.tap(find.text('Domain strategy'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('AsIs'));
+    await tester.tap(find.text('IPOnDemand').last);
     await tester.tap(find.text('Apply'));
     await tester.pumpAndSettle();
-    expect(controller.state.asData!.value.settings.domainStrategy, 'AsIs');
+    expect(
+      controller.state.asData!.value.settings.domainStrategy,
+      'IPOnDemand',
+    );
     expect(tester.takeException(), isNull);
   });
 

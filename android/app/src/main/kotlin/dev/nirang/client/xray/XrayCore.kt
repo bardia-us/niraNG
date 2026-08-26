@@ -27,6 +27,7 @@ object XrayCore {
     }
 
     fun start(context: Context, config: String, tunFd: Int) = synchronized(lock) {
+        XrayConfigBuilder.validateGeneratedConfig(config)
         initialize(context)
         check(controller?.isRunning != true) { "Xray core is already running" }
         controller!!.startLoop(config, tunFd)

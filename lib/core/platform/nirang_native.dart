@@ -55,6 +55,8 @@ class NirangNative {
       (await _methods.invokeMethod<List<dynamic>>('getLogs')) ?? const [];
   static Future<void> clearLogs() => _methods.invokeMethod('clearLogs');
   static Future<void> openTelegram() => _methods.invokeMethod('openTelegram');
+  static Future<void> openExternalUrl(String url) =>
+      _methods.invokeMethod('openExternalUrl', {'url': url});
   static Future<void> recordTelegramDecision(String decision) =>
       _methods.invokeMethod('recordTelegramDecision', {'decision': decision});
   static Future<void> recordFlutterError(String message) =>

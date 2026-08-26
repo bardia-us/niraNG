@@ -11,8 +11,8 @@ class NativeSettings(context: Context) {
 
     val connectionMode: String get() = safeString("connectionMode", "vpn").takeIf(ALLOWED_CONNECTION_MODES::contains) ?: "vpn"
     val routingMode: String get() = when (safeString("routingMode", "global")) {
-        "bypassLan" -> "bypassLan"
-        "whitelist", "blacklist", "custom" -> "custom"
+        "bypassIran" -> "bypassIran"
+        "custom" -> "custom"
         else -> "global"
     }
     val customDomains: String get() = safeString("customDomains", "").takeIf(::validDomainRules) ?: ""
@@ -24,7 +24,7 @@ class NativeSettings(context: Context) {
     val vpnInterfaceAddress: String get() = safeString("vpnInterfaceAddress", DEFAULT_VPN_ADDRESS).takeIf(::validVpnAddress) ?: DEFAULT_VPN_ADDRESS
     val localSocksPort: Int get() = safeInt("localSocksPort", 10808).takeIf { it in 1024..65_535 } ?: 10808
     val realPingConcurrency: Int get() = safeInt("realPingConcurrency", 16).takeIf(ALLOWED_PING_CONCURRENCY::contains) ?: 16
-    val domainStrategy: String get() = safeString("domainStrategy", "IPIfNonMatch").takeIf(ALLOWED_DOMAIN_STRATEGIES::contains) ?: "IPIfNonMatch"
+    val domainStrategy: String get() = safeString("domainStrategy", "AsIs").takeIf(ALLOWED_DOMAIN_STRATEGIES::contains) ?: "AsIs"
     val sniffingEnabled: Boolean get() = safeBoolean("sniffingEnabled", true)
     val routeOnly: Boolean get() = safeBoolean("routeOnly", false)
     val enableIpv6: Boolean get() = safeBoolean("enableIpv6", false)
@@ -34,6 +34,8 @@ class NativeSettings(context: Context) {
     val updateIntervalHours: Int get() = safeInt("updateIntervalHours", 12).takeIf(ALLOWED_INTERVALS::contains) ?: 12
     val themeMode: String get() = safeString("themeMode", "system").takeIf(ALLOWED_THEMES::contains) ?: "system"
     val language: String get() = safeString("language", "en").takeIf(ALLOWED_LANGUAGES::contains) ?: "en"
+    val performanceMode: Boolean get() = safeBoolean("performanceMode", false)
+    val performanceModePrompted: Boolean get() = safeBoolean("performanceModePrompted", false)
     val ipCheckUrl: String get() = safeString("ipCheckUrl", DEFAULT_IP_CHECK).takeIf(::validHttpsUrl) ?: DEFAULT_IP_CHECK
 
     fun toMap(): Map<String, Any?> = mapOf(
@@ -58,6 +60,8 @@ class NativeSettings(context: Context) {
         "updateIntervalHours" to updateIntervalHours,
         "themeMode" to themeMode,
         "language" to language,
+        "performanceMode" to performanceMode,
+        "performanceModePrompted" to performanceModePrompted,
         "ipCheckUrl" to ipCheckUrl,
         "telegramUrlConfigured" to BuildConfig.TELEGRAM_URL.isNotBlank(),
         "telegramContact" to BuildConfig.TELEGRAM_CONTACT,
@@ -155,7 +159,7 @@ class NativeSettings(context: Context) {
     fun resetNetworkToSafeDefaults() {
         prefs.edit()
             .putString("routingMode", "global")
-            .putString("domainStrategy", "IPIfNonMatch")
+            .putString("domainStrategy", "AsIs")
             .putBoolean("sniffingEnabled", true)
             .putBoolean("routeOnly", false)
             .apply()
@@ -195,7 +199,7 @@ class NativeSettings(context: Context) {
         private const val DEFAULT_VPN_ADDRESS = "10.10.14.1/30"
         private const val DEFAULT_IP_CHECK = "https://api.ip.sb/geoip"
         private val ALLOWED_CONNECTION_MODES = setOf("vpn", "proxy")
-        private val ALLOWED_ROUTING = setOf("global", "bypassLan", "custom")
+        private val ALLOWED_ROUTING = setOf("global", "bypassIran", "custom")
         private val ALLOWED_DOMAIN_STRATEGIES = setOf("AsIs", "IPIfNonMatch", "IPOnDemand")
         private val ALLOWED_INTERVALS = setOf(6, 12, 24)
         private val ALLOWED_PING_CONCURRENCY = setOf(4, 8, 16, 32)
@@ -208,6 +212,8 @@ class NativeSettings(context: Context) {
             "routeOnly",
             "enableIpv6",
             "preferIpv6",
+            "performanceMode",
+            "performanceModePrompted",
         )
         private val HOSTNAME = Regex("^(?=.{1,253}$)([A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)*[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
         private val IPV4 = Regex("^(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)(?:\\.(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)){3}$")
@@ -249,9 +255,11 @@ class NativeSettings(context: Context) {
 
         private fun validDomainRules(value: String): Boolean {
             if (!validRuleText(value)) return false
-            return splitRules(value).all { rule ->
-                if (rule.length > 512 || rule.any(Char::isWhitespace)) return@all false
+            return splitDomainRules(value).all { rule ->
+                if (rule.length > 512) return@all false
                 when {
+                    rule.startsWith("regexp:", true) -> rule.substringAfter(':').isNotBlank()
+                    rule.any(Char::isWhitespace) -> false
                     rule.startsWith("domain:", true) || rule.startsWith("full:", true) ->
                         HOSTNAME.matches(rule.substringAfter(':'))
                     else -> HOSTNAME.matches(rule)
@@ -262,10 +270,7 @@ class NativeSettings(context: Context) {
         private fun validIpRules(value: String): Boolean {
             if (!validRuleText(value)) return false
             return splitRules(value).all { rule ->
-                when {
-                    rule.equals("geoip:private", true) -> true
-                    else -> validIpOrCidr(rule)
-                }
+                validIpOrCidr(rule)
             }
         }
 
@@ -286,5 +291,16 @@ class NativeSettings(context: Context) {
             .split(',', '\n')
             .map(String::trim)
             .filter(String::isNotEmpty)
+
+        private fun splitDomainRules(value: String): List<String> = value
+            .lineSequence()
+            .flatMap { line ->
+                val trimmed = line.trim()
+                if (trimmed.startsWith("regexp:", true)) sequenceOf(trimmed)
+                else trimmed.split(',').asSequence()
+            }
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+            .toList()
     }
 }

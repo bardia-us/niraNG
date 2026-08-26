@@ -4,13 +4,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/formatters.dart';
 import '../../core/localization/app_strings.dart';
 import '../../core/platform/native_models.dart';
+import '../../core/update_checker.dart';
 import '../vpn/app_controller.dart';
 
-class SettingsScreen extends ConsumerWidget {
+class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends ConsumerState<SettingsScreen> {
+  bool _checkingUpdates = false;
+
+  @override
+  Widget build(BuildContext context) {
     final view = ref.watch(
       appControllerProvider.select((value) {
         final app = value.asData?.value;
@@ -20,7 +28,7 @@ class SettingsScreen extends ConsumerWidget {
           isRefreshing: app?.isRefreshing ?? false,
           deletedCount: app?.deletedServerCount ?? 0,
           coreVersion: app?.coreVersion ?? 'Bundled',
-          appVersion: app?.appVersion ?? '1.0.3',
+          appVersion: app?.appVersion ?? '1.0.4',
         );
       }),
     );
@@ -330,6 +338,35 @@ class SettingsScreen extends ConsumerWidget {
                 controller.updateSettings({'language': value}),
           ),
         ),
+        SwitchListTile(
+          secondary: const Icon(Icons.bolt_rounded),
+          title: Text(context.s('performanceMode')),
+          subtitle: Text(context.s('performanceModeSummary')),
+          value: settings.performanceMode,
+          onChanged: (value) => _perform(
+            context,
+            () => controller.updateSettings({
+              'performanceMode': value,
+              'performanceModePrompted': true,
+            }),
+          ),
+        ),
+        const Divider(indent: 56),
+        _Header(context.s('updates')),
+        ListTile(
+          leading: const Icon(Icons.system_update_alt_rounded),
+          title: Text(context.s('checkForUpdates')),
+          subtitle: Text('${context.s('currentVersion')}: ${app.appVersion}'),
+          trailing: _checkingUpdates
+              ? const SizedBox.square(
+                  dimension: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.chevron_right_rounded),
+          onTap: _checkingUpdates
+              ? null
+              : () => _checkForUpdates(context, controller, app.appVersion),
+        ),
         const Divider(indent: 56),
         _Header(context.s('settings')),
         ListTile(
@@ -388,16 +425,66 @@ class SettingsScreen extends ConsumerWidget {
       current: settings.routingMode,
       values: {
         'global': context.s('global'),
-        'bypassLan': context.s('bypassLan'),
+        'bypassIran': context.s('bypassIran'),
         'custom': context.s('custom'),
       },
       descriptions: {
         'global': context.s('globalRoutingHint'),
-        'bypassLan': context.s('bypassLanHint'),
+        'bypassIran': context.s('bypassIranHint'),
         'custom': context.s('customRuleHint'),
       },
       onSelected: (value) => controller.updateSettings({'routingMode': value}),
     );
+  }
+
+  Future<void> _checkForUpdates(
+    BuildContext context,
+    AppController controller,
+    String currentVersion,
+  ) async {
+    setState(() => _checkingUpdates = true);
+    try {
+      final release = await const GitHubUpdateChecker().check(currentVersion);
+      if (!context.mounted) return;
+      if (!release.updateAvailable) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(context.s('upToDate'))));
+        return;
+      }
+      final viewRelease = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          icon: const Icon(Icons.new_releases_outlined),
+          title: Text(context.s('newVersionAvailable')),
+          content: Text('${release.latestVersion}'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: Text(context.s('later')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(context.s('viewRelease')),
+            ),
+          ],
+        ),
+      );
+      if (viewRelease == true && context.mounted) {
+        await _perform(
+          context,
+          () => controller.openExternalUrl(release.releaseUrl),
+        );
+      }
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(context.s('updateCheckFailed'))));
+      }
+    } finally {
+      if (mounted) setState(() => _checkingUpdates = false);
+    }
   }
 
   Future<void> _editCustomRules(
@@ -695,9 +782,18 @@ class _CustomRulesDialogState extends State<_CustomRulesDialog> {
     super.dispose();
   }
 
-  String? _validate(String? value) {
+  String? _validateDomains(String? value) {
     final text = value ?? '';
-    return text.length <= 16384 && !text.contains('\u0000')
+    if (!_validRuleText(text)) return context.s('invalidRules');
+    return _splitDomainRules(text).every(_isValidDomainRule)
+        ? null
+        : context.s('invalidRules');
+  }
+
+  String? _validateIps(String? value) {
+    final text = value ?? '';
+    if (!_validRuleText(text)) return context.s('invalidRules');
+    return _splitRules(text).every(_isValidIpRule)
         ? null
         : context.s('invalidRules');
   }
@@ -714,7 +810,7 @@ class _CustomRulesDialogState extends State<_CustomRulesDialog> {
             TextFormField(
               controller: _domains,
               maxLines: 4,
-              validator: _validate,
+              validator: _validateDomains,
               decoration: InputDecoration(
                 labelText: context.s('customDomains'),
                 hintText: 'domain:example.com, full:api.example.com',
@@ -724,10 +820,10 @@ class _CustomRulesDialogState extends State<_CustomRulesDialog> {
             TextFormField(
               controller: _ips,
               maxLines: 4,
-              validator: _validate,
+              validator: _validateIps,
               decoration: InputDecoration(
                 labelText: context.s('customIps'),
-                hintText: 'geoip:private, 10.0.0.0/8',
+                hintText: '1.2.3.4, 10.0.0.0/8, 2001:db8::/32',
               ),
             ),
           ],
@@ -770,10 +866,62 @@ class _Header extends StatelessWidget {
 }
 
 String _routingLabel(BuildContext context, String value) => switch (value) {
-  'bypassLan' => context.s('bypassLan'),
+  'bypassIran' => context.s('bypassIran'),
   'custom' => context.s('custom'),
   _ => context.s('global'),
 };
+
+List<String> _splitRules(String value) => value
+    .split(RegExp(r'[,\n]'))
+    .map((entry) => entry.trim())
+    .where((entry) => entry.isNotEmpty)
+    .toList(growable: false);
+
+List<String> _splitDomainRules(String value) => value
+    .split('\n')
+    .expand((line) {
+      final trimmed = line.trim();
+      return trimmed.toLowerCase().startsWith('regexp:')
+          ? [trimmed]
+          : trimmed.split(',');
+    })
+    .map((entry) => entry.trim())
+    .where((entry) => entry.isNotEmpty)
+    .toList(growable: false);
+
+bool _validRuleText(String value) =>
+    value.length <= 16384 &&
+    !value.contains('\u0000') &&
+    !value.runes.any(
+      (code) => code < 32 && code != 9 && code != 10 && code != 13,
+    );
+
+final _hostnameRule = RegExp(
+  r'^(?=.{1,253}$)([A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)*[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$',
+);
+
+bool _isValidDomainRule(String rule) {
+  if (rule.length > 512) return false;
+  final separator = rule.indexOf(':');
+  if (separator < 0) {
+    return !rule.contains(RegExp(r'\s')) && _hostnameRule.hasMatch(rule);
+  }
+  final prefix = rule.substring(0, separator).toLowerCase();
+  final body = rule.substring(separator + 1);
+  if (prefix == 'regexp') return body.isNotEmpty;
+  return !body.contains(RegExp(r'\s')) &&
+      (prefix == 'domain' || prefix == 'full') &&
+      _hostnameRule.hasMatch(body);
+}
+
+bool _isValidIpRule(String rule) {
+  final parts = rule.split('/');
+  if (parts.length > 2 || !_isIpAddress(parts.first)) return false;
+  if (parts.length == 1) return true;
+  final prefix = int.tryParse(parts.last);
+  final maxPrefix = parts.first.contains(':') ? 128 : 32;
+  return prefix != null && prefix >= 0 && prefix <= maxPrefix;
+}
 
 bool _isIpAddress(String value) {
   if (value.length > 253 || value.contains(RegExp(r'\s'))) {

@@ -9,6 +9,14 @@ final appControllerProvider = AsyncNotifierProvider<AppController, AppSnapshot>(
   AppController.new,
 );
 
+final performanceModeProvider = Provider<bool>(
+  (ref) => ref.watch(
+    appControllerProvider.select(
+      (value) => value.asData?.value.settings.performanceMode ?? false,
+    ),
+  ),
+);
+
 class AppController extends AsyncNotifier<AppSnapshot> {
   StreamSubscription<Map<dynamic, dynamic>>? _events;
   Future<void>? _logsRefresh;
@@ -167,6 +175,8 @@ class AppController extends AsyncNotifier<AppSnapshot> {
   }
 
   Future<void> openTelegram() => NirangNative.openTelegram();
+  Future<void> openExternalUrl(Uri url) =>
+      NirangNative.openExternalUrl(url.toString());
 
   Future<void> recordTelegramDecision(String decision) async {
     await NirangNative.recordTelegramDecision(decision);
@@ -234,7 +244,7 @@ class AppController extends AsyncNotifier<AppSnapshot> {
     logs: _logs(map['logs'] as List<dynamic>? ?? const []),
     lastUpdated: _number(map['lastUpdated']),
     coreVersion: '${map['coreVersion'] ?? 'Unavailable'}',
-    appVersion: '${map['appVersion'] ?? '1.0.3'}',
+    appVersion: '${map['appVersion'] ?? '1.0.4'}',
     subscriptionConfigured: map['subscriptionConfigured'] == true,
     telegramEligible: map['telegramEligible'] == true,
     subscriptionError: map['subscriptionError']?.toString(),

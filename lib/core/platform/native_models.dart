@@ -164,7 +164,7 @@ class NativeSettings {
     this.vpnInterfaceAddress = '10.10.14.1/30',
     this.localSocksPort = 10808,
     this.realPingConcurrency = 16,
-    this.domainStrategy = 'IPIfNonMatch',
+    this.domainStrategy = 'AsIs',
     this.sniffingEnabled = true,
     this.routeOnly = false,
     this.enableIpv6 = false,
@@ -174,6 +174,8 @@ class NativeSettings {
     this.updateIntervalHours = 12,
     this.themeMode = 'system',
     this.language = 'en',
+    this.performanceMode = false,
+    this.performanceModePrompted = false,
     this.ipCheckUrl = 'https://api.ip.sb/geoip',
     this.telegramUrlConfigured = true,
     this.telegramContact = '',
@@ -191,7 +193,7 @@ class NativeSettings {
     vpnInterfaceAddress: '${map['vpnInterfaceAddress'] ?? '10.10.14.1/30'}',
     localSocksPort: _int(map['localSocksPort']) ?? 10808,
     realPingConcurrency: _int(map['realPingConcurrency']) ?? 16,
-    domainStrategy: '${map['domainStrategy'] ?? 'IPIfNonMatch'}',
+    domainStrategy: '${map['domainStrategy'] ?? 'AsIs'}',
     sniffingEnabled: map['sniffingEnabled'] != false,
     routeOnly: map['routeOnly'] == true,
     enableIpv6: map['enableIpv6'] == true,
@@ -201,6 +203,8 @@ class NativeSettings {
     updateIntervalHours: _int(map['updateIntervalHours']) ?? 12,
     themeMode: '${map['themeMode'] ?? 'system'}',
     language: '${map['language'] ?? 'en'}',
+    performanceMode: map['performanceMode'] == true,
+    performanceModePrompted: map['performanceModePrompted'] == true,
     ipCheckUrl: '${map['ipCheckUrl'] ?? 'https://api.ip.sb/geoip'}',
     telegramUrlConfigured: map['telegramUrlConfigured'] != false,
     telegramContact: '${map['telegramContact'] ?? ''}',
@@ -227,6 +231,8 @@ class NativeSettings {
   final int updateIntervalHours;
   final String themeMode;
   final String language;
+  final bool performanceMode;
+  final bool performanceModePrompted;
   final String ipCheckUrl;
   final bool telegramUrlConfigured;
   final String telegramContact;
@@ -264,6 +270,11 @@ class NativeSettings {
       updateIntervalHours: intValue('updateIntervalHours', updateIntervalHours),
       themeMode: stringValue('themeMode', themeMode),
       language: stringValue('language', language),
+      performanceMode: boolValue('performanceMode', performanceMode),
+      performanceModePrompted: boolValue(
+        'performanceModePrompted',
+        performanceModePrompted,
+      ),
       ipCheckUrl: stringValue('ipCheckUrl', ipCheckUrl),
       telegramUrlConfigured: telegramUrlConfigured,
       telegramContact: telegramContact,
@@ -316,7 +327,7 @@ class AppSnapshot {
     this.logs = const [],
     this.lastUpdated = 0,
     this.coreVersion = 'Unavailable',
-    this.appVersion = '1.0.3',
+    this.appVersion = '1.0.4',
     this.subscriptionConfigured = false,
     this.telegramEligible = false,
     this.subscriptionError,

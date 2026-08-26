@@ -40,10 +40,12 @@ extension NirangThemeContext on BuildContext {
 }
 
 abstract final class AppTheme {
-  static final ThemeData light = _theme(Brightness.light);
-  static final ThemeData dark = _theme(Brightness.dark);
+  static final ThemeData light = _theme(Brightness.light, false);
+  static final ThemeData dark = _theme(Brightness.dark, false);
+  static final ThemeData lightPerformance = _theme(Brightness.light, true);
+  static final ThemeData darkPerformance = _theme(Brightness.dark, true);
 
-  static ThemeData _theme(Brightness brightness) {
+  static ThemeData _theme(Brightness brightness, bool reducedEffects) {
     final isDark = brightness == Brightness.dark;
     final scheme = ColorScheme.fromSeed(
       seedColor: AppPalette.primary,
@@ -64,11 +66,13 @@ abstract final class AppTheme {
         ),
       ],
       visualDensity: VisualDensity.compact,
-      pageTransitionsTheme: const PageTransitionsTheme(
+      pageTransitionsTheme: PageTransitionsTheme(
         builders: {
-          TargetPlatform.android: ZoomPageTransitionsBuilder(
-            allowEnterRouteSnapshotting: true,
-          ),
+          TargetPlatform.android: reducedEffects
+              ? const FadeUpwardsPageTransitionsBuilder()
+              : const ZoomPageTransitionsBuilder(
+                  allowEnterRouteSnapshotting: true,
+                ),
         },
       ),
       dividerTheme: DividerThemeData(
@@ -134,7 +138,7 @@ abstract final class AppTheme {
         modalBackgroundColor: scheme.surfaceContainer.withValues(
           alpha: isDark ? .94 : .96,
         ),
-        modalBarrierColor: Colors.black.withValues(alpha: .28),
+        modalBarrierColor: scheme.scrim.withValues(alpha: .28),
         showDragHandle: true,
         clipBehavior: Clip.antiAlias,
         shape: const RoundedRectangleBorder(
