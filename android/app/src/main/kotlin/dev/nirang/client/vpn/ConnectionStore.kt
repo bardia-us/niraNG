@@ -10,6 +10,7 @@ object ConnectionStore {
     private var serverName: String? = null
     private var publicIp: String? = null
     private var publicCountry: String? = null
+    private var publicCity: String? = null
     private var error: String? = null
 
     fun transition(next: ConnectionState, id: String? = serverId, name: String? = serverName, message: String? = null) {
@@ -21,10 +22,12 @@ object ConnectionStore {
             if (next in setOf(ConnectionState.PREPARING, ConnectionState.CONNECTING, ConnectionState.SWITCHING)) {
                 publicIp = null
                 publicCountry = null
+                publicCity = null
             }
             if (next == ConnectionState.DISCONNECTED) {
                 publicIp = null
                 publicCountry = null
+                publicCity = null
                 serverId = null
                 serverName = null
             }
@@ -32,10 +35,11 @@ object ConnectionStore {
         NativeEvents.emit("connectionState", snapshot())
     }
 
-    fun setPublicIp(ip: String?, country: String?) {
+    fun setPublicIp(ip: String?, country: String?, city: String?) {
         synchronized(lock) {
             publicIp = ip
             publicCountry = country
+            publicCity = city
         }
         NativeEvents.emit("connectionState", snapshot())
     }
@@ -49,6 +53,7 @@ object ConnectionStore {
             "serverName" to serverName,
             "publicIp" to publicIp,
             "publicCountry" to publicCountry,
+            "publicCity" to publicCity,
             "error" to error,
         )
     }

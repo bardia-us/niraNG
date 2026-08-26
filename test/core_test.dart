@@ -56,6 +56,19 @@ void main() {
     );
   });
 
+  test('connection metadata includes the current IP city', () {
+    final connection = ConnectionInfo.fromMap({
+      'state': 'connected',
+      'publicIp': '213.165.41.160',
+      'publicCountry': 'NL',
+      'publicCity': 'Amsterdam',
+    });
+
+    expect(connection.publicIp, '213.165.41.160');
+    expect(connection.publicCountry, 'NL');
+    expect(connection.publicCity, 'Amsterdam');
+  });
+
   test('settings updates are granular and preserve unrelated values', () {
     const settings = NativeSettings(
       themeMode: 'system',
@@ -84,7 +97,7 @@ void main() {
     expect(updated.enableFakeDns, isTrue);
   });
 
-  test('fresh Dart settings use the v1.0.5 network defaults', () {
+  test('fresh Dart settings use the current network defaults', () {
     const settings = NativeSettings();
 
     expect(settings.domainStrategy, 'AsIs');

@@ -66,6 +66,13 @@ class _ConnectionCard extends StatelessWidget {
     final selected = app.selectedServer;
     final connection = app.connection;
     final statusColor = _statusColor(context, connection.state);
+    final countryCode = connection.publicCountry?.trim().toUpperCase();
+    final publicIp = connection.publicIp;
+    final publicIpValue = publicIp == null
+        ? (connection.isConnected ? context.s('checking') : '—')
+        : countryCode != null && countryCode.length == 2
+        ? '($countryCode) $publicIp'
+        : publicIp;
     return GlassSurface(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -184,9 +191,9 @@ class _ConnectionCard extends StatelessWidget {
                   child: _CompactMetric(
                     icon: Icons.public_rounded,
                     label: context.s('publicIp'),
-                    value:
-                        connection.publicIp ??
-                        (connection.isConnected ? context.s('checking') : '—'),
+                    value: publicIpValue,
+                    subtitle: connection.publicCity,
+                    fitValue: true,
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -257,12 +264,16 @@ class _CompactMetric extends StatelessWidget {
     required this.label,
     required this.value,
     this.onTap,
+    this.subtitle,
+    this.fitValue = false,
   });
 
   final IconData icon;
   final String label;
   final String value;
   final VoidCallback? onTap;
+  final String? subtitle;
+  final bool fitValue;
 
   @override
   Widget build(BuildContext context) => InkWell(
@@ -291,12 +302,32 @@ class _CompactMetric extends StatelessWidget {
                   style: Theme.of(context).textTheme.labelSmall,
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelLarge,
-                ),
+                if (fitValue)
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: AlignmentDirectional.centerStart,
+                    child: Text(
+                      value,
+                      style: Theme.of(context).textTheme.labelLarge,
+                    ),
+                  )
+                else
+                  Text(
+                    value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
+                if (subtitle?.trim().isNotEmpty == true) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle!.trim(),
+                    maxLines: 1,
+                    overflow: TextOverflow.fade,
+                    softWrap: false,
+                    style: Theme.of(context).textTheme.labelSmall,
+                  ),
+                ],
               ],
             ),
           ),

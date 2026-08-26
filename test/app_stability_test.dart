@@ -38,12 +38,14 @@ class _FakeAppController extends AppController {
     this.logCount = 0,
     this.themeMode = 'system',
     this.performanceMode = false,
+    this.connection = const ConnectionInfo(),
   });
 
   final String language;
   final int logCount;
   final String themeMode;
   final bool performanceMode;
+  final ConnectionInfo connection;
   int pingRequests = 0;
   int settingsUpdates = 0;
   int logRefreshes = 0;
@@ -51,6 +53,7 @@ class _FakeAppController extends AppController {
   @override
   Future<AppSnapshot> build() async => AppSnapshot(
     servers: const [_serverA, _serverB],
+    connection: connection,
     subscriptionConfigured: true,
     settings: NativeSettings(
       language: language,
@@ -305,6 +308,40 @@ void main() {
     await controller.updateSettings({'performanceMode': true});
     await tester.pumpAndSettle();
     expect(find.byType(BackdropFilter), findsNothing);
+    await tester.tap(find.byIcon(Icons.more_vert_rounded).first);
+    await tester.pumpAndSettle();
+    expect(find.text('Server information'), findsOneWidget);
+    expect(find.text('Delete'), findsOneWidget);
+    expect(find.byType(BackdropFilter), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('public IP and existing geo metadata render without ellipsis', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _FakeAppController(
+              connection: const ConnectionInfo(
+                state: 'connected',
+                publicIp: '213.165.41.160',
+                publicCountry: 'NL',
+                publicCity: 'Amsterdam',
+              ),
+            ),
+          ),
+        ],
+        child: const NirangApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('(NL) 213.165.41.160'), findsOneWidget);
+    expect(find.text('Amsterdam'), findsOneWidget);
+    final ipText = tester.widget<Text>(find.text('(NL) 213.165.41.160'));
+    expect(ipText.overflow, isNull);
     expect(tester.takeException(), isNull);
   });
 

@@ -339,7 +339,9 @@ class NirangVpnService : VpnService() {
 
     private fun checkPublicIp(providerUrl: String) {
         runCatching { ProxyIpChecker.check(providerUrl) }
-            .onSuccess { (ip, country) -> ConnectionStore.setPublicIp(ip, country) }
+            .onSuccess { result ->
+                ConnectionStore.setPublicIp(result.ip, result.countryCode, result.city)
+            }
             .onFailure { SafeLog.warning(this, "Public IP check failed") }
     }
 

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/localization/app_strings.dart';
 import '../../core/platform/native_models.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/glass_surface.dart';
 import '../vpn/app_controller.dart';
 import 'server_information_screen.dart';
 
@@ -150,40 +151,60 @@ class ServersScreen extends ConsumerWidget {
   ) async {
     final action = await showModalBottomSheet<String>(
       context: context,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.check_circle_outline_rounded),
-                title: Text(context.s('select')),
-                onTap: () => Navigator.pop(context, 'select'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.network_ping_rounded),
-                title: Text(context.s('testLatency')),
-                onTap: () => Navigator.pop(context, 'ping'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.info_outline_rounded),
-                title: Text(context.s('serverInformation')),
-                onTap: () => Navigator.pop(context, 'info'),
-              ),
-              ListTile(
-                leading: Icon(
-                  Icons.delete_outline_rounded,
-                  color: Theme.of(context).colorScheme.error,
+      showDragHandle: false,
+      backgroundColor: Colors.transparent,
+      barrierColor: Theme.of(context).colorScheme.scrim.withValues(alpha: .32),
+      builder: (sheetContext) => SafeArea(
+        minimum: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+        child: GlassSurface(
+          radius: 22,
+          blur: 8,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 10),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 34,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 7),
+                  decoration: BoxDecoration(
+                    color: Theme.of(
+                      sheetContext,
+                    ).colorScheme.outline.withValues(alpha: .48),
+                    borderRadius: BorderRadius.circular(99),
+                  ),
                 ),
-                title: Text(
-                  context.s('delete'),
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ListTile(
+                  leading: const Icon(Icons.check_circle_outline_rounded),
+                  title: Text(sheetContext.s('select')),
+                  onTap: () => Navigator.pop(sheetContext, 'select'),
                 ),
-                onTap: () => Navigator.pop(context, 'delete'),
-              ),
-            ],
+                ListTile(
+                  leading: const Icon(Icons.network_ping_rounded),
+                  title: Text(sheetContext.s('testLatency')),
+                  onTap: () => Navigator.pop(sheetContext, 'ping'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.info_outline_rounded),
+                  title: Text(sheetContext.s('serverInformation')),
+                  onTap: () => Navigator.pop(sheetContext, 'info'),
+                ),
+                ListTile(
+                  leading: Icon(
+                    Icons.delete_outline_rounded,
+                    color: Theme.of(sheetContext).colorScheme.error,
+                  ),
+                  title: Text(
+                    sheetContext.s('delete'),
+                    style: TextStyle(
+                      color: Theme.of(sheetContext).colorScheme.error,
+                    ),
+                  ),
+                  onTap: () => Navigator.pop(sheetContext, 'delete'),
+                ),
+              ],
+            ),
           ),
         ),
       ),

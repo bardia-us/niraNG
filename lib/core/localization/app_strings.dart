@@ -82,7 +82,7 @@ class AppStrings {
       'delete': 'Delete',
       'deleteServer': 'Delete server?',
       'deleteServerBody':
-          'This server will be hidden locally and will stay hidden after subscription updates.',
+          'This server will be hidden locally until the next successful subscription update.',
       'restoreDeletedServers': 'Restore deleted servers',
       'noDeletedServers': 'No locally deleted servers',
       'deletedServersCount': 'locally deleted server(s)',
@@ -254,7 +254,7 @@ class AppStrings {
       'delete': 'حذف',
       'deleteServer': 'سرور حذف شود؟',
       'deleteServerBody':
-          'این سرور به‌صورت محلی پنهان می‌شود و پس از به‌روزرسانی اشتراک نیز پنهان می‌ماند.',
+          'این سرور تا به‌روزرسانی موفق بعدی اشتراک، به‌صورت محلی پنهان می‌شود.',
       'restoreDeletedServers': 'بازیابی سرورهای حذف‌شده',
       'noDeletedServers': 'سرور حذف‌شده‌ای وجود ندارد',
       'deletedServersCount': 'سرور حذف‌شده محلی',

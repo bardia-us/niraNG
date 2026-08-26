@@ -104,28 +104,25 @@ class SubscriptionRepository(private val context: Context) {
             connectTimeout = 12_000
             readTimeout = 20_000
             instanceFollowRedirects = true
-            setRequestProperty("User-Agent", "niraNG/1.0 Android")
+            setRequestProperty("User-Agent", "niraNG/1.0.6 Android")
             setRequestProperty("Accept", "text/plain, application/json")
-            safeStringPreference("etag")?.let { setRequestProperty("If-None-Match", it) }
-            safeStringPreference("lastModified")?.let { setRequestProperty("If-Modified-Since", it) }
+            // A user-triggered refresh is an authoritative full sync. Sending
+            // cache validators here made a valid 304 look like a failed update
+            // and left locally hidden servers invisible indefinitely.
+            useCaches = false
+            setRequestProperty("Cache-Control", "no-cache")
         }
 
         try {
             val status = connection.responseCode
-            if (status == HttpURLConnection.HTTP_NOT_MODIFIED && snapshot.servers.isNotEmpty()) return snapshot
             if (status !in 200..299) throw IOException("Subscription request failed with HTTP $status")
 
             val bytes = connection.inputStream.use { it.readBytes() }
             if (bytes.size > MAX_SUBSCRIPTION_BYTES) throw IOException("Subscription response is too large")
-            val servers = SubscriptionParser.parse(bytes.toString(Charsets.UTF_8)).also { refreshed ->
-                val previous = snapshot.servers.associateBy(ServerRecord::id)
-                refreshed.forEach { server ->
-                    previous[server.id]?.let { cached ->
-                        server.pingMs = cached.pingMs
-                        server.pingStatus = cached.pingStatus
-                    }
-                }
-            }
+            val servers = SubscriptionSyncPolicy.carryForwardLatency(
+                previousServers = snapshot.servers,
+                refreshedServers = SubscriptionParser.parse(bytes.toString(Charsets.UTF_8)),
+            )
             if (servers.isEmpty()) throw IOException("Subscription contains no supported servers")
 
             val usageHeader = connection.headerFields.entries
@@ -138,7 +135,10 @@ class SubscriptionRepository(private val context: Context) {
             )
             snapshot = updated
             persist(updated)
-            ensureVisibleSelection(hiddenIds())
+            // Delete is intentionally local and temporary. A successful full
+            // sync restores every server still present in the subscription.
+            prefs.edit().remove(HIDDEN_SERVER_IDS).apply()
+            ensureVisibleSelection(emptySet())
             prefs.edit()
                 .putString("etag", connection.getHeaderField("ETag"))
                 .putString("lastModified", connection.getHeaderField("Last-Modified"))
