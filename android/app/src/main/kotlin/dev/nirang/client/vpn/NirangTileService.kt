@@ -3,6 +3,8 @@ package dev.nirang.client.vpn
 import android.content.Intent
 import android.net.VpnService
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import dev.nirang.client.MainActivity
@@ -14,27 +16,34 @@ import dev.nirang.client.subscription.SubscriptionRepository
 
 /** User-added Quick Settings control backed by the same VPN service as Flutter. */
 class NirangTileService : TileService() {
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val connectionListener: (ConnectionSnapshot) -> Unit = { snapshot ->
+        mainHandler.post { render(snapshot) }
+    }
+
     override fun onStartListening() {
         super.onStartListening()
-        render(ConnectionStore.state())
+        ConnectionStore.addListener(connectionListener)
+    }
+
+    override fun onStopListening() {
+        ConnectionStore.removeListener(connectionListener)
+        super.onStopListening()
+    }
+
+    override fun onDestroy() {
+        ConnectionStore.removeListener(connectionListener)
+        super.onDestroy()
     }
 
     override fun onClick() {
         super.onClick()
-        when (ConnectionStore.state()) {
-            ConnectionState.CONNECTED,
-            ConnectionState.PREPARING,
-            ConnectionState.CONNECTING,
-            ConnectionState.RESTARTING,
-            ConnectionState.SWITCHING,
-            ConnectionState.RECONNECTING,
-            ConnectionState.STOPPING -> {
-                render(ConnectionState.STOPPING)
+        when (NotificationControlPolicy.action(ConnectionStore.state())) {
+            NotificationControlAction.DISCONNECT -> {
                 NirangVpnService.stop(applicationContext)
             }
-
-            ConnectionState.DISCONNECTED,
-            ConnectionState.ERROR -> connectOrOpenApp()
+            NotificationControlAction.CONNECT -> connectOrOpenApp()
+            NotificationControlAction.NONE -> Unit
         }
     }
 
@@ -50,7 +59,6 @@ class NirangTileService : TileService() {
             openApp()
             return
         }
-        render(ConnectionState.CONNECTING)
         runCatching { NirangVpnService.start(applicationContext, server.id) }
             .onFailure {
                 ConnectionStore.transition(
@@ -59,7 +67,6 @@ class NirangTileService : TileService() {
                     server.name,
                     getString(R.string.operation_failed_native),
                 )
-                render(ConnectionState.ERROR)
             }
     }
 
@@ -71,8 +78,9 @@ class NirangTileService : TileService() {
         startActivityAndCollapse(intent)
     }
 
-    private fun render(state: ConnectionState) {
+    private fun render(snapshot: ConnectionSnapshot) {
         val tile = qsTile ?: return
+        val state = snapshot.state
         val connected = state == ConnectionState.CONNECTED
         val busy = state in setOf(
             ConnectionState.PREPARING,

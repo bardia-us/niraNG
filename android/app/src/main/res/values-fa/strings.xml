@@ -4,6 +4,10 @@
     <string name="vpn_channel_name">اتصال VPN</string>
     <string name="vpn_connected">متصل</string>
     <string name="vpn_connecting">در حال اتصال…</string>
+    <string name="vpn_reconnecting">در حال اتصال مجدد…</string>
+    <string name="vpn_stopping">در حال قطع…</string>
+    <string name="vpn_disconnected">قطع</string>
+    <string name="vpn_error">خطای اتصال</string>
     <string name="vpn_disconnect">قطع اتصال</string>
     <string name="quick_tile_label">VPN نیراNG</string>
     <string name="quick_tile_connected">متصل</string>

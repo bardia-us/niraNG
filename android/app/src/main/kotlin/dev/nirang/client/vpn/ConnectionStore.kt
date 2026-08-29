@@ -2,9 +2,33 @@ package dev.nirang.client.vpn
 
 import dev.nirang.client.bridge.NativeEvents
 import dev.nirang.client.model.ConnectionState
+import java.util.concurrent.CopyOnWriteArraySet
+
+internal data class ConnectionSnapshot(
+    val state: ConnectionState,
+    val serverId: String?,
+    val serverName: String?,
+    val publicIp: String?,
+    val publicCountry: String?,
+    val publicCity: String?,
+    val publicIpChecked: Boolean,
+    val error: String?,
+) {
+    fun toMap(): Map<String, Any?> = mapOf(
+        "state" to state.wireValue,
+        "serverId" to serverId,
+        "serverName" to serverName,
+        "publicIp" to publicIp,
+        "publicCountry" to publicCountry,
+        "publicCity" to publicCity,
+        "publicIpChecked" to publicIpChecked,
+        "error" to error,
+    )
+}
 
 object ConnectionStore {
     private val lock = Any()
+    private val listeners = CopyOnWriteArraySet<(ConnectionSnapshot) -> Unit>()
     private var state = ConnectionState.DISCONNECTED
     private var serverId: String? = null
     private var serverName: String? = null
@@ -43,7 +67,7 @@ object ConnectionStore {
                 serverName = null
             }
         }
-        NativeEvents.emit("connectionState", snapshot())
+        publish()
     }
 
     fun beginPublicIpRefresh(expectedServerId: String): Boolean {
@@ -55,7 +79,7 @@ object ConnectionStore {
             publicIpChecked = false
             true
         }
-        if (accepted) NativeEvents.emit("connectionState", snapshot())
+        if (accepted) publish()
         return accepted
     }
 
@@ -68,22 +92,39 @@ object ConnectionStore {
             publicIpChecked = true
             true
         }
-        if (accepted) NativeEvents.emit("connectionState", snapshot())
+        if (accepted) publish()
         return accepted
     }
 
     fun state(): ConnectionState = synchronized(lock) { state }
 
-    fun snapshot(): Map<String, Any?> = synchronized(lock) {
-        mapOf(
-            "state" to state.wireValue,
-            "serverId" to serverId,
-            "serverName" to serverName,
-            "publicIp" to publicIp,
-            "publicCountry" to publicCountry,
-            "publicCity" to publicCity,
-            "publicIpChecked" to publicIpChecked,
-            "error" to error,
+    internal fun current(): ConnectionSnapshot = synchronized(lock) {
+        ConnectionSnapshot(
+            state,
+            serverId,
+            serverName,
+            publicIp,
+            publicCountry,
+            publicCity,
+            publicIpChecked,
+            error,
         )
     }
+
+    internal fun addListener(listener: (ConnectionSnapshot) -> Unit) {
+        listeners += listener
+        runCatching { listener(current()) }
+    }
+
+    internal fun removeListener(listener: (ConnectionSnapshot) -> Unit) {
+        listeners -= listener
+    }
+
+    private fun publish() {
+        val value = current()
+        NativeEvents.emit("connectionState", value.toMap())
+        listeners.forEach { listener -> runCatching { listener(value) } }
+    }
+
+    fun snapshot(): Map<String, Any?> = current().toMap()
 }

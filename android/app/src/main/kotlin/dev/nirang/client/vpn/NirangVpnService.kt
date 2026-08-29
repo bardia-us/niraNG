@@ -35,7 +35,11 @@ class NirangVpnService : VpnService() {
         Thread(runnable, "nirang-core-stop").apply { isDaemon = true }
     }
     private val startGuard = AtomicBoolean(false)
+    private val foregroundActive = AtomicBoolean(false)
     private val operationGate = ConnectionOperationGate()
+    private val connectionListener: (ConnectionSnapshot) -> Unit = { snapshot ->
+        if (foregroundActive.get()) updateNotification(snapshot)
+    }
     private var vpnInterface: ParcelFileDescriptor? = null
     private var currentConfig: String? = null
     private var currentServerId: String? = null
@@ -50,6 +54,7 @@ class NirangVpnService : VpnService() {
         super.onCreate()
         SafeLog.initialize(this)
         ensureNotificationChannel()
+        ConnectionStore.addListener(connectionListener)
         if (
             !XrayCore.isRunning() &&
             ConnectionStore.state() !in setOf(ConnectionState.DISCONNECTED, ConnectionState.RESTARTING, ConnectionState.ERROR)
@@ -70,9 +75,26 @@ class NirangVpnService : VpnService() {
                 submit { stopForRestartInternal(generation, serverId, serverName) }
             }
             ACTION_START -> {
+                if (
+                    ConnectionStore.state() in setOf(
+                        ConnectionState.CONNECTED,
+                        ConnectionState.PREPARING,
+                        ConnectionState.CONNECTING,
+                        ConnectionState.SWITCHING,
+                        ConnectionState.RECONNECTING,
+                        ConnectionState.STOPPING,
+                    )
+                ) {
+                    return@runCatching
+                }
                 val operation = operationGate.begin()
-                startForeground(NOTIFICATION_ID, buildNotification(getString(R.string.vpn_connecting), null))
                 val serverId = intent.getStringExtra(EXTRA_SERVER_ID)
+                val selected = SubscriptionRepository(this).run {
+                    serverId?.let(::server) ?: selectedServer()
+                }
+                ConnectionStore.transition(ConnectionState.PREPARING, selected?.id, selected?.name)
+                foregroundActive.set(true)
+                startForeground(NOTIFICATION_ID, buildNotification(ConnectionStore.current()))
                 val allowFallback = intent.getBooleanExtra(EXTRA_ALLOW_FALLBACK, true)
                 submit { startInternal(serverId, allowFallback, operation) }
             }
@@ -91,6 +113,8 @@ class NirangVpnService : VpnService() {
 
     override fun onDestroy() {
         operationGate.cancel()
+        foregroundActive.set(false)
+        ConnectionStore.removeListener(connectionListener)
         closeTunnelAndCallbacks()
         stopCoreAsync()
         if (ConnectionStore.state() !in setOf(ConnectionState.DISCONNECTED, ConnectionState.RESTARTING, ConnectionState.ERROR)) {
@@ -144,7 +168,6 @@ class NirangVpnService : VpnService() {
             }
             check(operationGate.isCurrent(operation)) { CANCELLED_OPERATION }
             ConnectionStore.transition(ConnectionState.CONNECTING, server.id, server.name)
-            updateNotification(getString(R.string.vpn_connecting), server.name)
             XrayCore.start(this, currentConfig!!, vpnInterface?.fd ?: 0)
             if (!operationGate.isCurrent(operation)) {
                 cleanupResources()
@@ -153,7 +176,6 @@ class NirangVpnService : VpnService() {
             registerNetworkCallback()
             ConnectionStore.transition(ConnectionState.CONNECTED, server.id, server.name)
             markLastWorking(server.id)
-            updateNotification(getString(R.string.vpn_connected), server.name)
             SafeLog.info(this, "VPN started")
             SafeLog.info(this, "Xray started")
             submit { refreshPublicIp(settings.ipCheckUrl, server.id) }
@@ -211,7 +233,6 @@ class NirangVpnService : VpnService() {
                 fallback.name,
                 "Selected configuration failed; safe network settings restored",
             )
-            updateNotification(getString(R.string.vpn_connected), fallback.name)
             SafeLog.warning(this, "Previous working server restored")
             submit { refreshPublicIp(settings.ipCheckUrl, fallback.id) }
             true
@@ -269,7 +290,6 @@ class NirangVpnService : VpnService() {
                 if (network != activeNetwork || ConnectionStore.state() != ConnectionState.CONNECTED) return
                 networkWasLost = true
                 ConnectionStore.transition(ConnectionState.RECONNECTING, currentServerId, currentServerName)
-                updateNotification("Reconnecting", currentServerName)
                 SafeLog.info(this@NirangVpnService, "Network changed")
             }
         }.also(manager::registerDefaultNetworkCallback)
@@ -292,7 +312,6 @@ class NirangVpnService : VpnService() {
                     return
                 }
                 ConnectionStore.transition(ConnectionState.CONNECTED, currentServerId, currentServerName)
-                updateNotification(getString(R.string.vpn_connected), currentServerName)
                 SafeLog.info(this, "VPN reconnected")
                 submit {
                     currentServerId?.let { refreshPublicIp(NativeSettings(this).ipCheckUrl, it) }
@@ -385,6 +404,7 @@ class NirangVpnService : VpnService() {
         cleanupResources()
         if (!preserveError) ConnectionStore.transition(ConnectionState.DISCONNECTED)
         SafeLog.info(this, "VPN stopped")
+        foregroundActive.set(false)
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
@@ -401,6 +421,7 @@ class NirangVpnService : VpnService() {
         currentMode = "vpn"
         stopCoreAsync()
         SafeLog.info(this, "VPN stop requested")
+        foregroundActive.set(false)
         runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
         stopSelf()
     }
@@ -409,6 +430,7 @@ class NirangVpnService : VpnService() {
         cleanupResources()
         ConnectionStore.transition(ConnectionState.RESTARTING, serverId, serverName)
         SafeLog.info(this, "VPN service stopped for restart")
+        foregroundActive.set(false)
         stopForeground(STOP_FOREGROUND_REMOVE)
         VpnRestartCoordinator.onServiceStopped(generation)
         stopSelf()
@@ -457,28 +479,43 @@ class NirangVpnService : VpnService() {
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
-    private fun updateNotification(status: String, serverName: String?) {
-        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification(status, serverName))
+    private fun updateNotification(snapshot: ConnectionSnapshot) {
+        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification(snapshot))
     }
 
-    private fun buildNotification(status: String, serverName: String?): Notification {
-        val openIntent = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+    private fun buildNotification(snapshot: ConnectionSnapshot): Notification {
+        val status = getString(
+            when (snapshot.state) {
+                ConnectionState.CONNECTED -> R.string.vpn_connected
+                ConnectionState.RECONNECTING -> R.string.vpn_reconnecting
+                ConnectionState.STOPPING -> R.string.vpn_stopping
+                ConnectionState.ERROR -> R.string.vpn_error
+                ConnectionState.DISCONNECTED -> R.string.vpn_disconnected
+                else -> R.string.vpn_connecting
+            },
         )
-        val stopIntent = PendingIntent.getService(
-            this, 1, Intent(this, NirangVpnService::class.java).setAction(ACTION_STOP),
+        val openIntent = PendingIntent.getActivity(
+            this, REQUEST_OPEN_APP, Intent(this, MainActivity::class.java).setAction(ACTION_OPEN_APP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_nirang)
             .setContentTitle("niraNG")
-            .setContentText(listOfNotNull(status, serverName).joinToString(" · "))
+            .setContentText(listOfNotNull(status, snapshot.serverName).joinToString(" · "))
             .setContentIntent(openIntent)
             .setOngoing(true)
             .setSilent(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .addAction(0, getString(R.string.vpn_disconnect), stopIntent)
-            .build()
+        if (NotificationControlPolicy.action(snapshot.state) == NotificationControlAction.DISCONNECT) {
+            val disconnectIntent = PendingIntent.getService(
+                this,
+                REQUEST_DISCONNECT,
+                Intent(this, NirangVpnService::class.java).setAction(ACTION_STOP),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+            builder.addAction(0, getString(R.string.vpn_disconnect), disconnectIntent)
+        }
+        return builder.build()
     }
 
     companion object {
@@ -487,12 +524,15 @@ class NirangVpnService : VpnService() {
         const val ACTION_STOP_PRESERVING_ERROR = "dev.nirang.client.action.STOP_VPN_PRESERVING_ERROR"
         const val ACTION_STOP_FOR_RESTART = "dev.nirang.client.action.STOP_VPN_FOR_RESTART"
         const val ACTION_SWITCH = "dev.nirang.client.action.SWITCH_VPN"
+        private const val ACTION_OPEN_APP = "dev.nirang.client.action.OPEN_APP"
         const val EXTRA_SERVER_ID = "serverId"
         const val EXTRA_SERVER_NAME = "serverName"
         const val EXTRA_RESTART_GENERATION = "restartGeneration"
         const val EXTRA_ALLOW_FALLBACK = "allowFallback"
         private const val CHANNEL_ID = "nirang_vpn"
         private const val NOTIFICATION_ID = 4107
+        private const val REQUEST_OPEN_APP = 41070
+        private const val REQUEST_DISCONNECT = 41072
         private const val VPN_STATE_PREFS = "nirang_vpn_state"
         private const val LAST_WORKING_SERVER_ID = "lastWorkingServerId"
         private const val PUBLIC_IP_ATTEMPTS = 3
