@@ -38,6 +38,12 @@ object VpnRestartCoordinator {
         return true
     }
 
+    /** Cancels queued/in-flight restarts so they cannot revive a manually stopped VPN. */
+    fun cancel() {
+        generation.incrementAndGet()
+        latest.set(null)
+    }
+
     internal fun onServiceStopped(generation: Long) {
         stoppedGeneration.accumulateAndGet(generation, ::maxOf)
     }
@@ -47,6 +53,7 @@ object VpnRestartCoordinator {
             while (!Thread.currentThread().isInterrupted) {
                 Thread.sleep(COALESCE_DELAY_MS)
                 var request = latest.getAndSet(null) ?: break
+                if (!isCurrent(request)) continue
                 val repository = SubscriptionRepository(context)
                 var target = repository.server(request.serverId)
                 if (target == null) {
@@ -56,7 +63,8 @@ object VpnRestartCoordinator {
                 }
 
                 NirangVpnService.stopForRestart(context, request.generation, target.id, target.name)
-                if (!waitForStop(request.generation)) {
+                if (!waitForStop(request)) {
+                    if (!isCurrent(request)) continue
                     NirangVpnService.stopPreservingError(context)
                     fail(context, "VPN service did not stop in time")
                     continue
@@ -67,6 +75,7 @@ object VpnRestartCoordinator {
                     request = newer
                     target = repository.server(newer.serverId)
                 }
+                if (!isCurrent(request)) continue
                 if (target == null) {
                     fail(context, "Selected server is no longer available")
                     NirangVpnService.stopPreservingError(context)
@@ -75,14 +84,16 @@ object VpnRestartCoordinator {
                 val selectedTarget = target
 
                 Thread.sleep(RESTART_DELAY_MS)
+                if (!isCurrent(request)) continue
                 repository.select(selectedTarget.id)
                 NativeEvents.emit("servers", repository.safeServers())
                 ConnectionStore.transition(ConnectionState.RESTARTING, selectedTarget.id, selectedTarget.name)
                 NirangVpnService.start(context, selectedTarget.id, allowFallback = false)
 
-                when (waitForStart(selectedTarget.id)) {
+                when (waitForStart(request, selectedTarget.id)) {
                     StartResult.CONNECTED -> SafeLog.info(context, "VPN service restarted")
                     StartResult.FAILED -> rollbackSelection(repository, request.previousServerId)
+                    StartResult.CANCELLED -> Unit
                     StartResult.TIMED_OUT -> {
                         rollbackSelection(repository, request.previousServerId)
                         fail(context, "VPN service did not reconnect in time")
@@ -105,18 +116,20 @@ object VpnRestartCoordinator {
         }
     }
 
-    private fun waitForStop(expectedGeneration: Long): Boolean {
+    private fun waitForStop(request: Request): Boolean {
         val deadline = System.currentTimeMillis() + STOP_TIMEOUT_MS
         while (System.currentTimeMillis() < deadline) {
-            if (stoppedGeneration.get() >= expectedGeneration) return true
+            if (!isCurrent(request)) return false
+            if (stoppedGeneration.get() >= request.generation) return true
             Thread.sleep(POLL_INTERVAL_MS)
         }
         return false
     }
 
-    private fun waitForStart(expectedServerId: String): StartResult {
+    private fun waitForStart(request: Request, expectedServerId: String): StartResult {
         val deadline = System.currentTimeMillis() + START_TIMEOUT_MS
         while (System.currentTimeMillis() < deadline) {
+            if (!isCurrent(request)) return StartResult.CANCELLED
             val snapshot = ConnectionStore.snapshot()
             val state = ConnectionStore.state()
             if (state == ConnectionState.CONNECTED && snapshot["serverId"] == expectedServerId) {
@@ -129,6 +142,8 @@ object VpnRestartCoordinator {
         }
         return StartResult.TIMED_OUT
     }
+
+    private fun isCurrent(request: Request): Boolean = generation.get() == request.generation
 
     private fun rollbackSelection(repository: SubscriptionRepository, previousServerId: String?) {
         if (previousServerId != null && repository.server(previousServerId) != null) {
@@ -147,7 +162,7 @@ object VpnRestartCoordinator {
         ConnectionStore.transition(ConnectionState.ERROR, message = safeMessage)
     }
 
-    private enum class StartResult { CONNECTED, FAILED, TIMED_OUT }
+    private enum class StartResult { CONNECTED, FAILED, TIMED_OUT, CANCELLED }
 
     private const val COALESCE_DELAY_MS = 100L
     private const val RESTART_DELAY_MS = 500L

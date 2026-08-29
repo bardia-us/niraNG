@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nirang/core/platform/native_models.dart';
+import 'package:nirang/core/widgets/country_flag_badge.dart';
 import 'package:nirang/core/widgets/glass_dialog.dart';
 import 'package:nirang/features/vpn/app_controller.dart';
 import 'package:nirang/main.dart';
@@ -631,6 +632,13 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    await tester.tap(find.byIcon(Icons.article_outlined));
+    await tester.pumpAndSettle();
+    expect(find.text('Log entry 0'), findsOneWidget);
+    expect(find.text('Log entry 249'), findsNothing);
+    await tester.tap(find.byIcon(Icons.home_outlined));
+    await tester.pumpAndSettle();
+
     for (var iteration = 0; iteration < 4; iteration++) {
       await tester.tap(find.byIcon(Icons.article_outlined));
       await tester.pumpAndSettle();
@@ -640,7 +648,22 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    expect(controller.logRefreshes, 4);
+    expect(controller.logRefreshes, 5);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('country flags render from bundled assets instead of emoji', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(body: CountryFlagBadge(countryCode: 'NL')),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(Image), findsOneWidget);
+    expect(find.text('NL'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -716,6 +739,8 @@ void main() {
         240,
         scrollable: find.byType(Scrollable).first,
       );
+      await tester.drag(find.byType(Scrollable).first, const Offset(0, 100));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Theme'));
       await tester.pumpAndSettle();
 

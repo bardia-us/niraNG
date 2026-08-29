@@ -7,7 +7,9 @@ import android.content.pm.PackageManager
 import android.net.VpnService
 import android.os.Build
 import dev.nirang.client.bridge.NirangBridge
+import dev.nirang.client.logs.SafeLog
 import dev.nirang.client.model.ConnectionState
+import dev.nirang.client.registration.DeviceRegistrationManager
 import dev.nirang.client.settings.NativeSettings
 import dev.nirang.client.vpn.ConnectionStore
 import dev.nirang.client.vpn.NirangVpnService
@@ -28,8 +30,8 @@ class MainActivity : FlutterActivity() {
         pendingResult = null
         pendingServerId = null
         if (resultCode == Activity.RESULT_OK && serverId != null) {
-            NirangVpnService.start(this, serverId)
-            result?.success(true)
+            if (startVpnSafely(serverId)) result?.success(true)
+            else result?.error("service_start_failed", "Android could not start the VPN service", null)
         } else {
             ConnectionStore.transition(ConnectionState.ERROR, message = "VPN permission was denied")
             result?.error("permission_denied", "VPN permission was denied", null)
@@ -62,6 +64,10 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun requestVpnPermission(serverId: String, result: MethodChannel.Result) {
+        if (!DeviceRegistrationManager.hasConsent(this)) {
+            result.error("consent_required", "Device registration consent is required", null)
+            return
+        }
         if (pendingResult != null) {
             result.error("busy", "A VPN permission request is already active", null)
             return
@@ -72,7 +78,9 @@ class MainActivity : FlutterActivity() {
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
-            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), NOTIFICATION_PERMISSION_REQUEST)
+            runCatching {
+                requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), NOTIFICATION_PERMISSION_REQUEST)
+            }.onFailure { failPendingConnection("Notification permission could not be requested", it) }
             return
         }
         continuePendingConnection()
@@ -84,19 +92,37 @@ class MainActivity : FlutterActivity() {
         if (NativeSettings(this).connectionMode == "proxy") {
             pendingServerId = null
             pendingResult = null
-            NirangVpnService.start(this, serverId)
-            result.success(true)
+            if (startVpnSafely(serverId)) result.success(true)
+            else result.error("service_start_failed", "Android could not start the proxy service", null)
             return
         }
         val intent: Intent? = VpnService.prepare(this)
         if (intent == null) {
             pendingServerId = null
             pendingResult = null
-            NirangVpnService.start(this, serverId)
-            result.success(true)
+            if (startVpnSafely(serverId)) result.success(true)
+            else result.error("service_start_failed", "Android could not start the VPN service", null)
             return
         }
-        startActivityForResult(intent, VPN_PERMISSION_REQUEST)
+        runCatching { startActivityForResult(intent, VPN_PERMISSION_REQUEST) }
+            .onFailure { failPendingConnection("VPN permission could not be requested", it) }
+    }
+
+    private fun startVpnSafely(serverId: String): Boolean = runCatching {
+        NirangVpnService.start(this, serverId)
+    }.onFailure { error ->
+        SafeLog.error(this, "VPN service launch failed: ${error.javaClass.simpleName}")
+        ConnectionStore.transition(ConnectionState.ERROR, serverId, message = "Android could not start the VPN service")
+    }.isSuccess
+
+    private fun failPendingConnection(message: String, error: Throwable) {
+        val result = pendingResult
+        pendingResult = null
+        val serverId = pendingServerId
+        pendingServerId = null
+        SafeLog.error(this, "$message: ${error.javaClass.simpleName}")
+        ConnectionStore.transition(ConnectionState.ERROR, serverId, message = message)
+        result?.error("permission_request_failed", message, null)
     }
 
     companion object {

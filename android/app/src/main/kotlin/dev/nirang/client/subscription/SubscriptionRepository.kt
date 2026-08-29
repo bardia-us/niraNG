@@ -2,6 +2,7 @@ package dev.nirang.client.subscription
 
 import android.content.Context
 import dev.nirang.client.BuildConfig
+import dev.nirang.client.logs.SafeLog
 import dev.nirang.client.model.ServerRecord
 import dev.nirang.client.model.SubscriptionSnapshot
 import dev.nirang.client.model.SubscriptionUsage
@@ -104,7 +105,7 @@ class SubscriptionRepository(private val context: Context) {
             connectTimeout = 12_000
             readTimeout = 20_000
             instanceFollowRedirects = true
-            setRequestProperty("User-Agent", "niraNG/1.0.8 Android")
+            setRequestProperty("User-Agent", "niraNG/1.1.0 Android")
             setRequestProperty("Accept", "text/plain, application/json")
             // A user-triggered refresh is an authoritative full sync. Sending
             // cache validators here made a valid 304 look like a failed update
@@ -119,10 +120,28 @@ class SubscriptionRepository(private val context: Context) {
 
             val bytes = connection.inputStream.use { it.readBytes() }
             if (bytes.size > MAX_SUBSCRIPTION_BYTES) throw IOException("Subscription response is too large")
+            val expectedLength = connection.contentLengthLong
+            if (expectedLength >= 0 && expectedLength != bytes.size.toLong()) {
+                throw IOException("Subscription response was incomplete")
+            }
+            val parseResult = SubscriptionParser.parseDetailed(bytes.toString(Charsets.UTF_8))
+            SafeLog.info(context, "Subscription parse ${parseResult.stats.summary()}")
+            parseResult.failures.forEach { failure ->
+                SafeLog.warning(context, "Subscription parser $failure")
+            }
+            if (parseResult.servers.isEmpty()) {
+                throw IOException("Subscription contains no usable servers; existing servers were preserved")
+            }
             val servers = SubscriptionSyncPolicy.resetLatency(
-                SubscriptionParser.parse(bytes.toString(Charsets.UTF_8)),
+                SubscriptionSyncPolicy.reconcile(
+                    cachedServers = snapshot.servers,
+                    parsedServers = parseResult.servers,
+                    authoritative = parseResult.stats.complete,
+                ),
             )
-            if (servers.isEmpty()) throw IOException("Subscription contains no supported servers")
+            if (!parseResult.stats.complete) {
+                SafeLog.warning(context, "Subscription was partially parsed; cached servers were preserved")
+            }
 
             val usageHeader = connection.headerFields.entries
                 .firstOrNull { it.key?.equals("subscription-userinfo", ignoreCase = true) == true }
@@ -132,8 +151,8 @@ class SubscriptionRepository(private val context: Context) {
                 usage = SubscriptionParser.parseUsage(usageHeader),
                 lastUpdatedEpochMillis = System.currentTimeMillis(),
             )
-            snapshot = updated
             persist(updated)
+            snapshot = updated
             // Delete is intentionally local and temporary. A successful full
             // sync restores every server still present in the subscription.
             prefs.edit().remove(HIDDEN_SERVER_IDS).apply()

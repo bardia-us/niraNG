@@ -5,7 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/diagnostics.dart';
 import '../../core/localization/app_strings.dart';
+import '../../core/platform/native_models.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/update_checker.dart';
 import '../../core/widgets/glass_dialog.dart';
 import '../logs/logs_screen.dart';
 import '../servers/servers_screen.dart';
@@ -24,6 +26,8 @@ class _AppShellState extends ConsumerState<AppShell> {
   int _index = 0;
   bool _reminderQueued = false;
   bool _performancePromptQueued = false;
+  bool _startupUpdateCheckQueued = false;
+  bool _startupUpdateCheckFinished = false;
 
   @override
   void initState() {
@@ -54,15 +58,17 @@ class _AppShellState extends ConsumerState<AppShell> {
           );
           return;
         }
-        if (!_reminderQueued &&
+        if (!_startupUpdateCheckQueued &&
             app.settings.performanceModePrompted &&
-            app.telegramEligible &&
-            !app.connection.isBusy &&
-            !app.isPinging) {
-          _reminderQueued = true;
+            !app.connection.isBusy) {
+          _startupUpdateCheckQueued = true;
           WidgetsBinding.instance.addPostFrameCallback(
-            (_) => _showTelegramReminder(),
+            (_) => _checkForStartupUpdate(app.appVersion),
           );
+          return;
+        }
+        if (_startupUpdateCheckFinished) {
+          _queueTelegramReminder(app);
         }
       });
     });
@@ -274,5 +280,59 @@ class _AppShellState extends ConsumerState<AppShell> {
       await controller.openTelegram();
     }
     await controller.recordTelegramDecision(never ? 'never' : 'later');
+  }
+
+  Future<void> _checkForStartupUpdate(String currentVersion) async {
+    if (!mounted) return;
+    try {
+      final release = await const GitHubUpdateChecker().check(currentVersion);
+      if (!mounted || !release.updateAvailable) return;
+      final open = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => NirangAlertDialog(
+          icon: const Icon(Icons.new_releases_outlined),
+          title: Text(context.s('newVersionAvailable')),
+          content: Text(
+            '${context.s('currentVersion')}: $currentVersion\n'
+            '${context.s('newVersionAvailable')}: ${release.latestVersion}',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: Text(context.s('later')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(context.s('viewRelease')),
+            ),
+          ],
+        ),
+      );
+      if (open == true && mounted) {
+        await ref
+            .read(appControllerProvider.notifier)
+            .openExternalUrl(release.releaseUrl);
+      }
+    } catch (_) {
+      // Startup checks are intentionally silent when offline or unavailable.
+    } finally {
+      _startupUpdateCheckFinished = true;
+      final app = ref.read(appControllerProvider).asData?.value;
+      if (mounted && app != null) _queueTelegramReminder(app);
+    }
+  }
+
+  void _queueTelegramReminder(AppSnapshot app) {
+    if (_reminderQueued ||
+        !app.settings.performanceModePrompted ||
+        !app.telegramEligible ||
+        app.connection.isBusy ||
+        app.isPinging) {
+      return;
+    }
+    _reminderQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _showTelegramReminder(),
+    );
   }
 }

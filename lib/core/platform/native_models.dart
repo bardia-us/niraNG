@@ -174,6 +174,11 @@ class NativeSettings {
     this.domainStrategy = 'AsIs',
     this.sniffingEnabled = true,
     this.routeOnly = false,
+    this.fragmentEnabled = false,
+    this.fragmentPackets = 'tlshello',
+    this.fragmentLength = '50-100',
+    this.fragmentInterval = '10-20',
+    this.fragmentMaxSplit = 10,
     this.enableIpv6 = true,
     this.preferIpv6 = false,
     this.vpnMtu = 1500,
@@ -203,6 +208,11 @@ class NativeSettings {
     domainStrategy: '${map['domainStrategy'] ?? 'AsIs'}',
     sniffingEnabled: map['sniffingEnabled'] != false,
     routeOnly: map['routeOnly'] == true,
+    fragmentEnabled: map['fragmentEnabled'] == true,
+    fragmentPackets: '${map['fragmentPackets'] ?? 'tlshello'}',
+    fragmentLength: '${map['fragmentLength'] ?? '50-100'}',
+    fragmentInterval: '${map['fragmentInterval'] ?? '10-20'}',
+    fragmentMaxSplit: _int(map['fragmentMaxSplit']) ?? 10,
     enableIpv6: map['enableIpv6'] != false,
     preferIpv6: map['preferIpv6'] == true,
     vpnMtu: _int(map['vpnMtu']) ?? 1500,
@@ -231,6 +241,11 @@ class NativeSettings {
   final String domainStrategy;
   final bool sniffingEnabled;
   final bool routeOnly;
+  final bool fragmentEnabled;
+  final String fragmentPackets;
+  final String fragmentLength;
+  final String fragmentInterval;
+  final int fragmentMaxSplit;
   final bool enableIpv6;
   final bool preferIpv6;
   final int vpnMtu;
@@ -270,6 +285,11 @@ class NativeSettings {
       domainStrategy: stringValue('domainStrategy', domainStrategy),
       sniffingEnabled: boolValue('sniffingEnabled', sniffingEnabled),
       routeOnly: boolValue('routeOnly', routeOnly),
+      fragmentEnabled: boolValue('fragmentEnabled', fragmentEnabled),
+      fragmentPackets: stringValue('fragmentPackets', fragmentPackets),
+      fragmentLength: stringValue('fragmentLength', fragmentLength),
+      fragmentInterval: stringValue('fragmentInterval', fragmentInterval),
+      fragmentMaxSplit: intValue('fragmentMaxSplit', fragmentMaxSplit),
       enableIpv6: boolValue('enableIpv6', enableIpv6),
       preferIpv6: boolValue('preferIpv6', preferIpv6),
       vpnMtu: intValue('vpnMtu', vpnMtu),
@@ -334,7 +354,7 @@ class AppSnapshot {
     this.logs = const [],
     this.lastUpdated = 0,
     this.coreVersion = 'Unavailable',
-    this.appVersion = '1.0.8',
+    this.appVersion = '1.1.0',
     this.subscriptionConfigured = false,
     this.telegramEligible = false,
     this.subscriptionError,

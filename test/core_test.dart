@@ -16,6 +16,12 @@ void main() {
     expect(formatBytes(2 * 1024 * 1024 * 1024 * 1024), '2.00 TB');
   });
 
+  test('presentation strips only a leading country flag from server names', () {
+    expect(displayServerName('🇳🇱 2-bardia'), '2-bardia');
+    expect(displayServerName('🇺🇸-edge'), 'edge');
+    expect(displayServerName('Server 🇸🇪 inside'), 'Server 🇸🇪 inside');
+  });
+
   test('server metadata keeps only masked credential fields', () {
     final server = ServerInfo.fromMap({
       'id': 'safe-id',
@@ -88,6 +94,11 @@ void main() {
       'enableLocalDns': false,
       'enableFakeDns': true,
       'localSocksPort': 10818,
+      'fragmentEnabled': true,
+      'fragmentPackets': 'tlshello',
+      'fragmentLength': '50-100',
+      'fragmentInterval': '10-20',
+      'fragmentMaxSplit': 8,
     });
     expect(updated.themeMode, 'dark');
     expect(updated.vpnMtu, 1400);
@@ -97,6 +108,8 @@ void main() {
     expect(updated.localSocksPort, 10818);
     expect(updated.enableLocalDns, isFalse);
     expect(updated.enableFakeDns, isTrue);
+    expect(updated.fragmentEnabled, isTrue);
+    expect(updated.fragmentMaxSplit, 8);
   });
 
   test('fresh Dart settings use the current network defaults', () {
@@ -110,7 +123,7 @@ void main() {
   test('semantic release versions compare without lexical mistakes', () {
     expect(
       SemanticVersion.parse(
-        'v1.0.10',
+        'v1.1.0',
       ).compareTo(SemanticVersion.parse('1.0.4')),
       greaterThan(0),
     );

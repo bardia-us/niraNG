@@ -5,7 +5,16 @@ import go.Seq
 import libv2ray.CoreCallbackHandler
 import libv2ray.CoreController
 import libv2ray.Libv2ray
-import java.util.UUID
+
+internal fun initializeCoreEnvironment(
+    filesPath: String,
+    initialize: (String, String) -> Unit,
+) {
+    // The second AndroidLibXrayLite argument is a base64url-encoded XUDP
+    // BaseKey, not an installation identifier. Leaving it empty deliberately
+    // lets Xray generate and retain a cryptographically random 32-byte key.
+    initialize(filesPath, "")
+}
 
 object XrayCore {
     private val lock = Any()
@@ -14,11 +23,7 @@ object XrayCore {
     fun initialize(context: Context) = synchronized(lock) {
         if (controller != null) return
         Seq.setContext(context.applicationContext)
-        val prefs = context.getSharedPreferences("nirang_installation", Context.MODE_PRIVATE)
-        val installationId = prefs.getString("id", null) ?: UUID.randomUUID().toString().also {
-            prefs.edit().putString("id", it).apply()
-        }
-        Libv2ray.initCoreEnv(context.filesDir.absolutePath, installationId)
+        initializeCoreEnvironment(context.filesDir.absolutePath, Libv2ray::initCoreEnv)
         controller = Libv2ray.newCoreController(object : CoreCallbackHandler {
             override fun startup(): Long = 0
             override fun shutdown(): Long = 0

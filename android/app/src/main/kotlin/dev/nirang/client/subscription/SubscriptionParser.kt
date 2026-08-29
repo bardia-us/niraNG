@@ -1,6 +1,5 @@
 package dev.nirang.client.subscription
 
-import android.util.Base64
 import dev.nirang.client.model.ServerRecord
 import dev.nirang.client.model.SubscriptionUsage
 import org.json.JSONObject
@@ -8,26 +7,68 @@ import java.net.URI
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
+import java.util.Base64
+
+data class SubscriptionParseStats(
+    val total: Int,
+    val parsed: Int,
+    val skipped: Int,
+    val failed: Int,
+    val duplicates: Int,
+) {
+    val complete: Boolean get() = parsed > 0 && skipped == 0 && failed == 0
+
+    fun summary(): String =
+        "total=$total parsed=$parsed skipped=$skipped failed=$failed duplicates=$duplicates"
+}
+
+data class SubscriptionParseResult(
+    val servers: List<ServerRecord>,
+    val stats: SubscriptionParseStats,
+    val failures: List<String>,
+)
 
 object SubscriptionParser {
-    fun parse(body: String): List<ServerRecord> {
+    fun parse(body: String): List<ServerRecord> = parseDetailed(body).servers
+
+    fun parseDetailed(body: String): SubscriptionParseResult {
         val normalized = body.trim().removePrefix("\uFEFF")
         val content = if (normalized.contains("://")) normalized else decodeBase64(normalized) ?: normalized
-        return content.lineSequence()
-            .map(String::trim)
+        val records = linkedMapOf<String, ServerRecord>()
+        val failures = mutableListOf<String>()
+        var total = 0
+        var parsed = 0
+        var skipped = 0
+        var failed = 0
+        var duplicates = 0
+        content.lineSequence().map(String::trim)
             .filter { it.isNotEmpty() && !it.startsWith("#") }
-            .mapNotNull { line ->
-                runCatching {
+            .forEachIndexed { index, line ->
+                total++
+                val protocol = line.substringBefore("://", "unknown").lowercase().take(16)
+                val record = runCatching {
                     when {
                         line.startsWith("vless://", ignoreCase = true) -> parseStandardUri(line, "vless")
                         line.startsWith("trojan://", ignoreCase = true) -> parseStandardUri(line, "trojan")
                         line.startsWith("vmess://", ignoreCase = true) -> parseVmess(line)
                         else -> null
                     }
+                }.onFailure { error ->
+                    failed++
+                    failures += "entry=${index + 1} protocol=$protocol error=${error.javaClass.simpleName}"
                 }.getOrNull()
+                if (record == null) {
+                    if (protocol !in SUPPORTED_PROTOCOLS) skipped++
+                    return@forEachIndexed
+                }
+                parsed++
+                if (records.putIfAbsent(record.id, record) != null) duplicates++
             }
-            .distinctBy(ServerRecord::id)
-            .toList()
+        return SubscriptionParseResult(
+            servers = records.values.toList(),
+            stats = SubscriptionParseStats(total, parsed, skipped, failed, duplicates),
+            failures = failures.take(MAX_REPORTED_FAILURES),
+        )
     }
 
     fun parseUsage(header: String?): SubscriptionUsage {
@@ -76,7 +117,8 @@ object SubscriptionParser {
         val parameters = buildMap {
             val mapping = mapOf(
                 "alterId" to "aid", "encryption" to "scy", "host" to "host", "path" to "path",
-                "sni" to "sni", "alpn" to "alpn", "fingerprint" to "fp", "flow" to "flow",
+                "sni" to "sni", "alpn" to "alpn", "fp" to "fp", "flow" to "flow",
+                "headerType" to "type",
             )
             mapping.forEach { (target, source) -> json.optString(source).takeIf { it.isNotBlank() }?.let { put(target, it) } }
         }
@@ -105,12 +147,17 @@ object SubscriptionParser {
     private fun decodeBase64(input: String): String? {
         val compact = input.filterNot(Char::isWhitespace)
         val padded = compact + "=".repeat((4 - compact.length % 4) % 4)
-        return listOf(Base64.URL_SAFE or Base64.NO_WRAP, Base64.DEFAULT).firstNotNullOfOrNull { flags ->
-            runCatching { String(Base64.decode(padded, flags), StandardCharsets.UTF_8) }.getOrNull()
+        return listOf(Base64.getUrlDecoder(), Base64.getDecoder()).firstNotNullOfOrNull { decoder ->
+            runCatching { String(decoder.decode(padded), StandardCharsets.UTF_8) }.getOrNull()
         }
     }
 
-    private fun decode(value: String): String = URLDecoder.decode(value, StandardCharsets.UTF_8.name())
+    // Share links use URI percent-encoding, not HTML form encoding. Preserve a
+    // literal '+' instead of letting URLDecoder silently turn it into a space.
+    private fun decode(value: String): String = URLDecoder.decode(
+        value.replace("+", "%2B"),
+        StandardCharsets.UTF_8.name(),
+    )
 
     private fun stableId(raw: String): String = MessageDigest.getInstance("SHA-256")
         .digest(raw.toByteArray(StandardCharsets.UTF_8))
@@ -120,6 +167,15 @@ object SubscriptionParser {
     private fun defaultPort(security: String?): Int = if (security in setOf("tls", "reality")) 443 else 80
 
     private fun inferCountry(name: String): String {
+        val codePoints = name.codePoints().toArray()
+        for (index in 0 until codePoints.lastIndex) {
+            val first = codePoints[index]
+            val second = codePoints[index + 1]
+            if (first in REGIONAL_INDICATOR_RANGE && second in REGIONAL_INDICATOR_RANGE) {
+                return "${('A'.code + first - REGIONAL_INDICATOR_START).toChar()}" +
+                    "${('A'.code + second - REGIONAL_INDICATOR_START).toChar()}"
+            }
+        }
         val lower = name.lowercase()
         val countries = linkedMapOf(
             "germany" to "DE", "deutschland" to "DE", "netherlands" to "NL", "holland" to "NL",
@@ -129,4 +185,9 @@ object SubscriptionParser {
         )
         return countries.entries.firstOrNull { lower.contains(it.key) }?.value ?: ""
     }
+
+    private val SUPPORTED_PROTOCOLS = setOf("vless", "trojan", "vmess")
+    private const val MAX_REPORTED_FAILURES = 8
+    private const val REGIONAL_INDICATOR_START = 0x1F1E6
+    private val REGIONAL_INDICATOR_RANGE = REGIONAL_INDICATOR_START..0x1F1FF
 }

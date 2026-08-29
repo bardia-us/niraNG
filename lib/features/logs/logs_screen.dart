@@ -8,16 +8,54 @@ import '../../core/platform/native_models.dart';
 import '../../core/theme/app_theme.dart';
 import '../vpn/app_controller.dart';
 
-class LogsScreen extends ConsumerWidget {
+class LogsScreen extends ConsumerStatefulWidget {
   const LogsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<LogsScreen> createState() => _LogsScreenState();
+}
+
+class _LogsScreenState extends ConsumerState<LogsScreen> {
+  final _scrollController = ScrollController();
+  bool _nearBottom = false;
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final logs = ref.watch(
       appControllerProvider.select(
         (value) => value.asData?.value.logs ?? const <LogEntry>[],
       ),
     );
+    ref.listen(
+      appControllerProvider.select((value) {
+        final current = value.asData?.value.logs ?? const <LogEntry>[];
+        return (
+          count: current.length,
+          last: current.isEmpty ? 0 : current.last.time.millisecondsSinceEpoch,
+        );
+      }),
+      (_, _) {
+        if (!_nearBottom) return;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || !_scrollController.hasClients) return;
+          _scrollController.animateTo(
+            _scrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 140),
+            curve: Curves.easeOutCubic,
+          );
+        });
+      },
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      _nearBottom = _scrollController.position.extentAfter < 48;
+    });
     return Column(
       children: [
         Padding(
@@ -48,29 +86,36 @@ class LogsScreen extends ConsumerWidget {
         Expanded(
           child: logs.isEmpty
               ? Center(child: Text(context.s('noLogs')))
-              : ListView.separated(
-                  cacheExtent: 420,
-                  itemCount: logs.length,
-                  separatorBuilder: (_, _) => const Divider(indent: 50),
-                  itemBuilder: (context, index) {
-                    final log = logs[index];
-                    final color = switch (log.level) {
-                      'error' => Theme.of(context).colorScheme.error,
-                      'warning' => context.semanticColors.warning,
-                      _ => Theme.of(context).colorScheme.primary,
-                    };
-                    return ListTile(
-                      leading: Icon(Icons.circle, size: 9, color: color),
-                      title: Text(
-                        log.message,
-                        maxLines: 5,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      subtitle: Text(
-                        formatDateTime(log.time.millisecondsSinceEpoch),
-                      ),
-                    );
+              : NotificationListener<ScrollNotification>(
+                  onNotification: (notification) {
+                    _nearBottom = notification.metrics.extentAfter < 48;
+                    return false;
                   },
+                  child: ListView.separated(
+                    controller: _scrollController,
+                    cacheExtent: 420,
+                    itemCount: logs.length,
+                    separatorBuilder: (_, _) => const Divider(indent: 50),
+                    itemBuilder: (context, index) {
+                      final log = logs[index];
+                      final color = switch (log.level) {
+                        'error' => Theme.of(context).colorScheme.error,
+                        'warning' => context.semanticColors.warning,
+                        _ => Theme.of(context).colorScheme.primary,
+                      };
+                      return ListTile(
+                        leading: Icon(Icons.circle, size: 9, color: color),
+                        title: Text(
+                          log.message,
+                          maxLines: 5,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Text(
+                          formatDateTime(log.time.millisecondsSinceEpoch),
+                        ),
+                      );
+                    },
+                  ),
                 ),
         ),
       ],

@@ -5,6 +5,7 @@ import '../../core/formatters.dart';
 import '../../core/localization/app_strings.dart';
 import '../../core/platform/native_models.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/country_flag_badge.dart';
 import '../../core/widgets/glass_surface.dart';
 import 'app_controller.dart';
 
@@ -153,23 +154,18 @@ class _ConnectionCard extends StatelessWidget {
           else ...[
             Row(
               children: [
-                selected.country.isEmpty
-                    ? Icon(
-                        Icons.cloud_queue_rounded,
-                        size: 26,
-                        color: Theme.of(context).colorScheme.primary,
-                      )
-                    : Text(
-                        countryFlag(selected.country),
-                        style: const TextStyle(fontSize: 27),
-                      ),
+                CountryFlagBadge(
+                  countryCode: selected.country,
+                  width: 31,
+                  height: 23,
+                ),
                 const SizedBox(width: 11),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        selected.name,
+                        displayServerName(selected.name),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.titleMedium

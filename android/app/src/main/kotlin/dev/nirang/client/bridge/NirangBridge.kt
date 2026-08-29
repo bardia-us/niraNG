@@ -1,20 +1,27 @@
 package dev.nirang.client.bridge
 
 import android.app.Activity
+import android.app.StatusBarManager
+import android.content.ComponentName
 import android.content.Intent
+import android.graphics.drawable.Icon
 import android.net.Uri
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import dev.nirang.client.BuildConfig
+import dev.nirang.client.R
 import dev.nirang.client.logs.SafeLog
 import dev.nirang.client.model.ConnectionState
 import dev.nirang.client.model.ServerEligibility
 import dev.nirang.client.ping.PingManager
+import dev.nirang.client.registration.DeviceRegistrationManager
 import dev.nirang.client.settings.NativeSettings
 import dev.nirang.client.subscription.SubscriptionRepository
 import dev.nirang.client.subscription.SubscriptionScheduler
 import dev.nirang.client.vpn.ConnectionStore
 import dev.nirang.client.vpn.NirangVpnService
+import dev.nirang.client.vpn.NirangTileService
 import dev.nirang.client.vpn.RestartPolicy
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -43,6 +50,16 @@ class NirangBridge(
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
+            "deviceRegistrationStatus" -> {
+                val accepted = DeviceRegistrationManager.hasConsent(activity)
+                if (accepted) DeviceRegistrationManager.scheduleSync(activity)
+                result.success(accepted)
+            }
+            "acceptDeviceRegistration" -> acceptDeviceRegistration(result)
+            "exitApplication" -> {
+                activity.finishAndRemoveTask()
+                result.success(true)
+            }
             "initialize" -> initialize(result)
             "getBootstrap" -> success(result) { bootstrap() }
             "refreshSubscription" -> refreshSubscription(result)
@@ -55,6 +72,7 @@ class NirangBridge(
                 result.success(true)
             }
             "restartService" -> restartService(result)
+            "requestQuickSettingsTile" -> requestQuickSettingsTile(result)
             "pingServer" -> {
                 val id = call.argument<String>("id")
                 val server = id?.let(repository::server)
@@ -106,6 +124,7 @@ class NirangBridge(
     private fun initialize(result: MethodChannel.Result) {
         executor.execute {
             runCatching {
+                check(DeviceRegistrationManager.hasConsent(activity)) { "Device registration consent is required" }
                 runCatching { activity.deleteSharedPreferences("nirang_traffic") }
                 val settings = NativeSettings(activity).also { it.incrementOpenCount() }
                 bootstrap().toMutableMap().apply { put("settings", settings.toMap()) }
@@ -125,6 +144,45 @@ class NirangBridge(
                 SafeLog.error(activity, "Startup initialization failed")
                 postToFlutter { result.error("startup", safeError(error), null) }
             }
+        }
+    }
+
+    private fun requestQuickSettingsTile(result: MethodChannel.Result) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            result.success("manual")
+            return
+        }
+        val manager = activity.getSystemService(StatusBarManager::class.java)
+        if (manager == null) {
+            result.success("manual")
+            return
+        }
+        manager.requestAddTileService(
+            ComponentName(activity, NirangTileService::class.java),
+            activity.getString(R.string.quick_tile_label),
+            Icon.createWithResource(activity, R.drawable.ic_stat_nirang),
+            activity.mainExecutor,
+        ) { code ->
+            val value = when (code) {
+                StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED -> "already_added"
+                StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED -> "requested"
+                else -> "manual"
+            }
+            if (!disposed.get()) result.success(value)
+        }
+    }
+
+    private fun acceptDeviceRegistration(result: MethodChannel.Result) {
+        executor.execute {
+            runCatching {
+                check(DeviceRegistrationManager.accept(activity)) {
+                    "Device registration consent could not be saved"
+                }
+                true
+            }.onSuccess { accepted -> postToFlutter { result.success(accepted) } }
+                .onFailure { error ->
+                    postToFlutter { result.error("registration", safeError(error), null) }
+                }
         }
     }
 
@@ -196,6 +254,10 @@ class NirangBridge(
     }
 
     private fun connect(call: MethodCall, result: MethodChannel.Result) {
+        if (!DeviceRegistrationManager.hasConsent(activity)) {
+            result.error("consent_required", "Device registration consent is required", null)
+            return
+        }
         if (ConnectionStore.state() in ACTIVE_CONNECTION_STATES + ConnectionState.STOPPING) {
             result.error("busy", "A VPN transition is already in progress", null)
             return

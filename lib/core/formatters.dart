@@ -30,3 +30,14 @@ String countryFlag(String code) {
     normalized.codeUnits.map((unit) => unit + 127397),
   );
 }
+
+/// Removes only leading country-flag emoji from presentation text. The stored
+/// subscription remark remains untouched.
+String displayServerName(String value) {
+  final trimmed = value.trimLeft();
+  final flag = RegExp(
+    r'^(?:[\u{1F1E6}-\u{1F1FF}]{2})[\u{FE0F}]?[\s\-–—:|·]*',
+    unicode: true,
+  );
+  return trimmed.replaceFirst(flag, '').trimLeft();
+}

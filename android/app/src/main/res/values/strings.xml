@@ -5,4 +5,9 @@
     <string name="vpn_connected">Connected</string>
     <string name="vpn_connecting">Connecting…</string>
     <string name="vpn_disconnect">Disconnect</string>
+    <string name="quick_tile_label">niraNG VPN</string>
+    <string name="quick_tile_connected">Connected</string>
+    <string name="quick_tile_disconnected">Disconnected</string>
+    <string name="quick_tile_connecting">Connecting…</string>
+    <string name="operation_failed_native">Could not start VPN</string>
 </resources>

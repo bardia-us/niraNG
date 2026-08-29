@@ -5,4 +5,9 @@
     <string name="vpn_connected">متصل</string>
     <string name="vpn_connecting">در حال اتصال…</string>
     <string name="vpn_disconnect">قطع اتصال</string>
+    <string name="quick_tile_label">VPN نیراNG</string>
+    <string name="quick_tile_connected">متصل</string>
+    <string name="quick_tile_disconnected">قطع</string>
+    <string name="quick_tile_connecting">در حال اتصال…</string>
+    <string name="operation_failed_native">VPN شروع نشد</string>
 </resources>

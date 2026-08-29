@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/localization/app_strings.dart';
+import '../../core/formatters.dart';
 import '../../core/platform/native_models.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/country_flag_badge.dart';
 import '../../core/widgets/glass_surface.dart';
 import '../../core/widgets/glass_dialog.dart';
 import '../vpn/app_controller.dart';
@@ -57,72 +59,87 @@ class ServersScreen extends ConsumerWidget {
                   itemBuilder: (context, index) {
                     final server = app.servers[index];
                     return RepaintBoundary(
-                      child: AnimatedContainer(
-                        duration: Duration(
-                          milliseconds: view.performanceMode ? 85 : 140,
-                        ),
-                        curve: Curves.easeOutCubic,
-                        decoration: BoxDecoration(
-                          color: server.selected
-                              ? Theme.of(context).colorScheme.primaryContainer
-                                    .withValues(alpha: .26)
-                              : Theme.of(context)
-                                    .colorScheme
-                                    .surfaceContainerLow
-                                    .withValues(alpha: .42),
-                          borderRadius: BorderRadius.circular(13),
-                          border: Border.all(
-                            color: server.selected
-                                ? Theme.of(
-                                    context,
-                                  ).colorScheme.primary.withValues(alpha: .28)
-                                : Theme.of(context).colorScheme.outlineVariant
-                                      .withValues(alpha: .22),
+                      child: _PressScale(
+                        enabled: !view.performanceMode,
+                        child: AnimatedContainer(
+                          duration: Duration(
+                            milliseconds: view.performanceMode ? 85 : 140,
                           ),
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(13),
-                          child: Material(
-                            type: MaterialType.transparency,
-                            child: ListTile(
-                              splashColor: Theme.of(
-                                context,
-                              ).colorScheme.primary.withValues(alpha: .10),
-                              leading: _SelectionIndicator(
-                                selected: server.selected,
-                                reducedEffects: view.performanceMode,
-                              ),
-                              title: Text(
-                                server.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              subtitle: Text(
-                                '${server.protocol}  ${server.transport}',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  _Latency(server: server),
-                                  IconButton(
-                                    tooltip: context.s('serverActions'),
-                                    onPressed: () => _serverActions(
+                          curve: Curves.easeOutCubic,
+                          decoration: BoxDecoration(
+                            color: server.selected
+                                ? Theme.of(context).colorScheme.primaryContainer
+                                      .withValues(alpha: .26)
+                                : Theme.of(context)
+                                      .colorScheme
+                                      .surfaceContainerLow
+                                      .withValues(alpha: .42),
+                            borderRadius: BorderRadius.circular(13),
+                            border: Border.all(
+                              color: server.selected
+                                  ? Theme.of(
                                       context,
-                                      controller,
-                                      server,
+                                    ).colorScheme.primary.withValues(alpha: .28)
+                                  : Theme.of(context).colorScheme.outlineVariant
+                                        .withValues(alpha: .22),
+                            ),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(13),
+                            child: Material(
+                              type: MaterialType.transparency,
+                              child: ListTile(
+                                splashColor: Theme.of(
+                                  context,
+                                ).colorScheme.primary.withValues(alpha: .10),
+                                leading: _SelectionIndicator(
+                                  selected: server.selected,
+                                  reducedEffects: view.performanceMode,
+                                ),
+                                title: Row(
+                                  children: [
+                                    CountryFlagBadge(
+                                      countryCode: server.country,
+                                      width: 25,
+                                      height: 18,
                                     ),
-                                    icon: const Icon(Icons.more_vert_rounded),
-                                  ),
-                                ],
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        displayServerName(server.name),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                subtitle: Text(
+                                  '${server.protocol}  ${server.transport}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    _Latency(server: server),
+                                    IconButton(
+                                      tooltip: context.s('serverActions'),
+                                      onPressed: () => _serverActions(
+                                        context,
+                                        controller,
+                                        server,
+                                      ),
+                                      icon: const Icon(Icons.more_vert_rounded),
+                                    ),
+                                  ],
+                                ),
+                                onTap: () => _perform(
+                                  context,
+                                  () => controller.selectServer(server.id),
+                                ),
+                                onLongPress: () =>
+                                    _serverActions(context, controller, server),
                               ),
-                              onTap: () => _perform(
-                                context,
-                                () => controller.selectServer(server.id),
-                              ),
-                              onLongPress: () =>
-                                  _serverActions(context, controller, server),
                             ),
                           ),
                         ),
@@ -271,6 +288,49 @@ class ServersScreen extends ConsumerWidget {
           await _perform(context, () => controller.deleteServer(server.id));
         }
     }
+  }
+}
+
+class _PressScale extends StatefulWidget {
+  const _PressScale({required this.enabled, required this.child});
+
+  final bool enabled;
+  final Widget child;
+
+  @override
+  State<_PressScale> createState() => _PressScaleState();
+}
+
+class _PressScaleState extends State<_PressScale> {
+  bool _pressed = false;
+
+  void _setPressed(bool value) {
+    if (!widget.enabled || _pressed == value) return;
+    setState(() => _pressed = value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.enabled) {
+      _pressed = false;
+      return widget.child;
+    }
+    return Listener(
+      onPointerDown: (_) => _setPressed(true),
+      onPointerUp: (_) => _setPressed(false),
+      onPointerCancel: (_) => _setPressed(false),
+      child: AnimatedScale(
+        scale: _pressed ? .982 : 1,
+        duration: Duration(milliseconds: _pressed ? 70 : 125),
+        curve: _pressed ? Curves.easeOut : Curves.easeOutBack,
+        child: AnimatedSlide(
+          offset: _pressed ? const Offset(0, .012) : Offset.zero,
+          duration: Duration(milliseconds: _pressed ? 70 : 125),
+          curve: Curves.easeOutCubic,
+          child: widget.child,
+        ),
+      ),
+    );
   }
 }
 

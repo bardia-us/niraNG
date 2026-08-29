@@ -8,6 +8,7 @@ import org.json.JSONObject
 object XrayConfigBuilder {
     const val DEFAULT_LOCAL_SOCKS_PORT = 10808
     const val LOCAL_HTTP_PROXY_PORT = 10809
+    internal const val ANDROID_TUN_CONFIG_NAME = "xray0"
 
     fun buildVpnConfig(
         server: ServerRecord,
@@ -124,7 +125,14 @@ object XrayConfigBuilder {
                 put("tag", "tun-in")
                 put("port", 0)
                 put("protocol", "tun")
-                put("settings", JSONObject().apply { put("mtu", settings?.vpnMtu ?: 1500) })
+                put("settings", JSONObject().apply {
+                    // Xray 26.8+ probes net.Interfaces() when name is absent.
+                    // Android supplies an already-established VpnService FD,
+                    // so retain the explicit legacy name and let TUNGETIFF read
+                    // the real Android interface name from that FD at runtime.
+                    put("name", ANDROID_TUN_CONFIG_NAME)
+                    put("mtu", settings?.vpnMtu ?: 1500)
+                })
                 put("sniffing", sniffing)
             })
         }
@@ -206,9 +214,10 @@ object XrayConfigBuilder {
         when (network) {
             "ws" -> put("wsSettings", JSONObject().apply {
                 put("path", server.parameters["path"] ?: "/")
-                server.parameters["host"]?.takeIf(String::isNotBlank)?.let {
-                    put("headers", JSONObject().apply { put("Host", it) })
-                }
+                // Current Xray has a first-class WebSocket Host field. The
+                // legacy headers.Host form is only migrated for compatibility
+                // and is not reliable with newer browser-forwarder paths.
+                server.parameters["host"]?.takeIf(String::isNotBlank)?.let { put("host", it) }
             })
             "grpc" -> put("grpcSettings", JSONObject().apply {
                 put("serviceName", server.parameters["serviceName"] ?: server.parameters["path"] ?: "")
@@ -227,11 +236,21 @@ object XrayConfigBuilder {
         }
         when (server.security.lowercase()) {
             "tls" -> put("tlsSettings", JSONObject().apply {
-                put("serverName", server.parameters["sni"] ?: server.parameters["host"] ?: server.address)
+                put("serverName", tlsServerName(server))
                 putOptionalArray("alpn", server.parameters["alpn"])
                 server.parameters["fp"]?.takeIf(String::isNotBlank)?.let { put("fingerprint", it) }
+                server.parameters["cs"]?.trim()?.takeIf(String::isNotBlank)?.let { put("cipherSuites", it) }
+                server.parameters["pcs"]?.trim()?.takeIf(String::isNotBlank)?.let {
+                    putOptionalArray("pinnedPeerCertSha256", it)
+                }
+                server.parameters["vcn"]?.takeIf { it == "1" || it.equals("true", true) }?.let {
+                    put("verifyPeerCertByName", true)
+                }
             })
             "reality" -> put("realitySettings", JSONObject().apply {
+                require(!server.parameters["fp"].equals("unsafe", true)) {
+                    "Fingerprint unsafe is supported only by TLS transports"
+                }
                 put("serverName", server.parameters["sni"] ?: server.address)
                 put("fingerprint", server.parameters["fp"] ?: "chrome")
                 put("publicKey", server.parameters["pbk"] ?: "")
@@ -239,12 +258,52 @@ object XrayConfigBuilder {
                 put("spiderX", server.parameters["spx"] ?: "/")
             })
         }
+        val profileFinalMask = server.parameters["fm"]?.trim()?.takeIf(String::isNotEmpty)
+        if (profileFinalMask != null) {
+            val decoded = runCatching { JSONObject(profileFinalMask) }
+                .getOrElse { throw IllegalArgumentException("FinalMask must be a JSON object", it) }
+            put("finalmask", decoded)
+        } else if (settings?.fragmentEnabled == true && server.security.equals("tls", true)) {
+            put("finalmask", buildFragment(settings))
+        }
         if (settings?.enableIpv6 == true && settings.preferIpv6) {
             put(
                 "sockopt",
                 JSONObject().apply { put("domainStrategy", "UseIPv6v4") },
             )
         }
+    }
+
+    private fun buildFragment(settings: NativeSettings): JSONObject = buildFragmentSettings(
+        packets = settings.fragmentPackets,
+        length = settings.fragmentLength,
+        interval = settings.fragmentInterval,
+        maxSplit = settings.fragmentMaxSplit,
+    )
+
+    internal fun buildFragmentSettings(
+        packets: String,
+        length: String,
+        interval: String,
+        maxSplit: Int,
+    ): JSONObject = JSONObject().apply {
+        put("tcp", JSONArray().put(JSONObject().apply {
+            put("type", "fragment")
+            put("settings", JSONObject().apply {
+                put("packets", packets)
+                put("length", length)
+                // Xray FinalMask calls the UI interval field `delay`.
+                put("delay", interval)
+                put("maxSplit", maxSplit)
+            })
+        }))
+    }
+
+    private fun tlsServerName(server: ServerRecord): String {
+        val explicit = server.parameters["sni"]?.trim().orEmpty()
+        if (explicit.isNotEmpty()) return explicit
+        return server.parameters["host"]?.split(',')?.firstOrNull()?.trim()
+            ?.takeIf(String::isNotEmpty) ?: server.address
     }
 
     private fun buildDns(settings: NativeSettings?): JSONObject = JSONObject().apply {
@@ -309,6 +368,15 @@ object XrayConfigBuilder {
         val root = runCatching { JSONObject(config) }
             .getOrElse { throw IllegalArgumentException("Generated Xray JSON is invalid", it) }
         val outbounds = root.optJSONArray("outbounds") ?: error("Generated Xray config has no outbounds")
+        root.optJSONArray("inbounds")?.let { inbounds ->
+            for (index in 0 until inbounds.length()) {
+                val inbound = inbounds.optJSONObject(index) ?: continue
+                if (!inbound.optString("protocol").equals("tun", true)) continue
+                require(
+                    inbound.optJSONObject("settings")?.optString("name") == ANDROID_TUN_CONFIG_NAME,
+                ) { "Generated Android TUN config must use an explicit interface name" }
+            }
+        }
         val outboundTags = buildSet {
             for (index in 0 until outbounds.length()) {
                 outbounds.optJSONObject(index)?.optString("tag")?.takeIf(String::isNotBlank)?.let(::add)

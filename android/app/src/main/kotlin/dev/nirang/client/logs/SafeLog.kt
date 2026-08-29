@@ -60,7 +60,7 @@ object SafeLog {
     @Synchronized
     fun list(context: Context): List<Map<String, Any>> {
         initialize(context)
-        return entries.asReversed().map { mapOf("time" to it.time, "level" to it.level, "message" to it.message) }
+        return entries.map { mapOf("time" to it.time, "level" to it.level, "message" to it.message) }
     }
 
     @Synchronized

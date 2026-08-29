@@ -94,6 +94,9 @@ class AppController extends AsyncNotifier<AppSnapshot> {
   Future<void> disconnect() => NirangNative.disconnect();
   Future<void> restartService() => NirangNative.restartService();
 
+  Future<String> requestQuickSettingsTile() =>
+      NirangNative.requestQuickSettingsTile();
+
   Future<void> pingServer(String id) async {
     _set((value) => value.copyWith(isPinging: true));
     try {
@@ -230,7 +233,7 @@ class AppController extends AsyncNotifier<AppSnapshot> {
     logs: _logs(map['logs'] as List<dynamic>? ?? const []),
     lastUpdated: _number(map['lastUpdated']),
     coreVersion: '${map['coreVersion'] ?? 'Unavailable'}',
-    appVersion: '${map['appVersion'] ?? '1.0.8'}',
+    appVersion: '${map['appVersion'] ?? '1.1.0'}',
     subscriptionConfigured: map['subscriptionConfigured'] == true,
     telegramEligible: map['telegramEligible'] == true,
     subscriptionError: map['subscriptionError']?.toString(),

@@ -17,6 +17,11 @@ object RestartPolicy {
         "vpnInterfaceAddress",
         "sniffingEnabled",
         "routeOnly",
+        "fragmentEnabled",
+        "fragmentPackets",
+        "fragmentLength",
+        "fragmentInterval",
+        "fragmentMaxSplit",
         "localSocksPort",
     )
 

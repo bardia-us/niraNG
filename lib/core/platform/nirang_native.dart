@@ -13,6 +13,13 @@ class NirangNative {
       .where((event) => event is Map)
       .cast<Map<dynamic, dynamic>>();
 
+  static Future<bool> deviceRegistrationStatus() async =>
+      await _methods.invokeMethod<bool>('deviceRegistrationStatus') ?? false;
+  static Future<void> acceptDeviceRegistration() =>
+      _methods.invokeMethod('acceptDeviceRegistration');
+  static Future<void> exitApplication() =>
+      _methods.invokeMethod('exitApplication');
+
   static Future<Map<dynamic, dynamic>> initialize() async =>
       (await _methods.invokeMethod<Map<dynamic, dynamic>>('initialize')) ?? {};
 
@@ -42,6 +49,9 @@ class NirangNative {
   static Future<void> disconnect() => _methods.invokeMethod('disconnect');
   static Future<void> restartService() =>
       _methods.invokeMethod('restartService');
+  static Future<String> requestQuickSettingsTile() async =>
+      await _methods.invokeMethod<String>('requestQuickSettingsTile') ??
+      'manual';
   static Future<void> pingServer(String id) =>
       _methods.invokeMethod('pingServer', {'id': id});
   static Future<void> pingAll() => _methods.invokeMethod('pingAll');

@@ -29,7 +29,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           isRefreshing: app?.isRefreshing ?? false,
           deletedCount: app?.deletedServerCount ?? 0,
           coreVersion: app?.coreVersion ?? 'Bundled',
-          appVersion: app?.appVersion ?? '1.0.8',
+          appVersion: app?.appVersion ?? '1.1.0',
         );
       }),
     );
@@ -188,6 +188,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               'realPingConcurrency': int.parse(value),
             }),
           ),
+        ),
+        ListTile(
+          leading: const Icon(Icons.call_split_rounded),
+          title: Text(context.s('fragment')),
+          subtitle: Text(
+            settings.fragmentEnabled
+                ? '${settings.fragmentPackets} · ${settings.fragmentLength} · ${settings.fragmentInterval} ms · ${settings.fragmentMaxSplit}'
+                : context.s('disabled'),
+          ),
+          trailing: Icon(
+            settings.fragmentEnabled
+                ? Icons.check_circle_rounded
+                : Icons.chevron_right_rounded,
+            color: settings.fragmentEnabled
+                ? Theme.of(context).colorScheme.primary
+                : null,
+          ),
+          onTap: () => _editFragment(context, controller, settings),
         ),
         const Divider(indent: 56),
         _Header(context.s('routing')),
@@ -355,6 +373,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         const Divider(indent: 56),
         _Header(context.s('updates')),
         ListTile(
+          leading: const Icon(Icons.dashboard_customize_outlined),
+          title: Text(context.s('quickSettingsTile')),
+          subtitle: Text(context.s('quickSettingsTileSummary')),
+          trailing: const Icon(Icons.add_rounded),
+          onTap: () => _addQuickSettingsTile(context, controller),
+        ),
+        ListTile(
           leading: const Icon(Icons.system_update_alt_rounded),
           title: Text(context.s('checkForUpdates')),
           subtitle: Text('${context.s('currentVersion')}: ${app.appVersion}'),
@@ -488,6 +513,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
+  Future<void> _addQuickSettingsTile(
+    BuildContext context,
+    AppController controller,
+  ) async {
+    try {
+      final result = await controller.requestQuickSettingsTile();
+      if (!context.mounted) return;
+      final message = result == 'already_added'
+          ? context.s('quickSettingsTileAlreadyAdded')
+          : result == 'requested'
+          ? context.s('quickSettingsTileRequested')
+          : context.s('quickSettingsTileManual');
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(context.s('operationFailed'))),
+        );
+      }
+    }
+  }
+
   Future<void> _editCustomRules(
     BuildContext context,
     AppController controller,
@@ -508,6 +555,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           'customIps': result.ips,
         }),
       );
+    }
+  }
+
+  Future<void> _editFragment(
+    BuildContext context,
+    AppController controller,
+    NativeSettings settings,
+  ) async {
+    final result = await showDialog<Map<String, Object?>>(
+      context: context,
+      builder: (_) => _FragmentDialog(settings: settings),
+    );
+    if (result != null && context.mounted) {
+      await _perform(context, () => controller.updateSettings(result));
     }
   }
 
@@ -762,6 +823,143 @@ class _CustomRulesDialog extends StatefulWidget {
 
   @override
   State<_CustomRulesDialog> createState() => _CustomRulesDialogState();
+}
+
+class _FragmentDialog extends StatefulWidget {
+  const _FragmentDialog({required this.settings});
+
+  final NativeSettings settings;
+
+  @override
+  State<_FragmentDialog> createState() => _FragmentDialogState();
+}
+
+class _FragmentDialogState extends State<_FragmentDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late bool _enabled;
+  late String _packets;
+  late final TextEditingController _length;
+  late final TextEditingController _interval;
+  late final TextEditingController _maxSplit;
+
+  @override
+  void initState() {
+    super.initState();
+    _enabled = widget.settings.fragmentEnabled;
+    _packets = widget.settings.fragmentPackets;
+    _length = TextEditingController(text: widget.settings.fragmentLength);
+    _interval = TextEditingController(text: widget.settings.fragmentInterval);
+    _maxSplit = TextEditingController(
+      text: '${widget.settings.fragmentMaxSplit}',
+    );
+  }
+
+  @override
+  void dispose() {
+    _length.dispose();
+    _interval.dispose();
+    _maxSplit.dispose();
+    super.dispose();
+  }
+
+  String? _range(String? raw, int maximum) {
+    final parts = raw?.trim().split('-') ?? const <String>[];
+    if (parts.length != 2) return context.s('invalidFragmentRange');
+    final from = int.tryParse(parts.first.trim());
+    final to = int.tryParse(parts.last.trim());
+    return from != null &&
+            to != null &&
+            from >= 1 &&
+            from <= to &&
+            to <= maximum
+        ? null
+        : context.s('invalidFragmentRange');
+  }
+
+  @override
+  Widget build(BuildContext context) => NirangAlertDialog(
+    title: Text(context.s('fragmentSettings')),
+    content: Form(
+      key: _formKey,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(context.s('enableFragment')),
+              value: _enabled,
+              onChanged: (value) => setState(() => _enabled = value),
+            ),
+            DropdownButtonFormField<String>(
+              initialValue: _packets,
+              decoration: InputDecoration(
+                labelText: context.s('fragmentPackets'),
+              ),
+              items: const ['tlshello', '1-1', '1-2', '1-3', '1-4', '1-5']
+                  .map(
+                    (value) =>
+                        DropdownMenuItem(value: value, child: Text(value)),
+                  )
+                  .toList(growable: false),
+              onChanged: (value) => _packets = value ?? _packets,
+            ),
+            const SizedBox(height: 10),
+            TextFormField(
+              controller: _length,
+              decoration: InputDecoration(
+                labelText: context.s('fragmentLength'),
+                hintText: '50-100',
+              ),
+              validator: (value) => _range(value, 65535),
+            ),
+            const SizedBox(height: 10),
+            TextFormField(
+              controller: _interval,
+              decoration: InputDecoration(
+                labelText: context.s('fragmentInterval'),
+                hintText: '10-20',
+              ),
+              validator: (value) => _range(value, 10000),
+            ),
+            const SizedBox(height: 10),
+            TextFormField(
+              controller: _maxSplit,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: context.s('fragmentMaxSplit'),
+              ),
+              validator: (value) {
+                final number = int.tryParse(value?.trim() ?? '');
+                return number != null && number >= 0 && number <= 10000
+                    ? null
+                    : context.s('invalidFragmentMaxSplit');
+              },
+            ),
+          ],
+        ),
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: Text(context.s('cancel')),
+      ),
+      FilledButton(
+        onPressed: () {
+          if (_formKey.currentState?.validate() != true) return;
+          Navigator.pop(context, <String, Object?>{
+            'fragmentEnabled': _enabled,
+            'fragmentPackets': _packets,
+            'fragmentLength': _length.text.trim(),
+            'fragmentInterval': _interval.text.trim(),
+            'fragmentMaxSplit': int.parse(_maxSplit.text.trim()),
+          });
+        },
+        child: Text(context.s('apply')),
+      ),
+    ],
+  );
 }
 
 class _CustomRulesDialogState extends State<_CustomRulesDialog> {

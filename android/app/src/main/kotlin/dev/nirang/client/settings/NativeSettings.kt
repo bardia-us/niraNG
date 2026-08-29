@@ -31,6 +31,11 @@ class NativeSettings(context: Context) {
     val domainStrategy: String get() = safeString("domainStrategy", "AsIs").takeIf(ALLOWED_DOMAIN_STRATEGIES::contains) ?: "AsIs"
     val sniffingEnabled: Boolean get() = safeBoolean("sniffingEnabled", true)
     val routeOnly: Boolean get() = safeBoolean("routeOnly", false)
+    val fragmentEnabled: Boolean get() = safeBoolean("fragmentEnabled", false)
+    val fragmentPackets: String get() = safeString("fragmentPackets", "tlshello").takeIf(::validFragmentPackets) ?: "tlshello"
+    val fragmentLength: String get() = safeString("fragmentLength", "50-100").takeIf { validRange(it, 1, 65_535) } ?: "50-100"
+    val fragmentInterval: String get() = safeString("fragmentInterval", "10-20").takeIf { validRange(it, 1, 10_000) } ?: "10-20"
+    val fragmentMaxSplit: Int get() = safeInt("fragmentMaxSplit", 10).takeIf { it in 0..10_000 } ?: 10
     val enableIpv6: Boolean get() = safeBoolean("enableIpv6", FRESH_INSTALL_DEFAULTS.enableIpv6)
     val preferIpv6: Boolean get() = safeBoolean("preferIpv6", false)
     val vpnMtu: Int get() = safeInt("vpnMtu", 1500).takeIf { it in 1280..9000 } ?: 1500
@@ -57,6 +62,11 @@ class NativeSettings(context: Context) {
         "domainStrategy" to domainStrategy,
         "sniffingEnabled" to sniffingEnabled,
         "routeOnly" to routeOnly,
+        "fragmentEnabled" to fragmentEnabled,
+        "fragmentPackets" to fragmentPackets,
+        "fragmentLength" to fragmentLength,
+        "fragmentInterval" to fragmentInterval,
+        "fragmentMaxSplit" to fragmentMaxSplit,
         "enableIpv6" to enableIpv6,
         "preferIpv6" to preferIpv6,
         "vpnMtu" to vpnMtu,
@@ -105,6 +115,18 @@ class NativeSettings(context: Context) {
             require(it in ALLOWED_DOMAIN_STRATEGIES) { "Unsupported domain strategy" }
             strings["domainStrategy"] = it
         }
+        values["fragmentPackets"]?.toString()?.trim()?.lowercase()?.let {
+            require(validFragmentPackets(it)) { "Fragment packets must be tlshello or 1-1 through 1-5" }
+            strings["fragmentPackets"] = it
+        }
+        values["fragmentLength"]?.toString()?.trim()?.let {
+            require(validRange(it, 1, 65_535)) { "Fragment length must be an ascending min-max range" }
+            strings["fragmentLength"] = it
+        }
+        values["fragmentInterval"]?.toString()?.trim()?.let {
+            require(validRange(it, 1, 10_000)) { "Fragment interval must be an ascending min-max range" }
+            strings["fragmentInterval"] = it
+        }
 
         val booleans = mutableMapOf<String, Boolean>()
         for (key in BOOLEAN_KEYS) {
@@ -126,6 +148,12 @@ class NativeSettings(context: Context) {
         val pingConcurrency = (values["realPingConcurrency"] as? Number)?.toInt()
         if (values.containsKey("realPingConcurrency")) {
             require(pingConcurrency in ALLOWED_PING_CONCURRENCY) { "Unsupported real-delay concurrency" }
+        }
+        val fragmentMaxSplitValue = (values["fragmentMaxSplit"] as? Number)?.toInt()
+        if (values.containsKey("fragmentMaxSplit")) {
+            require(fragmentMaxSplitValue != null && fragmentMaxSplitValue in 0..10_000) {
+                "Fragment max split must be between 0 and 10000"
+            }
         }
         values["themeMode"]?.toString()?.let {
             require(it in ALLOWED_THEMES) { "Unsupported theme mode" }
@@ -155,6 +183,7 @@ class NativeSettings(context: Context) {
         mtu?.let { editor.putInt("vpnMtu", it) }
         socksPort?.let { editor.putInt("localSocksPort", it) }
         pingConcurrency?.let { editor.putInt("realPingConcurrency", it) }
+        fragmentMaxSplitValue?.let { editor.putInt("fragmentMaxSplit", it) }
         (autoUpdateValue as? Boolean)?.let { editor.putBoolean("autoUpdate", it) }
         interval?.let { editor.putInt("updateIntervalHours", it) }
         editor.apply()
@@ -230,6 +259,7 @@ class NativeSettings(context: Context) {
             "enableFakeDns",
             "sniffingEnabled",
             "routeOnly",
+            "fragmentEnabled",
             "enableIpv6",
             "preferIpv6",
             "performanceMode",
@@ -305,6 +335,17 @@ class NativeSettings(context: Context) {
             if (parts.size == 1) return true
             val prefix = parts[1].toIntOrNull() ?: return false
             return prefix in 0..if (ipv4) 32 else 128
+        }
+
+        private fun validFragmentPackets(value: String): Boolean =
+            value.lowercase() in setOf("tlshello", "1-1", "1-2", "1-3", "1-4", "1-5")
+
+        private fun validRange(value: String, minimum: Int, maximum: Int): Boolean {
+            val parts = value.split('-', limit = 2)
+            if (parts.size != 2) return false
+            val from = parts[0].trim().toIntOrNull() ?: return false
+            val to = parts[1].trim().toIntOrNull() ?: return false
+            return from in minimum..maximum && to in minimum..maximum && from <= to
         }
 
         private fun splitRules(value: String): List<String> = value

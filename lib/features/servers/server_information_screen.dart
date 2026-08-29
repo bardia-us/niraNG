@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../../core/formatters.dart';
 import '../../core/localization/app_strings.dart';
 import '../../core/platform/native_models.dart';
+import '../../core/widgets/country_flag_badge.dart';
 
 class ServerInformationScreen extends StatelessWidget {
   const ServerInformationScreen({required this.server, super.key});
@@ -20,9 +20,10 @@ class ServerInformationScreen extends StatelessWidget {
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                Text(
-                  countryFlag(server.country),
-                  style: const TextStyle(fontSize: 34),
+                CountryFlagBadge(
+                  countryCode: server.country,
+                  width: 36,
+                  height: 27,
                 ),
                 const SizedBox(width: 13),
                 Expanded(
@@ -58,7 +59,7 @@ class ServerInformationScreen extends StatelessWidget {
               label: context.s('country'),
               value: server.country.isEmpty
                   ? context.s('unknown')
-                  : '${countryFlag(server.country)}  ${server.country}',
+                  : server.country,
             ),
             _InfoRow(
               label: context.s('port'),

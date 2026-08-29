@@ -100,3 +100,7 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20250517")
 }
+
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    systemProperty("nirang.libv2ray.aar", file("libs/libv2ray.aar").absolutePath)
+}

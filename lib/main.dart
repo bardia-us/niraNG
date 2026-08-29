@@ -14,6 +14,7 @@ import 'core/theme/app_theme.dart';
 import 'core/theme/app_scroll_behavior.dart';
 import 'features/vpn/app_controller.dart';
 import 'features/vpn/app_shell.dart';
+import 'features/registration/registration_bootstrap.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -42,7 +43,9 @@ void main() {
       ),
     ),
   );
-  runApp(const ProviderScope(child: NirangApp()));
+  runApp(
+    const ProviderScope(child: NirangRegistrationBootstrap(child: NirangApp())),
+  );
 }
 
 Future<void> _recordFrameworkError(String message, StackTrace? stack) async {
