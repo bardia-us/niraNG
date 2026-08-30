@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nirang/core/registration/device_registration.dart';
 import 'package:nirang/features/registration/registration_bootstrap.dart';
 
 void main() {
+  tearDown(clearDeviceAccessBlocked);
+
   testWidgets('Home is not built until Android registration consent is saved', (
     tester,
   ) async {
@@ -52,18 +55,68 @@ void main() {
     expect(coordinator.accepts, 0);
     expect(find.text('HOME_READY'), findsNothing);
   });
+
+  testWidgets('blocked startup shows support message instead of loading', (
+    tester,
+  ) async {
+    final coordinator = _FakeCoordinator()..blocked = true;
+    await tester.pumpWidget(
+      ProviderScope(
+        child: NirangRegistrationBootstrap(
+          coordinator: coordinator,
+          child: const MaterialApp(home: Text('HOME_READY')),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('HOME_READY'), findsNothing);
+    expect(find.text('Access blocked'), findsOneWidget);
+    expect(find.textContaining('دسترسی شما مسدود شده است'), findsOneWidget);
+    expect(find.text('Telegram'), findsOneWidget);
+  });
+
+  testWidgets('runtime block replaces the app immediately', (tester) async {
+    final coordinator = _FakeCoordinator()..accepted = true;
+    await tester.pumpWidget(
+      ProviderScope(
+        child: NirangRegistrationBootstrap(
+          coordinator: coordinator,
+          child: const MaterialApp(home: Text('HOME_READY')),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('HOME_READY'), findsOneWidget);
+
+    markDeviceAccessBlocked();
+    await tester.pumpAndSettle();
+    expect(find.text('HOME_READY'), findsNothing);
+    expect(find.text('Access blocked'), findsOneWidget);
+  });
 }
 
 final class _FakeCoordinator implements DeviceRegistrationCoordinator {
   int accepts = 0;
   int exits = 0;
+  bool accepted = false;
+  bool blocked = false;
 
   @override
-  Future<bool> initialize() async => false;
+  Future<bool> initialize() async {
+    if (blocked) {
+      throw PlatformException(
+        code: 'blocked',
+        message: 'blocked_by_administrator',
+      );
+    }
+    return accepted;
+  }
 
   @override
   Future<void> accept() async {
     accepts++;
+    accepted = true;
   }
 
   @override

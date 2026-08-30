@@ -52,7 +52,7 @@ class AppStrings {
       'refresh': 'Update now',
       'notConfigured': 'Subscription endpoint is not configured.',
       'configureHint':
-          'Set NIRANG_SUBSCRIPTION_URL in android/gradle.properties or the build environment.',
+          'The administrator must configure the protected subscription upstream on the registry server.',
       'testAll': 'Test all',
       'cancel': 'Cancel',
       'testLatency': 'Test latency',
@@ -166,10 +166,14 @@ class AppStrings {
       'lastUpdated': 'Last updated',
       'updates': 'Updates',
       'quickSettingsTile': 'Quick Settings VPN tile',
-      'quickSettingsTileSummary': 'Add a tile to connect or disconnect niraNG from the notification shade.',
-      'quickSettingsTileRequested': 'The niraNG tile was added to Quick Settings.',
-      'quickSettingsTileAlreadyAdded': 'The niraNG Quick Settings tile is already available.',
-      'quickSettingsTileManual': 'Open Quick Settings edit mode and add the niraNG tile.',
+      'quickSettingsTileSummary':
+          'Add a tile to connect or disconnect niraNG from the notification shade.',
+      'quickSettingsTileRequested':
+          'The niraNG tile was added to Quick Settings.',
+      'quickSettingsTileAlreadyAdded':
+          'The niraNG Quick Settings tile is already available.',
+      'quickSettingsTileManual':
+          'Open Quick Settings edit mode and add the niraNG tile.',
       'currentVersion': 'Current version',
       'checkForUpdates': 'Check for updates',
       'newVersionAvailable': 'New version available',
@@ -242,7 +246,7 @@ class AppStrings {
       'refresh': 'به‌روزرسانی اکنون',
       'notConfigured': 'آدرس داخلی اشتراک تنظیم نشده است.',
       'configureHint':
-          'NIRANG_SUBSCRIPTION_URL را در android/gradle.properties یا محیط Build تنظیم کنید.',
+          'مدیر سرور باید Subscription اصلی را فقط در محیط امن Registry تنظیم کند.',
       'testAll': 'تست همه',
       'cancel': 'لغو',
       'testLatency': 'تست تأخیر',
@@ -353,10 +357,13 @@ class AppStrings {
       'lastUpdated': 'آخرین به‌روزرسانی',
       'updates': 'به‌روزرسانی برنامه',
       'quickSettingsTile': 'کلید VPN در تنظیمات سریع',
-      'quickSettingsTileSummary': 'کلیدی برای اتصال یا قطع niraNG در نوار اعلان اضافه کنید.',
+      'quickSettingsTileSummary':
+          'کلیدی برای اتصال یا قطع niraNG در نوار اعلان اضافه کنید.',
       'quickSettingsTileRequested': 'کلید niraNG به تنظیمات سریع اضافه شد.',
-      'quickSettingsTileAlreadyAdded': 'کلید niraNG از قبل در تنظیمات سریع موجود است.',
-      'quickSettingsTileManual': 'ویرایش تنظیمات سریع را باز کنید و کلید niraNG را اضافه کنید.',
+      'quickSettingsTileAlreadyAdded':
+          'کلید niraNG از قبل در تنظیمات سریع موجود است.',
+      'quickSettingsTileManual':
+          'ویرایش تنظیمات سریع را باز کنید و کلید niraNG را اضافه کنید.',
       'currentVersion': 'نسخه فعلی',
       'checkForUpdates': 'بررسی به‌روزرسانی',
       'newVersionAvailable': 'نسخه جدید موجود است',

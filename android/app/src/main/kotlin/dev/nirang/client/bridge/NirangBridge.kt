@@ -51,9 +51,7 @@ class NirangBridge(
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "deviceRegistrationStatus" -> {
-                val accepted = DeviceRegistrationManager.hasConsent(activity)
-                if (accepted) DeviceRegistrationManager.scheduleSync(activity)
-                result.success(accepted)
+                deviceRegistrationStatus(result)
             }
             "acceptDeviceRegistration" -> acceptDeviceRegistration(result)
             "exitApplication" -> {
@@ -125,6 +123,7 @@ class NirangBridge(
         executor.execute {
             runCatching {
                 check(DeviceRegistrationManager.hasConsent(activity)) { "Device registration consent is required" }
+                DeviceRegistrationManager.requireAllowed(activity)
                 runCatching { activity.deleteSharedPreferences("nirang_traffic") }
                 val settings = NativeSettings(activity).also { it.incrementOpenCount() }
                 bootstrap().toMutableMap().apply { put("settings", settings.toMap()) }
@@ -142,8 +141,26 @@ class NirangBridge(
                 }
             }.onFailure { error ->
                 SafeLog.error(activity, "Startup initialization failed")
-                postToFlutter { result.error("startup", safeError(error), null) }
+                handleRemoteAccessFailure(error)
+                postToFlutter { result.error(remoteErrorCode(error, "startup"), safeError(error), null) }
             }
+        }
+    }
+
+    private fun deviceRegistrationStatus(result: MethodChannel.Result) {
+        if (!DeviceRegistrationManager.hasConsent(activity)) {
+            result.success(false)
+            return
+        }
+        executor.execute {
+            runCatching { DeviceRegistrationManager.requireAllowed(activity) }
+                .onSuccess { postToFlutter { result.success(true) } }
+                .onFailure { error ->
+                    handleRemoteAccessFailure(error)
+                    postToFlutter {
+                        result.error(remoteErrorCode(error, "registration"), safeError(error), null)
+                    }
+                }
         }
     }
 
@@ -181,7 +198,10 @@ class NirangBridge(
                 true
             }.onSuccess { accepted -> postToFlutter { result.success(accepted) } }
                 .onFailure { error ->
-                    postToFlutter { result.error("registration", safeError(error), null) }
+                    handleRemoteAccessFailure(error)
+                    postToFlutter {
+                        result.error(remoteErrorCode(error, "registration"), safeError(error), null)
+                    }
                 }
         }
     }
@@ -201,7 +221,10 @@ class NirangBridge(
                 postToFlutter { result.success(data) }
             } catch (error: Exception) {
                 SafeLog.warning(activity, "Subscription update failed")
-                postToFlutter { result.error("subscription", safeError(error), null) }
+                handleRemoteAccessFailure(error)
+                postToFlutter {
+                    result.error(remoteErrorCode(error, "subscription"), safeError(error), null)
+                }
             }
         }
     }
@@ -258,11 +281,24 @@ class NirangBridge(
             result.error("consent_required", "Device registration consent is required", null)
             return
         }
+        val requested = call.argument<String>("id") ?: repository.selectedServer()?.id
+        executor.execute {
+            runCatching { DeviceRegistrationManager.requireAllowed(activity) }
+                .onSuccess { postToFlutter { continueConnect(requested, result) } }
+                .onFailure { error ->
+                    handleRemoteAccessFailure(error)
+                    postToFlutter {
+                        result.error(remoteErrorCode(error, "access_denied"), safeError(error), null)
+                    }
+                }
+        }
+    }
+
+    private fun continueConnect(requested: String?, result: MethodChannel.Result) {
         if (ConnectionStore.state() in ACTIVE_CONNECTION_STATES + ConnectionState.STOPPING) {
             result.error("busy", "A VPN transition is already in progress", null)
             return
         }
-        val requested = call.argument<String>("id") ?: repository.selectedServer()?.id
         val server = requested?.let(repository::server)
         if (requested == null || server == null) {
             result.error("no_server", "Select a server first", null)
@@ -274,6 +310,21 @@ class NirangBridge(
         }
         repository.select(requested)
         requestVpnPermission(requested, result)
+    }
+
+    private fun handleRemoteAccessFailure(error: Throwable) {
+        val denied = error as? dev.nirang.client.registration.RemoteAccessException ?: return
+        if (denied.apiReason != "blocked_by_administrator") return
+        NirangVpnService.stop(activity)
+        NativeEvents.emit(
+            "accessBlocked",
+            mapOf("reason" to denied.apiReason, "message" to safeError(denied)),
+        )
+    }
+
+    private fun remoteErrorCode(error: Throwable, fallback: String): String {
+        val denied = error as? dev.nirang.client.registration.RemoteAccessException
+        return if (denied?.apiReason == "blocked_by_administrator") "blocked" else fallback
     }
 
     private fun restartService(result: MethodChannel.Result) {
@@ -362,7 +413,7 @@ class NirangBridge(
             "coreVersion" to activity.getSharedPreferences("nirang_installation", Activity.MODE_PRIVATE)
                 .getString("coreVersion", "Bundled"),
             "appVersion" to BuildConfig.VERSION_NAME,
-            "subscriptionConfigured" to BuildConfig.SUBSCRIPTION_URL.isNotBlank(),
+            "subscriptionConfigured" to true,
             "telegramEligible" to NativeSettings(activity).telegramReminderEligible(),
             "deletedServerCount" to repository.deletedCount(),
         )

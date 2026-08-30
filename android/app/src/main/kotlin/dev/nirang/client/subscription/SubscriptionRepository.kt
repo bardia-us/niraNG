@@ -1,17 +1,14 @@
 package dev.nirang.client.subscription
 
 import android.content.Context
-import dev.nirang.client.BuildConfig
 import dev.nirang.client.logs.SafeLog
 import dev.nirang.client.model.ServerRecord
 import dev.nirang.client.model.SubscriptionSnapshot
 import dev.nirang.client.model.SubscriptionUsage
+import dev.nirang.client.registration.DeviceRegistrationManager
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
-import javax.net.ssl.HttpsURLConnection
 
 class SubscriptionRepository(private val context: Context) {
     private val prefs = context.getSharedPreferences("nirang_subscription", Context.MODE_PRIVATE)
@@ -95,76 +92,40 @@ class SubscriptionRepository(private val context: Context) {
     @Throws(IOException::class)
     fun refresh(): SubscriptionSnapshot = synchronized(lock) {
         ensureLoaded()
-        val endpoint = BuildConfig.SUBSCRIPTION_URL.trim()
-        if (endpoint.isBlank()) throw IOException("Subscription endpoint is not configured")
-        val url = URL(endpoint)
-        if (url.protocol.lowercase() != "https") throw IOException("Subscription endpoint must use HTTPS")
-
-        val connection = (url.openConnection() as HttpsURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 12_000
-            readTimeout = 20_000
-            instanceFollowRedirects = true
-            setRequestProperty("User-Agent", "niraNG/1.1.0 Android")
-            setRequestProperty("Accept", "text/plain, application/json")
-            // A user-triggered refresh is an authoritative full sync. Sending
-            // cache validators here made a valid 304 look like a failed update
-            // and left locally hidden servers invisible indefinitely.
-            useCaches = false
-            setRequestProperty("Cache-Control", "no-cache")
+        val remote = DeviceRegistrationManager.fetchSubscription(context)
+        val bytes = remote.bytes
+        if (bytes.size > MAX_SUBSCRIPTION_BYTES) throw IOException("Subscription response is too large")
+        val parseResult = SubscriptionParser.parseDetailed(bytes.toString(Charsets.UTF_8))
+        SafeLog.info(context, "Subscription parse ${parseResult.stats.summary()}")
+        parseResult.failures.forEach { failure ->
+            SafeLog.warning(context, "Subscription parser $failure")
+        }
+        if (parseResult.servers.isEmpty()) {
+            throw IOException("Subscription contains no usable servers; existing servers were preserved")
+        }
+        val servers = SubscriptionSyncPolicy.resetLatency(
+            SubscriptionSyncPolicy.reconcile(
+                cachedServers = snapshot.servers,
+                parsedServers = parseResult.servers,
+                authoritative = parseResult.stats.complete,
+            ),
+        )
+        if (!parseResult.stats.complete) {
+            SafeLog.warning(context, "Subscription was partially parsed; cached servers were preserved")
         }
 
-        try {
-            val status = connection.responseCode
-            if (status !in 200..299) throw IOException("Subscription request failed with HTTP $status")
-
-            val bytes = connection.inputStream.use { it.readBytes() }
-            if (bytes.size > MAX_SUBSCRIPTION_BYTES) throw IOException("Subscription response is too large")
-            val expectedLength = connection.contentLengthLong
-            if (expectedLength >= 0 && expectedLength != bytes.size.toLong()) {
-                throw IOException("Subscription response was incomplete")
-            }
-            val parseResult = SubscriptionParser.parseDetailed(bytes.toString(Charsets.UTF_8))
-            SafeLog.info(context, "Subscription parse ${parseResult.stats.summary()}")
-            parseResult.failures.forEach { failure ->
-                SafeLog.warning(context, "Subscription parser $failure")
-            }
-            if (parseResult.servers.isEmpty()) {
-                throw IOException("Subscription contains no usable servers; existing servers were preserved")
-            }
-            val servers = SubscriptionSyncPolicy.resetLatency(
-                SubscriptionSyncPolicy.reconcile(
-                    cachedServers = snapshot.servers,
-                    parsedServers = parseResult.servers,
-                    authoritative = parseResult.stats.complete,
-                ),
-            )
-            if (!parseResult.stats.complete) {
-                SafeLog.warning(context, "Subscription was partially parsed; cached servers were preserved")
-            }
-
-            val usageHeader = connection.headerFields.entries
-                .firstOrNull { it.key?.equals("subscription-userinfo", ignoreCase = true) == true }
-                ?.value?.firstOrNull()
-            val updated = SubscriptionSnapshot(
-                servers = servers,
-                usage = SubscriptionParser.parseUsage(usageHeader),
-                lastUpdatedEpochMillis = System.currentTimeMillis(),
-            )
-            persist(updated)
-            snapshot = updated
-            // Delete is intentionally local and temporary. A successful full
-            // sync restores every server still present in the subscription.
-            prefs.edit().remove(HIDDEN_SERVER_IDS).apply()
-            ensureVisibleSelection(emptySet())
-            prefs.edit()
-                .putString("etag", connection.getHeaderField("ETag"))
-                .putString("lastModified", connection.getHeaderField("Last-Modified"))
-                .apply()
-            updated
-        } finally {
-            connection.disconnect()
-        }
+        val updated = SubscriptionSnapshot(
+            servers = servers,
+            usage = SubscriptionParser.parseUsage(remote.usageHeader),
+            lastUpdatedEpochMillis = System.currentTimeMillis(),
+        )
+        persist(updated)
+        snapshot = updated
+        // Delete is intentionally local and temporary. A successful full
+        // sync restores every server still present in the subscription.
+        prefs.edit().remove(HIDDEN_SERVER_IDS).apply()
+        ensureVisibleSelection(emptySet())
+        updated
     }
 
     private fun loadFromDisk(): SubscriptionSnapshot {

@@ -1,4 +1,18 @@
+import 'package:flutter/foundation.dart';
+
 import '../platform/nirang_native.dart';
+
+final deviceAccessBlock = ValueNotifier<String?>(null);
+
+void markDeviceAccessBlocked([String? message]) {
+  deviceAccessBlock.value = message?.trim().isNotEmpty == true
+      ? message!.trim()
+      : 'blocked_by_administrator';
+}
+
+void clearDeviceAccessBlocked() {
+  deviceAccessBlock.value = null;
+}
 
 abstract interface class DeviceRegistrationCoordinator {
   Future<bool> initialize();

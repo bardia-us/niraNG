@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/platform/native_models.dart';
 import '../../core/platform/nirang_native.dart';
+import '../../core/registration/device_registration.dart';
 
 final appControllerProvider = AsyncNotifierProvider<AppController, AppSnapshot>(
   AppController.new,
@@ -219,6 +220,9 @@ class AppController extends AsyncNotifier<AppSnapshot> {
         _set((value) => value.copyWith(coreVersion: '$data'));
       case 'subscriptionError':
         _set((value) => value.copyWith(subscriptionError: '$data'));
+      case 'accessBlocked':
+        final details = _map(data);
+        markDeviceAccessBlocked('${details['message'] ?? ''}');
       case 'pingCompleted':
       case 'pingCancelled':
         _set((value) => value.copyWith(isPinging: false));
@@ -233,7 +237,7 @@ class AppController extends AsyncNotifier<AppSnapshot> {
     logs: _logs(map['logs'] as List<dynamic>? ?? const []),
     lastUpdated: _number(map['lastUpdated']),
     coreVersion: '${map['coreVersion'] ?? 'Unavailable'}',
-    appVersion: '${map['appVersion'] ?? '1.1.0'}',
+    appVersion: '${map['appVersion'] ?? '1.1.1'}',
     subscriptionConfigured: map['subscriptionConfigured'] == true,
     telegramEligible: map['telegramEligible'] == true,
     subscriptionError: map['subscriptionError']?.toString(),

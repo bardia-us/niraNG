@@ -10,19 +10,33 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.Worker
 import androidx.work.WorkerParameters
-import dev.nirang.client.BuildConfig
 import dev.nirang.client.logs.SafeLog
+import dev.nirang.client.bridge.NativeEvents
+import dev.nirang.client.registration.RemoteAccessException
 import dev.nirang.client.settings.NativeSettings
+import dev.nirang.client.vpn.NirangVpnService
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 class SubscriptionWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
     override fun doWork(): ListenableWorker.Result {
-        if (BuildConfig.SUBSCRIPTION_URL.isBlank()) return ListenableWorker.Result.failure()
         return try {
             SubscriptionRepository(applicationContext).refresh()
             SafeLog.info(applicationContext, "Subscription updated")
             ListenableWorker.Result.success()
+        } catch (error: RemoteAccessException) {
+            if (error.apiReason == "blocked_by_administrator") {
+                NirangVpnService.stop(applicationContext)
+                NativeEvents.emit(
+                    "accessBlocked",
+                    mapOf("reason" to error.apiReason, "message" to error.message.orEmpty()),
+                )
+                SafeLog.warning(applicationContext, "Subscription access blocked")
+                ListenableWorker.Result.failure()
+            } else {
+                SafeLog.warning(applicationContext, "Subscription update deferred")
+                ListenableWorker.Result.retry()
+            }
         } catch (_: IOException) {
             SafeLog.warning(applicationContext, "Subscription update deferred")
             ListenableWorker.Result.retry()
@@ -42,7 +56,7 @@ object SubscriptionScheduler {
         val settings = NativeSettings(context)
         val manager = WorkManager.getInstance(context)
         val prefs = context.getSharedPreferences(SCHEDULER_PREFS, Context.MODE_PRIVATE)
-        if (!settings.autoUpdate || BuildConfig.SUBSCRIPTION_URL.isBlank()) {
+        if (!settings.autoUpdate) {
             manager.cancelUniqueWork(UNIQUE_WORK)
             prefs.edit().remove(SCHEDULED_INTERVAL).apply()
             return

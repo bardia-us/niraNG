@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/registration/device_registration.dart';
+import '../../core/platform/nirang_native.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/glass_surface.dart';
 
@@ -28,7 +30,7 @@ class _NirangRegistrationBootstrapState
   @override
   void initState() {
     super.initState();
-    _initialization = widget.coordinator.initialize();
+    _initialization = _verifyAccess();
   }
 
   @override
@@ -40,7 +42,32 @@ class _NirangRegistrationBootstrapState
           const Scaffold(body: Center(child: CircularProgressIndicator())),
         );
       }
-      if (snapshot.data == true) return widget.child;
+      final error = snapshot.error;
+      if (_isBlocked(error)) markDeviceAccessBlocked(_platformMessage(error));
+      if (snapshot.data == true) {
+        return ValueListenableBuilder<String?>(
+          valueListenable: deviceAccessBlock,
+          child: widget.child,
+          builder: (context, blocked, child) => blocked == null
+              ? child!
+              : _registrationApp(
+                  BlockedAccessScreen(onRetry: _retry, onExit: _exit),
+                ),
+        );
+      }
+      if (error != null) {
+        return _registrationApp(
+          _isBlocked(error)
+              ? BlockedAccessScreen(onRetry: _retry, onExit: _exit)
+              : AccessVerificationScreen(
+                  message:
+                      _platformMessage(error) ??
+                      'Access status could not be verified.',
+                  onRetry: _retry,
+                  onExit: _exit,
+                ),
+        );
+      }
       return _registrationApp(
         RegistrationConsentScreen(
           accepting: _accepting,
@@ -51,6 +78,19 @@ class _NirangRegistrationBootstrapState
       );
     },
   );
+
+  Future<bool> _verifyAccess() async {
+    final accepted = await widget.coordinator.initialize();
+    if (accepted) clearDeviceAccessBlocked();
+    return accepted;
+  }
+
+  void _retry() {
+    setState(() {
+      _error = null;
+      _initialization = _verifyAccess();
+    });
+  }
 
   Widget _registrationApp(Widget home) => MaterialApp(
     title: 'niraNG — Device registration',
@@ -70,13 +110,22 @@ class _NirangRegistrationBootstrapState
     try {
       await widget.coordinator.accept();
       if (!mounted) return;
-      setState(() => _initialization = Future<bool>.value(true));
-    } catch (_) {
+      setState(() => _initialization = _verifyAccess());
+    } catch (error) {
       if (mounted) {
+        if (_isBlocked(error)) {
+          markDeviceAccessBlocked(_platformMessage(error));
+          setState(() => _initialization = Future<bool>.error(error));
+          return;
+        }
+        final nativeMessage = error is PlatformException
+            ? error.message?.trim()
+            : null;
         setState(() {
-          _error =
-              'Consent could not be saved. Please try again.\n'
-              'ذخیره رضایت انجام نشد؛ دوباره تلاش کنید.';
+          _error = nativeMessage?.isNotEmpty == true
+              ? nativeMessage
+              : 'Registration could not be completed. Please try again.\n'
+                    'ثبت دستگاه کامل نشد؛ دوباره تلاش کنید.';
         });
       }
     } finally {
@@ -85,6 +134,142 @@ class _NirangRegistrationBootstrapState
   }
 
   Future<void> _exit() => widget.coordinator.exitApplication();
+
+  static bool _isBlocked(Object? error) =>
+      error is PlatformException &&
+      (error.code == 'blocked' ||
+          error.message?.contains('blocked_by_administrator') == true ||
+          error.message?.toLowerCase().contains('blocked') == true);
+
+  static String? _platformMessage(Object? error) =>
+      error is PlatformException ? error.message?.trim() : null;
+}
+
+class BlockedAccessScreen extends StatelessWidget {
+  const BlockedAccessScreen({
+    required this.onRetry,
+    required this.onExit,
+    super.key,
+  });
+
+  final VoidCallback onRetry;
+  final VoidCallback onExit;
+
+  @override
+  Widget build(BuildContext context) => _AccessMessageCard(
+    icon: Icons.block_rounded,
+    title: 'Access blocked',
+    message:
+        'دسترسی شما مسدود شده است.\n'
+        'برای اطلاع از دلیل مسدود شدن می‌توانید به تلگرام سازنده مراجعه کنید.',
+    actions: [
+      TextButton(onPressed: onExit, child: const Text('Exit')),
+      OutlinedButton(onPressed: onRetry, child: const Text('Try again')),
+      FilledButton.icon(
+        onPressed: () async {
+          try {
+            await NirangNative.openTelegram();
+          } catch (_) {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Telegram link is unavailable.')),
+              );
+            }
+          }
+        },
+        icon: const Icon(Icons.send_rounded),
+        label: const Text('Telegram'),
+      ),
+    ],
+  );
+}
+
+class AccessVerificationScreen extends StatelessWidget {
+  const AccessVerificationScreen({
+    required this.message,
+    required this.onRetry,
+    required this.onExit,
+    super.key,
+  });
+
+  final String message;
+  final VoidCallback onRetry;
+  final VoidCallback onExit;
+
+  @override
+  Widget build(BuildContext context) => _AccessMessageCard(
+    icon: Icons.cloud_off_rounded,
+    title: 'Access check failed',
+    message: message,
+    actions: [
+      TextButton(onPressed: onExit, child: const Text('Exit')),
+      FilledButton(onPressed: onRetry, child: const Text('Try again')),
+    ],
+  );
+}
+
+class _AccessMessageCard extends StatelessWidget {
+  const _AccessMessageCard({
+    required this.icon,
+    required this.title,
+    required this.message,
+    required this.actions,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return DecoratedBox(
+      decoration: NirangVisualEffects.shellBackground(
+        theme,
+        reducedEffects: false,
+      ),
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 560),
+                child: GlassSurface(
+                  radius: 24,
+                  blur: 14,
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(icon, size: 48, color: theme.colorScheme.error),
+                      const SizedBox(height: 16),
+                      Text(title, style: theme.textTheme.headlineSmall),
+                      const SizedBox(height: 12),
+                      Text(
+                        message,
+                        textAlign: TextAlign.center,
+                        textDirection: TextDirection.rtl,
+                      ),
+                      const SizedBox(height: 22),
+                      Wrap(
+                        alignment: WrapAlignment.center,
+                        spacing: 10,
+                        runSpacing: 8,
+                        children: actions,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class RegistrationConsentScreen extends StatelessWidget {
@@ -153,11 +338,14 @@ class RegistrationConsentScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 20),
                       const Text(
-                        'Before entering niraNG, this installation must be registered. After you accept, synchronization runs asynchronously over HTTPS and does not delay the VPN.',
+                        'Before entering niraNG, this installation must be registered and its access status verified securely over HTTPS.',
                       ),
                       const SizedBox(height: 12),
                       const _DisclosureItem(
                         'A random, persistent installation ID',
+                      ),
+                      const _DisclosureItem(
+                        'A one-way device key derived from ANDROID_ID; the raw ANDROID_ID is never sent or stored by niraNG',
                       ),
                       const _DisclosureItem(
                         'Device Name, or Manufacturer + Model as fallback',
@@ -168,14 +356,14 @@ class RegistrationConsentScreen extends StatelessWidget {
                       const _DisclosureItem('First seen and last seen times'),
                       const SizedBox(height: 13),
                       Text(
-                        'niraNG does not collect IMEI, hardware serial, MAC address, Android hardware ID, SIM number, SSID, files, contacts, or a hidden fingerprint.',
+                        'niraNG does not collect IMEI, hardware serial, MAC address, raw ANDROID_ID, SIM number, SSID, files, contacts, or a hidden hardware fingerprint.',
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
                       ),
                       const SizedBox(height: 13),
                       const Text(
-                        'برای مدیریت نصب، شناسهٔ تصادفی نصب، نام دستگاه، سازنده و مدل، نسخهٔ Android و niraNG و زمان اولین/آخرین اجرا ارسال می‌شود. IMEI، سریال، MAC، Android ID سخت‌افزاری، سیم‌کارت، Wi-Fi، فایل‌ها و مخاطبان جمع‌آوری نمی‌شوند.',
+                        'برای مدیریت دسترسی، شناسهٔ نصب و یک Device Key یک‌طرفه مشتق‌شده از ANDROID_ID ارسال می‌شود؛ مقدار خام ANDROID_ID هرگز ارسال یا ذخیره نمی‌شود. IMEI، سریال، MAC، سیم‌کارت، Wi-Fi، فایل‌ها و مخاطبان جمع‌آوری نمی‌شوند.',
                         textDirection: TextDirection.rtl,
                       ),
                       if (error case final message?) ...[

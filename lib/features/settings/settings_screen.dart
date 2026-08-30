@@ -29,7 +29,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           isRefreshing: app?.isRefreshing ?? false,
           deletedCount: app?.deletedServerCount ?? 0,
           coreVersion: app?.coreVersion ?? 'Bundled',
-          appVersion: app?.appVersion ?? '1.1.0',
+          appVersion: app?.appVersion ?? '1.1.1',
         );
       }),
     );
@@ -525,12 +525,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           : result == 'requested'
           ? context.s('quickSettingsTileRequested')
           : context.s('quickSettingsTileManual');
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
     } catch (_) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(context.s('operationFailed'))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(context.s('operationFailed'))));
       }
     }
   }

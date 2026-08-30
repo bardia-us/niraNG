@@ -22,7 +22,6 @@ fun privateBuildInput(name: String): String = providers
     .orElse(localProperties.getProperty(name, ""))
     .get()
 
-val internalSubscriptionUrl = privateBuildInput("NIRANG_SUBSCRIPTION_URL")
 val telegramChannelUrl = privateBuildInput("NIRANG_TELEGRAM_URL")
 val telegramContact = privateBuildInput("NIRANG_TELEGRAM_CONTACT")
 val keystoreProperties = Properties().apply {
@@ -52,7 +51,6 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-        buildConfigField("String", "SUBSCRIPTION_URL", internalSubscriptionUrl.asBuildConfigString())
         buildConfigField("String", "TELEGRAM_URL", telegramChannelUrl.asBuildConfigString())
         buildConfigField("String", "TELEGRAM_CONTACT", telegramContact.asBuildConfigString())
     }

@@ -22,17 +22,18 @@
 
 niraNG عمداً قابلیت Import، Edit، Copy، Export یا Share کردن Raw config را
 ارائه نمی‌کند. URL اشتراک و لینک خصوصی تلگرام داخل سورس عمومی قرار ندارند و
-باید از `android/local.properties`، Gradle properties یا Environment variables
-در زمان Build تزریق شوند:
+URL اشتراک دیگر داخل APK تزریق نمی‌شود. Subscription اصلی فقط در محیط backend
+Device Registry با `NIRANG_SUBSCRIPTION_UPSTREAM` تنظیم می‌شود. اطلاعات تلگرام
+همچنان در زمان Build از تنظیمات خصوصی تزریق می‌شوند:
 
 ```properties
-NIRANG_SUBSCRIPTION_URL=https://example.com/private-subscription
 NIRANG_TELEGRAM_URL=https://t.me/private-invite
 NIRANG_TELEGRAM_CONTACT=@contact
 ```
 
-این مقادیر داخل APK نهایی وجود خواهند داشت؛ کلاینت موبایل نمی‌تواند در برابر
-Reverse engineering محرمانگی کامل ایجاد کند.
+مقادیر تلگرام داخل APK نهایی وجود خواهند داشت؛ کلاینت موبایل نمی‌تواند در برابر
+Reverse engineering محرمانگی کامل آن‌ها را تضمین کند. راهنمای deployment و
+migration رجیستری در `server/apiniraN/DEPLOYMENT.md` قرار دارد.
 
 ## امضای Release
 

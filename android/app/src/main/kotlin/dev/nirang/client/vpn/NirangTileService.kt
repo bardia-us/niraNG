@@ -59,15 +59,18 @@ class NirangTileService : TileService() {
             openApp()
             return
         }
-        runCatching { NirangVpnService.start(applicationContext, server.id) }
-            .onFailure {
+        DeviceRegistrationManager.runIfAllowed(
+            applicationContext,
+            onAllowed = { NirangVpnService.start(applicationContext, server.id) },
+            onDenied = {
                 ConnectionStore.transition(
                     ConnectionState.ERROR,
                     server.id,
                     server.name,
                     getString(R.string.operation_failed_native),
                 )
-            }
+            },
+        )
     }
 
     @Suppress("DEPRECATION")
