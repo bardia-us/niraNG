@@ -13,5 +13,6 @@
     <string name="quick_tile_connected">متصل</string>
     <string name="quick_tile_disconnected">قطع</string>
     <string name="quick_tile_connecting">در حال اتصال…</string>
+    <string name="quick_tile_disconnecting">در حال قطع…</string>
     <string name="operation_failed_native">VPN شروع نشد</string>
 </resources>

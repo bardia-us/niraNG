@@ -1,6 +1,9 @@
 package dev.nirang.client.vpn
 
+import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
+import android.graphics.drawable.Icon
 import android.net.VpnService
 import android.os.Build
 import android.os.Handler
@@ -83,31 +86,41 @@ class NirangTileService : TileService() {
 
     private fun render(snapshot: ConnectionSnapshot) {
         val tile = qsTile ?: return
-        val state = snapshot.state
-        val connected = state == ConnectionState.CONNECTED
-        val busy = state in setOf(
-            ConnectionState.PREPARING,
-            ConnectionState.CONNECTING,
-            ConnectionState.RESTARTING,
-            ConnectionState.SWITCHING,
-            ConnectionState.RECONNECTING,
-            ConnectionState.STOPPING,
-        )
-        tile.state = when {
-            connected -> Tile.STATE_ACTIVE
-            busy -> Tile.STATE_UNAVAILABLE
-            else -> Tile.STATE_INACTIVE
+        val presentation = QuickSettingsTilePolicy.presentation(snapshot.state)
+        tile.state = when (presentation) {
+            QuickSettingsTilePresentation.CONNECTED -> Tile.STATE_ACTIVE
+            QuickSettingsTilePresentation.CONNECTING,
+            QuickSettingsTilePresentation.DISCONNECTING -> Tile.STATE_UNAVAILABLE
+            QuickSettingsTilePresentation.DISCONNECTED -> Tile.STATE_INACTIVE
         }
+        tile.icon = Icon.createWithResource(this, R.drawable.ic_qs_nirang)
         tile.label = getString(R.string.quick_tile_label)
+        val status = getString(
+            when (presentation) {
+                QuickSettingsTilePresentation.CONNECTED -> R.string.quick_tile_connected
+                QuickSettingsTilePresentation.CONNECTING -> R.string.quick_tile_connecting
+                QuickSettingsTilePresentation.DISCONNECTING -> R.string.quick_tile_disconnecting
+                QuickSettingsTilePresentation.DISCONNECTED -> R.string.quick_tile_disconnected
+            },
+        )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            tile.subtitle = getString(
-                when {
-                    connected -> R.string.quick_tile_connected
-                    busy -> R.string.quick_tile_connecting
-                    else -> R.string.quick_tile_disconnected
-                },
-            )
+            tile.subtitle = status
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            tile.stateDescription = status
         }
         tile.updateTile()
+    }
+
+    companion object {
+        /** Ask Android to bind/listen again even when the Quick Settings panel is closed. */
+        fun requestRefresh(context: Context) {
+            runCatching {
+                TileService.requestListeningState(
+                    context.applicationContext,
+                    ComponentName(context, NirangTileService::class.java),
+                )
+            }
+        }
     }
 }

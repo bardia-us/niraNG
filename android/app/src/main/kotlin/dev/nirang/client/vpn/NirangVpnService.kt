@@ -10,6 +10,8 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.VpnService
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.ParcelFileDescriptor
 import androidx.core.app.NotificationCompat
 import dev.nirang.client.MainActivity
@@ -30,6 +32,7 @@ import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicBoolean
 
 class NirangVpnService : VpnService() {
+    private val mainHandler = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
     private val coreStopWorker = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "nirang-core-stop").apply { isDaemon = true }
@@ -38,7 +41,10 @@ class NirangVpnService : VpnService() {
     private val foregroundActive = AtomicBoolean(false)
     private val operationGate = ConnectionOperationGate()
     private val connectionListener: (ConnectionSnapshot) -> Unit = { snapshot ->
-        if (foregroundActive.get()) updateNotification(snapshot)
+        mainHandler.post {
+            if (foregroundActive.get()) updateNotification(snapshot)
+            NirangTileService.requestRefresh(applicationContext)
+        }
     }
     private var vpnInterface: ParcelFileDescriptor? = null
     private var currentConfig: String? = null
@@ -120,6 +126,7 @@ class NirangVpnService : VpnService() {
         if (ConnectionStore.state() !in setOf(ConnectionState.DISCONNECTED, ConnectionState.RESTARTING, ConnectionState.ERROR)) {
             ConnectionStore.transition(ConnectionState.DISCONNECTED)
         }
+        NirangTileService.requestRefresh(applicationContext)
         worker.shutdownNow()
         coreStopWorker.shutdown()
         super.onDestroy()
