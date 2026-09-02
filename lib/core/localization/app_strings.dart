@@ -178,6 +178,14 @@ class AppStrings {
       'checkForUpdates': 'Check for updates',
       'newVersionAvailable': 'New version available',
       'viewRelease': 'View release',
+      'downloadAndInstall': 'Download and install',
+      'downloadWithBrowser': 'Download with browser',
+      'downloadingUpdate': 'Downloading update…',
+      'preparingInstaller': 'Preparing Android installer…',
+      'updateDownloadFailed':
+          'The in-app download failed. You can still download the APK with your browser.',
+      'updateApkUnavailable':
+          'No APK compatible with this device was found in the release.',
       'upToDate': "You're up to date.",
       'updateCheckFailed':
           'Could not reach GitHub. Check your connection and try again.',
@@ -368,6 +376,14 @@ class AppStrings {
       'checkForUpdates': 'بررسی به‌روزرسانی',
       'newVersionAvailable': 'نسخه جدید موجود است',
       'viewRelease': 'مشاهده انتشار',
+      'downloadAndInstall': 'دانلود و نصب داخل برنامه',
+      'downloadWithBrowser': 'دانلود با مرورگر',
+      'downloadingUpdate': 'در حال دانلود به‌روزرسانی…',
+      'preparingInstaller': 'در حال آماده‌سازی نصب‌کننده اندروید…',
+      'updateDownloadFailed':
+          'دانلود داخل برنامه ناموفق بود. همچنان می‌توانید APK را با مرورگر دانلود کنید.',
+      'updateApkUnavailable':
+          'APK سازگار با معماری این دستگاه در انتشار پیدا نشد.',
       'upToDate': 'برنامه به‌روز است.',
       'updateCheckFailed':
           'ارتباط با GitHub ممکن نشد. اتصال اینترنت را بررسی و دوباره تلاش کنید.',

@@ -38,8 +38,8 @@ data class ServerRecord(
         "security" to securityLabel(),
         "port" to port,
         "sni" to parameters["sni"].orEmpty(),
-        "credentialLabel" to if (protocol.equals("trojan", ignoreCase = true)) "Password" else "UUID",
-        "credentialMasked" to if (protocol.equals("trojan", ignoreCase = true)) "••••••••••••" else "********-****-****-****-************",
+        "credentialLabel" to if (protocol.lowercase() in setOf("vless", "vmess")) "UUID" else "Password",
+        "credentialMasked" to if (protocol.lowercase() in setOf("vless", "vmess")) "********-****-****-****-************" else "••••••••••••",
         "realityPublicKeyMasked" to if (parameters["pbk"].isNullOrBlank()) "" else "••••••••••••••••",
         "shortIdMasked" to if (parameters["sid"].isNullOrBlank()) "" else "••••••",
         "ping" to pingMs,
@@ -67,6 +67,7 @@ data class ServerRecord(
             "ws" -> "WebSocket"
             "grpc" -> "gRPC"
             "xhttp", "splithttp" -> "XHTTP"
+            "hysteria" -> "Hysteria/QUIC"
             else -> transport.uppercase()
         }
         return transportName

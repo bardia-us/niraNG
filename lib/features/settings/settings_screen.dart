@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/formatters.dart';
 import '../../core/localization/app_strings.dart';
 import '../../core/widgets/glass_dialog.dart';
+import '../../core/widgets/update_dialog.dart';
 import '../../core/platform/native_models.dart';
 import '../../core/update_checker.dart';
 import '../vpn/app_controller.dart';
@@ -391,7 +392,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               : const Icon(Icons.chevron_right_rounded),
           onTap: _checkingUpdates
               ? null
-              : () => _checkForUpdates(context, controller, app.appVersion),
+              : () => _checkForUpdates(context, app.appVersion),
         ),
         const Divider(indent: 56),
         _Header(context.s('settings')),
@@ -465,7 +466,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Future<void> _checkForUpdates(
     BuildContext context,
-    AppController controller,
     String currentVersion,
   ) async {
     setState(() => _checkingUpdates = true);
@@ -478,30 +478,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ).showSnackBar(SnackBar(content: Text(context.s('upToDate'))));
         return;
       }
-      final viewRelease = await showDialog<bool>(
-        context: context,
-        builder: (dialogContext) => NirangAlertDialog(
-          icon: const Icon(Icons.new_releases_outlined),
-          title: Text(context.s('newVersionAvailable')),
-          content: Text('${release.latestVersion}'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: Text(context.s('later')),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: Text(context.s('viewRelease')),
-            ),
-          ],
-        ),
-      );
-      if (viewRelease == true && context.mounted) {
-        await _perform(
-          context,
-          () => controller.openExternalUrl(release.releaseUrl),
-        );
-      }
+      await showUpdateOptionsDialog(context, release);
     } catch (_) {
       if (context.mounted) {
         ScaffoldMessenger.of(

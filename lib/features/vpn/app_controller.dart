@@ -70,6 +70,29 @@ class AppController extends AsyncNotifier<AppSnapshot> {
     _set((value) => value.copyWith(servers: _servers(servers)));
   }
 
+  Future<void> reorderServers(int oldIndex, int requestedNewIndex) async {
+    final current = _current;
+    if (current == null || oldIndex < 0 || oldIndex >= current.servers.length) {
+      return;
+    }
+    final reordered = current.servers.toList();
+    final server = reordered.removeAt(oldIndex);
+    final newIndex = requestedNewIndex > oldIndex
+        ? requestedNewIndex - 1
+        : requestedNewIndex;
+    reordered.insert(newIndex.clamp(0, reordered.length).toInt(), server);
+    _set((value) => value.copyWith(servers: List.unmodifiable(reordered)));
+    try {
+      final servers = await NirangNative.reorderServers(
+        reordered.map((item) => item.id).toList(growable: false),
+      );
+      _set((value) => value.copyWith(servers: _servers(servers)));
+    } catch (_) {
+      _set((value) => value.copyWith(servers: current.servers));
+      rethrow;
+    }
+  }
+
   Future<void> deleteServer(String id) async {
     final data = await NirangNative.deleteServer(id);
     _set(

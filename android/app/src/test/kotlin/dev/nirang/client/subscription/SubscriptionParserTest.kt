@@ -1,5 +1,6 @@
 package dev.nirang.client.subscription
 
+import dev.nirang.client.model.ServerRecord
 import java.nio.charset.StandardCharsets
 import java.util.Base64
 import org.junit.Assert.assertEquals
@@ -57,7 +58,7 @@ class SubscriptionParserTest {
         val valid =
             "vless://00000000-0000-4000-8000-000000000001@example.com:443" +
                 "?security=tls&type=ws&host=cdn.example.com&path=%2Fws#Germany"
-        val body = "$valid\nvless://missing-host\nss://unsupported\n$valid"
+        val body = "$valid\nvless://missing-host\nwireguard://unsupported\n$valid"
 
         val result = SubscriptionParser.parseDetailed(body)
 
@@ -69,6 +70,98 @@ class SubscriptionParserTest {
         assertEquals(1, result.stats.duplicates)
         assertEquals(1, result.servers.size)
         assertTrue(result.failures.single().contains("protocol=vless"))
+    }
+
+    @Test
+    fun `Shadowsocks SIP002 keeps special password and unicode name`() {
+        val userInfo = Base64.getUrlEncoder().withoutPadding().encodeToString(
+            "chacha20-ietf-poly1305:p@ss:+/word".toByteArray(StandardCharsets.UTF_8),
+        )
+        val result = SubscriptionParser.parseDetailed(
+            "ss://$userInfo@edge.example.com:8388#%F0%9F%87%AF%F0%9F%87%B5%20%E6%9D%B1%E4%BA%AC",
+        )
+        val server = result.servers.single()
+
+        assertEquals("shadowsocks", server.protocol)
+        assertEquals("chacha20-ietf-poly1305", server.parameters["method"])
+        assertEquals("p@ss:+/word", server.credential)
+        assertEquals("🇯🇵 東京", server.name)
+        assertTrue(result.stats.complete)
+    }
+
+    @Test
+    fun `legacy Shadowsocks payload parses and unsupported plugin is isolated`() {
+        val legacy = Base64.getUrlEncoder().withoutPadding().encodeToString(
+            "aes-256-gcm:secret@ss.example.com:443".toByteArray(StandardCharsets.UTF_8),
+        )
+        val result = SubscriptionParser.parseDetailed(
+            "ss://$legacy#Legacy\nss://YWVzLTEyOC1nY206cGFzcw@bad.example:443?plugin=obfs-local#Bad",
+        )
+
+        assertEquals(1, result.servers.size)
+        assertEquals("aes-256-gcm", result.servers.single().parameters["method"])
+        assertEquals(1, result.stats.failed)
+    }
+
+    @Test
+    fun `semantic identity ignores remark and query order but tracks config changes`() {
+        val first = SubscriptionParser.parseDetailed(
+            "vless://00000000-0000-4000-8000-000000000001@example.com:443?security=tls&type=ws&path=%2Fa#Old",
+        ).servers.single()
+        val renamed = SubscriptionParser.parseDetailed(
+            "vless://00000000-0000-4000-8000-000000000001@example.com:443?path=%2Fa&type=ws&security=tls#New",
+        ).servers.single()
+        val changed = SubscriptionParser.parseDetailed(
+            "vless://00000000-0000-4000-8000-000000000001@example.com:443?path=%2Fb&type=ws&security=tls#New",
+        ).servers.single()
+
+        assertEquals(first.id, renamed.id)
+        assertFalse(first.id == changed.id)
+    }
+
+    @Test
+    fun `mixed supported subscription keeps usable protocols without WireGuard`() {
+        val ssUser = Base64.getUrlEncoder().withoutPadding().encodeToString(
+            "aes-128-gcm:pass".toByteArray(StandardCharsets.UTF_8),
+        )
+        val body = listOf(
+            "ss://$ssUser@ss.example.com:8388#SS",
+            "socks://user:pass@socks.example.com:1080#SOCKS",
+            "http://user:pass@http.example.com:8080#HTTP",
+            "hysteria2://auth@hy.example.com:443?sni=hy.example.com#HY2",
+            "hysteria://auth@old.example.com:443#Unsupported-v1",
+            "wireguard://unsupported",
+        ).joinToString("\n")
+
+        val result = SubscriptionParser.parseDetailed(body)
+
+        assertEquals(listOf("shadowsocks", "socks", "http", "hysteria2"), result.servers.map { it.protocol })
+        assertEquals(2, result.stats.skipped)
+    }
+
+    @Test
+    fun `repeated mixed refresh keeps source order when Shadowsocks changes`() {
+        val vless = "vless://00000000-0000-4000-8000-000000000001@first.example.com:443?security=tls&type=ws#First"
+        val vmessJson = """{"v":"2","ps":"VMess","add":"vm.example.com","port":"443","id":"00000000-0000-4000-8000-000000000002","net":"ws","tls":"tls"}"""
+        val vmess = "vmess://${Base64.getEncoder().encodeToString(vmessJson.toByteArray())}"
+        val trojan = "trojan://secret@tr.example.com:443?security=tls&type=tcp#Trojan"
+        fun shadowsocks(password: String): String {
+            val user = Base64.getUrlEncoder().withoutPadding().encodeToString(
+                "chacha20-ietf-poly1305:$password".toByteArray(),
+            )
+            return "ss://$user@ss.example.com:8388#Shadowsocks"
+        }
+        val firstBody = listOf(vless, vmess, trojan, shadowsocks("old")).joinToString("\n")
+        val secondBody = listOf(vless, vmess, trojan, shadowsocks("new")).joinToString("\n")
+
+        val firstRefresh = SubscriptionParser.parseDetailed(firstBody).servers
+        val identicalRefresh = SubscriptionParser.parseDetailed(firstBody).servers
+        val changedRefresh = SubscriptionParser.parseDetailed(secondBody).servers
+
+        assertEquals(firstRefresh.map(ServerRecord::id), identicalRefresh.map(ServerRecord::id))
+        assertEquals(listOf("vless", "vmess", "trojan", "shadowsocks"), changedRefresh.map { it.protocol })
+        assertEquals("First", changedRefresh.first().name)
+        assertEquals("Shadowsocks", changedRefresh.last().name)
     }
 
     @Test

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -46,8 +47,9 @@ class ServersScreen extends ConsumerWidget {
                   padding: const EdgeInsets.only(top: headerHeight + 10),
                   child: _EmptyServers(app: app),
                 )
-              : ListView.separated(
+              : ReorderableListView.builder(
                   cacheExtent: 360,
+                  buildDefaultDragHandles: false,
                   itemCount: app.servers.length,
                   padding: const EdgeInsets.fromLTRB(
                     8,
@@ -55,90 +57,125 @@ class ServersScreen extends ConsumerWidget {
                     8,
                     16,
                   ),
-                  separatorBuilder: (_, _) => const SizedBox(height: 5),
+                  onReorder: (oldIndex, newIndex) {
+                    unawaited(
+                      _perform(
+                        context,
+                        () => controller.reorderServers(oldIndex, newIndex),
+                      ),
+                    );
+                  },
+                  proxyDecorator: (child, _, animation) => view.performanceMode
+                      ? child
+                      : AnimatedBuilder(
+                          animation: animation,
+                          builder: (context, _) {
+                            final pressed = Curves.easeOutCubic.transform(
+                              animation.value,
+                            );
+                            return Transform.translate(
+                              offset: Offset(0, pressed * 2),
+                              child: Transform.scale(
+                                scale: 1 - (pressed * .015),
+                                child: child,
+                              ),
+                            );
+                          },
+                        ),
                   itemBuilder: (context, index) {
                     final server = app.servers[index];
-                    return RepaintBoundary(
-                      child: _PressScale(
-                        enabled: !view.performanceMode,
-                        child: AnimatedContainer(
-                          duration: Duration(
-                            milliseconds: view.performanceMode ? 85 : 140,
-                          ),
-                          curve: Curves.easeOutCubic,
-                          decoration: BoxDecoration(
-                            color: server.selected
-                                ? Theme.of(context).colorScheme.primaryContainer
-                                      .withValues(alpha: .26)
-                                : Theme.of(context)
-                                      .colorScheme
-                                      .surfaceContainerLow
-                                      .withValues(alpha: .42),
-                            borderRadius: BorderRadius.circular(13),
-                            border: Border.all(
-                              color: server.selected
-                                  ? Theme.of(
+                    return Padding(
+                      key: ValueKey(server.id),
+                      padding: const EdgeInsets.only(bottom: 5),
+                      child: RepaintBoundary(
+                        child: ReorderableDelayedDragStartListener(
+                          index: index,
+                          child: _PressScale(
+                            enabled: !view.performanceMode,
+                            child: AnimatedContainer(
+                              duration: Duration(
+                                milliseconds: view.performanceMode ? 85 : 140,
+                              ),
+                              curve: Curves.easeOutCubic,
+                              decoration: BoxDecoration(
+                                color: server.selected
+                                    ? Theme.of(context)
+                                          .colorScheme
+                                          .primaryContainer
+                                          .withValues(alpha: .26)
+                                    : Theme.of(context)
+                                          .colorScheme
+                                          .surfaceContainerLow
+                                          .withValues(alpha: .42),
+                                borderRadius: BorderRadius.circular(13),
+                                border: Border.all(
+                                  color: server.selected
+                                      ? Theme.of(context).colorScheme.primary
+                                            .withValues(alpha: .28)
+                                      : Theme.of(context)
+                                            .colorScheme
+                                            .outlineVariant
+                                            .withValues(alpha: .22),
+                                ),
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(13),
+                                child: Material(
+                                  type: MaterialType.transparency,
+                                  child: ListTile(
+                                    splashColor: Theme.of(context)
+                                        .colorScheme
+                                        .primary
+                                        .withValues(alpha: .10),
+                                    leading: _SelectionIndicator(
+                                      selected: server.selected,
+                                      reducedEffects: view.performanceMode,
+                                    ),
+                                    title: Row(
+                                      children: [
+                                        CountryFlagBadge(
+                                          countryCode: server.country,
+                                          width: 25,
+                                          height: 18,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            displayServerName(server.name),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    subtitle: Text(
+                                      '${server.protocol}  ${server.transport}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        _Latency(server: server),
+                                        IconButton(
+                                          tooltip: context.s('serverActions'),
+                                          onPressed: () => _serverActions(
+                                            context,
+                                            controller,
+                                            server,
+                                          ),
+                                          icon: const Icon(
+                                            Icons.more_vert_rounded,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    onTap: () => _perform(
                                       context,
-                                    ).colorScheme.primary.withValues(alpha: .28)
-                                  : Theme.of(context).colorScheme.outlineVariant
-                                        .withValues(alpha: .22),
-                            ),
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(13),
-                            child: Material(
-                              type: MaterialType.transparency,
-                              child: ListTile(
-                                splashColor: Theme.of(
-                                  context,
-                                ).colorScheme.primary.withValues(alpha: .10),
-                                leading: _SelectionIndicator(
-                                  selected: server.selected,
-                                  reducedEffects: view.performanceMode,
-                                ),
-                                title: Row(
-                                  children: [
-                                    CountryFlagBadge(
-                                      countryCode: server.country,
-                                      width: 25,
-                                      height: 18,
+                                      () => controller.selectServer(server.id),
                                     ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        displayServerName(server.name),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  ],
+                                  ),
                                 ),
-                                subtitle: Text(
-                                  '${server.protocol}  ${server.transport}',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    _Latency(server: server),
-                                    IconButton(
-                                      tooltip: context.s('serverActions'),
-                                      onPressed: () => _serverActions(
-                                        context,
-                                        controller,
-                                        server,
-                                      ),
-                                      icon: const Icon(Icons.more_vert_rounded),
-                                    ),
-                                  ],
-                                ),
-                                onTap: () => _perform(
-                                  context,
-                                  () => controller.selectServer(server.id),
-                                ),
-                                onLongPress: () =>
-                                    _serverActions(context, controller, server),
                               ),
                             ),
                           ),

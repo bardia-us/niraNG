@@ -2,6 +2,7 @@ package dev.nirang.client.registration
 
 import android.content.Context
 import android.os.Build
+import android.os.SystemClock
 import android.provider.Settings
 import dev.nirang.client.BuildConfig
 import dev.nirang.client.logs.SafeLog
@@ -35,6 +36,7 @@ object DeviceRegistrationManager {
         Thread(runnable, "nirang-device-registration").apply { isDaemon = true }
     }
     private val syncing = AtomicBoolean(false)
+    @Volatile private var lastAllowedElapsedRealtime = 0L
 
     fun hasConsent(context: Context): Boolean = runCatching {
         val prefs = preferences(context)
@@ -75,7 +77,7 @@ object DeviceRegistrationManager {
     fun runIfAllowed(context: Context, onAllowed: () -> Unit, onDenied: (Throwable) -> Unit) {
         val appContext = context.applicationContext
         executor.execute {
-            runCatching { requireAllowed(appContext) }
+            runCatching { requireAllowedForConnect(appContext) }
                 .onSuccess { onAllowed() }
                 .onFailure(onDenied)
         }
@@ -87,13 +89,24 @@ object DeviceRegistrationManager {
         synchronize(context.applicationContext, register = accessToken(context) == null)
     }
 
+    /** Avoids doing the same HTTPS status check twice during immediate startup/connect,
+     * while every later connect still verifies server-side access. */
+    fun requireAllowedForConnect(context: Context) {
+        check(hasConsent(context)) { "Device registration consent is required" }
+        val now = SystemClock.elapsedRealtime()
+        if (lastAllowedElapsedRealtime > 0 && now - lastAllowedElapsedRealtime <= CONNECT_ACCESS_FRESHNESS_MS) return
+        requireAllowed(context)
+    }
+
     @Throws(IOException::class)
     fun fetchSubscription(context: Context): RemoteSubscription {
-        requireAllowed(context)
+        check(hasConsent(context)) { "Device registration consent is required" }
+        if (accessToken(context) == null) synchronize(context.applicationContext, register = true)
         val request = authorizedPayload(context, "subscription")
         val response = execute(context, request, accessToken(context), MAX_RESPONSE_BYTES)
         if (response.status !in 200..299) handleDeniedResponse(context, response)
         require(response.bytes.isNotEmpty()) { "Subscription response is empty" }
+        markAllowed(context)
         return RemoteSubscription(response.bytes, response.usageHeader)
     }
 
@@ -170,6 +183,7 @@ object DeviceRegistrationManager {
             editor.putString(ACCESS_TOKEN, token)
         }
         editor.apply()
+        lastAllowedElapsedRealtime = SystemClock.elapsedRealtime()
         SafeLog.info(context, "Device access synchronized")
     }
 
@@ -214,6 +228,7 @@ object DeviceRegistrationManager {
     }
 
     private fun handleDeniedResponse(context: Context, response: ApiResponse): Nothing {
+        lastAllowedElapsedRealtime = 0L
         val json = response.json
         val reason = json?.optString("reason")?.takeIf(SAFE_API_ERROR::matches)
             ?: json?.optString("error")?.takeIf(SAFE_API_ERROR::matches) ?: "access_denied"
@@ -231,6 +246,11 @@ object DeviceRegistrationManager {
         }
         SafeLog.warning(context, "Remote access denied: HTTP ${response.status} reason=$reason")
         throw RemoteAccessException(reason, message)
+    }
+
+    private fun markAllowed(context: Context) {
+        preferences(context).edit().putString(REMOTE_STATE, STATE_ALLOWED).putString(LAST_SEEN, timestamp()).apply()
+        lastAllowedElapsedRealtime = SystemClock.elapsedRealtime()
     }
 
     private fun accessToken(context: Context): String? = preferences(context).getString(ACCESS_TOKEN, null)
@@ -260,4 +280,5 @@ object DeviceRegistrationManager {
     private const val STATE_UNKNOWN = "unknown"
     private val accessLock = Any()
     private val SAFE_API_ERROR = Regex("[a-z0-9_]{1,64}")
+    private const val CONNECT_ACCESS_FRESHNESS_MS = 10_000L
 }

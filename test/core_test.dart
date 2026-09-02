@@ -122,12 +122,61 @@ void main() {
 
   test('semantic release versions compare without lexical mistakes', () {
     expect(
-      SemanticVersion.parse(
-        'v1.1.0',
-      ).compareTo(SemanticVersion.parse('1.0.4')),
+      SemanticVersion.parse('v1.1.0').compareTo(SemanticVersion.parse('1.0.4')),
       greaterThan(0),
     );
     expect(SemanticVersion.parse('v1.0.4+5').toString(), '1.0.4');
+  });
+
+  test('GitHub release selects the APK matching Android ABI', () {
+    final release = parseGitHubRelease({
+      'tag_name': 'v1.1.4',
+      'html_url': 'https://github.com/bardia-us/niraNG/releases/tag/v1.1.4',
+      'assets': [
+        {
+          'name': 'app-armeabi-v7a-release.apk',
+          'browser_download_url':
+              'https://github.com/bardia-us/niraNG/releases/download/v1.1.4/app-armeabi-v7a-release.apk',
+          'size': 100,
+        },
+        {
+          'name': 'app-arm64-v8a-release.apk',
+          'browser_download_url':
+              'https://github.com/bardia-us/niraNG/releases/download/v1.1.4/app-arm64-v8a-release.apk',
+          'size': 120,
+          'digest':
+              'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        },
+      ],
+    }, '1.1.3');
+
+    final asset = release.assetForAbis(['arm64-v8a', 'armeabi-v7a']);
+    expect(release.updateAvailable, isTrue);
+    expect(asset?.name, 'app-arm64-v8a-release.apk');
+    expect(asset?.sha256, 'a' * 64);
+  });
+
+  test('untrusted and non-APK GitHub assets are ignored', () {
+    final release = parseGitHubRelease({
+      'tag_name': 'v1.1.4',
+      'html_url': 'https://github.com/bardia-us/niraNG/releases/tag/v1.1.4',
+      'assets': [
+        {
+          'name': 'app-arm64-v8a-release.apk',
+          'browser_download_url': 'https://example.com/fake.apk',
+          'size': 120,
+        },
+        {
+          'name': 'source.zip',
+          'browser_download_url':
+              'https://github.com/bardia-us/niraNG/releases/download/v1.1.4/source.zip',
+          'size': 120,
+        },
+      ],
+    }, '1.1.3');
+
+    expect(release.assets, isEmpty);
+    expect(release.assetForAbis(['arm64-v8a']), isNull);
   });
 
   test('light theme surfaces never inherit the dark canvas', () {

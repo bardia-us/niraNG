@@ -102,6 +102,7 @@ object XrayConfigBuilder {
                 enableLocalDns = settings?.enableLocalDns != false,
                 includeTun = includeTun,
                 iranCidrs = iranCidrs,
+                blockQuic = shouldBlockQuic(server),
             ),
         )
     }
@@ -158,7 +159,7 @@ object XrayConfigBuilder {
 
     private fun buildProxyOutbound(server: ServerRecord, settings: NativeSettings?): JSONObject = JSONObject().apply {
         put("tag", "proxy")
-        put("protocol", server.protocol.lowercase())
+        put("protocol", if (server.protocol.equals("hysteria2", true)) "hysteria" else server.protocol.lowercase())
         put("settings", when (server.protocol.lowercase()) {
             "trojan" -> JSONObject().apply {
                 put("servers", JSONArray().apply {
@@ -183,6 +184,31 @@ object XrayConfigBuilder {
                         })
                     })
                 })
+            }
+            "shadowsocks" -> JSONObject().apply {
+                put("servers", JSONArray().put(JSONObject().apply {
+                    put("address", server.address)
+                    put("port", server.port)
+                    put("method", server.parameters.getValue("method"))
+                    put("password", server.credential)
+                }))
+            }
+            "socks", "http" -> JSONObject().apply {
+                put("servers", JSONArray().put(JSONObject().apply {
+                    put("address", server.address)
+                    put("port", server.port)
+                    server.parameters["username"]?.takeIf(String::isNotBlank)?.let { username ->
+                        put("users", JSONArray().put(JSONObject().apply {
+                            put("user", username)
+                            put("pass", server.credential)
+                        }))
+                    }
+                }))
+            }
+            "hysteria2" -> JSONObject().apply {
+                put("version", 2)
+                put("address", server.address)
+                put("port", server.port)
             }
             else -> JSONObject().apply {
                 put("vnext", JSONArray().apply {
@@ -233,6 +259,10 @@ object XrayConfigBuilder {
                     put("header", JSONObject().apply { put("type", headerType) })
                 })
             }
+            "hysteria" -> put("hysteriaSettings", JSONObject().apply {
+                put("version", 2)
+                put("auth", server.credential)
+            })
         }
         when (server.security.lowercase()) {
             "tls" -> put("tlsSettings", JSONObject().apply {
@@ -263,7 +293,12 @@ object XrayConfigBuilder {
             val decoded = runCatching { JSONObject(profileFinalMask) }
                 .getOrElse { throw IllegalArgumentException("FinalMask must be a JSON object", it) }
             put("finalmask", decoded)
-        } else if (settings?.fragmentEnabled == true && server.security.equals("tls", true)) {
+        } else if (server.protocol.equals("hysteria2", true) && server.parameters["obfs"].equals("salamander", true)) {
+            put("finalmask", JSONObject().put("udp", JSONArray().put(JSONObject().apply {
+                put("type", "salamander")
+                put("settings", JSONObject().put("password", server.parameters.getValue("obfs-password")))
+            })))
+        } else if (settings?.fragmentEnabled == true && server.security.equals("tls", true) && network != "hysteria") {
             put("finalmask", buildFragment(settings))
         }
         if (settings?.enableIpv6 == true && settings.preferIpv6) {
@@ -326,11 +361,20 @@ object XrayConfigBuilder {
         enableLocalDns: Boolean = true,
         includeTun: Boolean = true,
         iranCidrs: List<String> = emptyList(),
+        blockQuic: Boolean = false,
     ): JSONObject = JSONObject().apply {
         require(routingMode in setOf("global", "bypassIran", "custom")) { "Unsupported routing mode" }
         require(domainStrategy in setOf("AsIs", "IPIfNonMatch", "IPOnDemand")) { "Unsupported domain strategy" }
         put("domainStrategy", domainStrategy)
         put("rules", JSONArray().apply {
+            if (blockQuic) {
+                put(JSONObject().apply {
+                    put("type", "field")
+                    put("network", "udp")
+                    put("port", "443")
+                    put("outboundTag", "blocked")
+                })
+            }
             if (enableLocalDns) {
                 put(JSONObject().apply {
                     put("type", "field")
@@ -409,15 +453,23 @@ object XrayConfigBuilder {
     }
 
     private fun validateServer(server: ServerRecord) {
-        require(server.protocol.lowercase() in setOf("vless", "vmess", "trojan")) { "Unsupported proxy protocol" }
+        require(server.protocol.lowercase() in setOf("vless", "vmess", "trojan", "shadowsocks", "socks", "http", "hysteria2")) { "Unsupported proxy protocol" }
         require(server.address.isNotBlank() && server.address.length <= 253) { "Server address is invalid" }
         require(server.port in 1..65_535) { "Server port is invalid" }
-        require(server.credential.isNotBlank()) { "Server credential is missing" }
+        if (server.protocol.lowercase() !in setOf("socks", "http")) require(server.credential.isNotBlank()) { "Server credential is missing" }
         require(server.security.lowercase() in setOf("", "none", "tls", "reality")) { "Unsupported transport security" }
+        if (server.protocol.equals("shadowsocks", true)) require(!server.parameters["method"].isNullOrBlank()) { "Shadowsocks method is missing" }
+        if (server.protocol.equals("hysteria2", true)) require(server.parameters["version"] == "2") { "Only Hysteria2 is supported" }
         if (server.security.equals("reality", true)) {
             require(!server.parameters["pbk"].isNullOrBlank()) { "Reality public key is missing" }
         }
     }
+
+    /** HTTP/3 over a reliable stream proxy can stall from head-of-line blocking.
+     * Keep native UDP transports untouched and make affected apps fall back to HTTP/2. */
+    private fun shouldBlockQuic(server: ServerRecord): Boolean =
+        server.protocol.lowercase() in setOf("vless", "vmess", "trojan") &&
+            server.transport.lowercase() in setOf("tcp", "ws", "grpc", "xhttp", "splithttp")
 
     private fun JSONArray.putRoutingRule(
         outboundTag: String,

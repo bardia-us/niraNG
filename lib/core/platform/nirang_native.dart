@@ -7,8 +7,16 @@ class NirangNative {
 
   static const _methods = MethodChannel('dev.nirang.client/control');
   static const _events = EventChannel('dev.nirang.client/events');
+  static const _updateEvents = EventChannel(
+    'dev.nirang.client/update_download',
+  );
 
   static Stream<Map<dynamic, dynamic>> get events => _events
+      .receiveBroadcastStream()
+      .where((event) => event is Map)
+      .cast<Map<dynamic, dynamic>>();
+
+  static Stream<Map<dynamic, dynamic>> get updateDownloadEvents => _updateEvents
       .receiveBroadcastStream()
       .where((event) => event is Map)
       .cast<Map<dynamic, dynamic>>();
@@ -32,6 +40,11 @@ class NirangNative {
   static Future<List<dynamic>> selectServer(String id) async =>
       (await _methods.invokeMethod<List<dynamic>>('selectServer', {
         'id': id,
+      })) ??
+      const [];
+  static Future<List<dynamic>> reorderServers(List<String> ids) async =>
+      (await _methods.invokeMethod<List<dynamic>>('reorderServers', {
+        'ids': ids,
       })) ??
       const [];
   static Future<Map<dynamic, dynamic>> deleteServer(String id) async =>
@@ -72,6 +85,20 @@ class NirangNative {
   static Future<void> openTelegram() => _methods.invokeMethod('openTelegram');
   static Future<void> openExternalUrl(String url) =>
       _methods.invokeMethod('openExternalUrl', {'url': url});
+  static Future<List<String>> supportedAbis() async =>
+      (await _methods.invokeMethod<List<dynamic>>(
+        'supportedAbis',
+      ))?.map((value) => '$value').toList(growable: false) ??
+      const [];
+  static Future<void> downloadAndInstallUpdate({
+    required String url,
+    required int size,
+    String? sha256,
+  }) => _methods.invokeMethod('downloadAndInstallUpdate', {
+    'url': url,
+    'size': size,
+    'sha256': sha256,
+  });
   static Future<void> recordTelegramDecision(String decision) =>
       _methods.invokeMethod('recordTelegramDecision', {'decision': decision});
   static Future<void> recordFlutterError(String message) =>

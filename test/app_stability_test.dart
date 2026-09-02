@@ -52,6 +52,7 @@ class _FakeAppController extends AppController {
   int settingsUpdates = 0;
   int logRefreshes = 0;
   int restartRequests = 0;
+  int reorderRequests = 0;
 
   @override
   Future<AppSnapshot> build() async => AppSnapshot(
@@ -87,6 +88,19 @@ class _FakeAppController extends AppController {
         ],
       ),
     );
+  }
+
+  @override
+  Future<void> reorderServers(int oldIndex, int requestedNewIndex) async {
+    reorderRequests++;
+    final current = state.asData!.value;
+    final reordered = current.servers.toList();
+    final server = reordered.removeAt(oldIndex);
+    final newIndex = requestedNewIndex > oldIndex
+        ? requestedNewIndex - 1
+        : requestedNewIndex;
+    reordered.insert(newIndex.clamp(0, reordered.length).toInt(), server);
+    state = AsyncData(current.copyWith(servers: reordered));
   }
 
   @override
@@ -321,6 +335,42 @@ void main() {
     expect(find.text('Server information'), findsOneWidget);
     expect(find.text('Delete'), findsOneWidget);
     expect(find.byType(BackdropFilter), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('long press drag reorders servers without opening actions', (
+    tester,
+  ) async {
+    late _FakeAppController controller;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => controller = _FakeAppController(),
+          ),
+        ],
+        child: const NirangApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.dns_outlined));
+    await tester.pumpAndSettle();
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.text('Server A')),
+    );
+    await tester.pump(const Duration(milliseconds: 650));
+    await gesture.moveBy(const Offset(0, 130));
+    await tester.pump(const Duration(milliseconds: 250));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(controller.reorderRequests, 1);
+    expect(
+      tester.getCenter(find.text('Server A')).dy,
+      greaterThan(tester.getCenter(find.text('Server B')).dy),
+    );
+    expect(find.text('Server information'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

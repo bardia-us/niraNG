@@ -7,22 +7,17 @@ import org.junit.Test
 
 class SubscriptionSyncPolicyTest {
     @Test
-    fun `partial parse overlays new profiles without removing cached profiles`() {
-        val cached = listOf(server("old-a"), server("old-b"))
+    fun `usable profiles from a partial parse authoritatively replace stale cache`() {
         val parsed = listOf(server("new-c"))
 
-        val result = SubscriptionSyncPolicy.reconcile(cached, parsed, authoritative = false)
+        val result = SubscriptionSyncPolicy.reconcile(parsed)
 
-        assertEquals(listOf("old-a", "old-b", "new-c"), result.map { it.id })
+        assertEquals(listOf("new-c"), result.map { it.id })
     }
 
     @Test
     fun `complete parse atomically replaces cached profiles`() {
-        val result = SubscriptionSyncPolicy.reconcile(
-            cachedServers = listOf(server("old")),
-            parsedServers = listOf(server("fresh")),
-            authoritative = true,
-        )
+        val result = SubscriptionSyncPolicy.reconcile(listOf(server("fresh")))
 
         assertEquals(listOf("fresh"), result.map { it.id })
     }

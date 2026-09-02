@@ -43,11 +43,52 @@ class ReleaseCheckResult {
     required this.latestVersion,
     required this.releaseUrl,
     required this.updateAvailable,
+    required this.assets,
+    this.mandatory = false,
   });
 
   final SemanticVersion latestVersion;
   final Uri releaseUrl;
   final bool updateAvailable;
+  final List<ReleaseAsset> assets;
+  final bool mandatory;
+
+  ReleaseAsset? assetForAbis(List<String> supportedAbis) {
+    for (final abi in supportedAbis) {
+      final normalized = abi.toLowerCase();
+      for (final asset in assets) {
+        if (asset.matchesAbi(normalized)) return asset;
+      }
+    }
+    for (final asset in assets) {
+      if (asset.name.toLowerCase().contains('universal')) return asset;
+    }
+    return null;
+  }
+}
+
+class ReleaseAsset {
+  const ReleaseAsset({
+    required this.name,
+    required this.downloadUrl,
+    required this.size,
+    this.sha256,
+  });
+
+  final String name;
+  final Uri downloadUrl;
+  final int size;
+  final String? sha256;
+
+  bool matchesAbi(String abi) {
+    final lower = name.toLowerCase();
+    return switch (abi) {
+      'arm64-v8a' => lower.contains('arm64-v8a') || lower.contains('arm64'),
+      'armeabi-v7a' => lower.contains('armeabi-v7a') || lower.contains('armv7'),
+      'x86_64' => lower.contains('x86_64') || lower.contains('x64'),
+      _ => lower.contains(abi),
+    };
+  }
 }
 
 class GitHubUpdateChecker {
@@ -59,7 +100,10 @@ class GitHubUpdateChecker {
       final request = await client.getUrl(Uri.parse(nirangLatestReleaseApi));
       request.headers
         ..set(HttpHeaders.acceptHeader, 'application/vnd.github+json')
-        ..set(HttpHeaders.userAgentHeader, 'niraNG-update-checker/1.1.1');
+        ..set(
+          HttpHeaders.userAgentHeader,
+          'niraNG-update-checker/$currentVersion',
+        );
       final response = await request.close().timeout(
         const Duration(seconds: 10),
       );
@@ -75,22 +119,62 @@ class GitHubUpdateChecker {
       if (payload is! Map<String, dynamic>) {
         throw const FormatException('Invalid GitHub response');
       }
-      final latest = SemanticVersion.parse('${payload['tag_name'] ?? ''}');
-      final releaseUrl = Uri.tryParse('${payload['html_url'] ?? ''}');
-      if (releaseUrl == null ||
-          releaseUrl.scheme != 'https' ||
-          releaseUrl.host != 'github.com' ||
-          !releaseUrl.path.startsWith('/bardia-us/niraNG/releases/')) {
-        throw const FormatException('Invalid release URL');
-      }
-      return ReleaseCheckResult(
-        latestVersion: latest,
-        releaseUrl: releaseUrl,
-        updateAvailable:
-            latest.compareTo(SemanticVersion.parse(currentVersion)) > 0,
-      );
+      return parseGitHubRelease(payload, currentVersion);
     } finally {
       client.close(force: true);
     }
   }
 }
+
+ReleaseCheckResult parseGitHubRelease(
+  Map<String, dynamic> payload,
+  String currentVersion,
+) {
+  final latest = SemanticVersion.parse('${payload['tag_name'] ?? ''}');
+  final releaseUrl = Uri.tryParse('${payload['html_url'] ?? ''}');
+  if (!_isOfficialReleaseUrl(releaseUrl)) {
+    throw const FormatException('Invalid release URL');
+  }
+  final assets = <ReleaseAsset>[];
+  for (final raw
+      in payload['assets'] is List ? payload['assets'] as List : const []) {
+    if (raw is! Map) continue;
+    final name = '${raw['name'] ?? ''}'.trim();
+    final url = Uri.tryParse('${raw['browser_download_url'] ?? ''}');
+    final size = raw['size'] is num ? (raw['size'] as num).toInt() : 0;
+    final digest = '${raw['digest'] ?? ''}'.toLowerCase();
+    if (!name.toLowerCase().endsWith('.apk') ||
+        !_isOfficialDownloadUrl(url) ||
+        size <= 0 ||
+        size > 250 * 1024 * 1024) {
+      continue;
+    }
+    assets.add(
+      ReleaseAsset(
+        name: name,
+        downloadUrl: url!,
+        size: size,
+        sha256: RegExp(r'^sha256:[0-9a-f]{64}$').hasMatch(digest)
+            ? digest.substring(7)
+            : null,
+      ),
+    );
+  }
+  return ReleaseCheckResult(
+    latestVersion: latest,
+    releaseUrl: releaseUrl!,
+    updateAvailable:
+        latest.compareTo(SemanticVersion.parse(currentVersion)) > 0,
+    assets: List.unmodifiable(assets),
+  );
+}
+
+bool _isOfficialReleaseUrl(Uri? uri) =>
+    uri != null &&
+    uri.scheme == 'https' &&
+    uri.host == 'github.com' &&
+    uri.path.startsWith('/bardia-us/niraNG/releases/');
+
+bool _isOfficialDownloadUrl(Uri? uri) =>
+    _isOfficialReleaseUrl(uri) &&
+    uri!.path.startsWith('/bardia-us/niraNG/releases/download/');

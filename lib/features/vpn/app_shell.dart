@@ -9,6 +9,7 @@ import '../../core/platform/native_models.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/update_checker.dart';
 import '../../core/widgets/glass_dialog.dart';
+import '../../core/widgets/update_dialog.dart';
 import '../logs/logs_screen.dart';
 import '../servers/servers_screen.dart';
 import '../settings/settings_screen.dart';
@@ -287,32 +288,7 @@ class _AppShellState extends ConsumerState<AppShell> {
     try {
       final release = await const GitHubUpdateChecker().check(currentVersion);
       if (!mounted || !release.updateAvailable) return;
-      final open = await showDialog<bool>(
-        context: context,
-        builder: (dialogContext) => NirangAlertDialog(
-          icon: const Icon(Icons.new_releases_outlined),
-          title: Text(context.s('newVersionAvailable')),
-          content: Text(
-            '${context.s('currentVersion')}: $currentVersion\n'
-            '${context.s('newVersionAvailable')}: ${release.latestVersion}',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: Text(context.s('later')),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: Text(context.s('viewRelease')),
-            ),
-          ],
-        ),
-      );
-      if (open == true && mounted) {
-        await ref
-            .read(appControllerProvider.notifier)
-            .openExternalUrl(release.releaseUrl);
-      }
+      await showUpdateOptionsDialog(context, release);
     } catch (_) {
       // Startup checks are intentionally silent when offline or unavailable.
     } finally {

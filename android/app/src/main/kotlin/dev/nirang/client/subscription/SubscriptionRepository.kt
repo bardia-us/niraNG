@@ -7,6 +7,7 @@ import dev.nirang.client.model.SubscriptionSnapshot
 import dev.nirang.client.model.SubscriptionUsage
 import dev.nirang.client.registration.DeviceRegistrationManager
 import org.json.JSONObject
+import org.json.JSONArray
 import java.io.File
 import java.io.IOException
 
@@ -80,6 +81,21 @@ class SubscriptionRepository(private val context: Context) {
         count
     }
 
+    fun reorder(visibleIds: List<String>): Boolean = synchronized(lock) {
+        ensureLoaded()
+        val currentVisible = visibleServerIds()
+        if (visibleIds.size != currentVisible.size || visibleIds.toSet() != currentVisible.toSet()) return false
+        val hidden = hiddenIds()
+        val completeOrder = visibleIds + snapshot.servers.filter { it.id in hidden }.map(ServerRecord::id)
+        snapshot = snapshot.copy(servers = ServerOrderPolicy.apply(completeOrder, snapshot.servers))
+        persist(snapshot)
+        prefs.edit()
+            .putString(SERVER_ORDER, JSONArray(snapshot.servers.map(ServerRecord::id).distinct()).toString())
+            .putBoolean(SERVER_ORDER_MANUAL, true)
+            .apply()
+        true
+    }
+
     fun updatePing(serverId: String, ping: Long?, status: String) = synchronized(lock) {
         ensureLoaded()
         snapshot.servers.firstOrNull { it.id == serverId }?.let {
@@ -103,15 +119,20 @@ class SubscriptionRepository(private val context: Context) {
         if (parseResult.servers.isEmpty()) {
             throw IOException("Subscription contains no usable servers; existing servers were preserved")
         }
+        val manualOrder = prefs.getBoolean(SERVER_ORDER_MANUAL, false)
+        val orderedServers = if (manualOrder) {
+            ServerOrderPolicy.afterRefresh(storedOrder(), snapshot.servers, parseResult.servers)
+        } else {
+            // The subscription remains authoritative when the user never dragged
+            // a card. This also migrates away from the 1.1.3 pre-release bug that
+            // persisted every refresh as though it were a manual order.
+            parseResult.servers
+        }
         val servers = SubscriptionSyncPolicy.resetLatency(
-            SubscriptionSyncPolicy.reconcile(
-                cachedServers = snapshot.servers,
-                parsedServers = parseResult.servers,
-                authoritative = parseResult.stats.complete,
-            ),
+            SubscriptionSyncPolicy.reconcile(orderedServers),
         )
         if (!parseResult.stats.complete) {
-            SafeLog.warning(context, "Subscription was partially parsed; cached servers were preserved")
+            SafeLog.warning(context, "Subscription contained skipped entries; usable remote profiles replaced the cache")
         }
 
         val updated = SubscriptionSnapshot(
@@ -121,6 +142,11 @@ class SubscriptionRepository(private val context: Context) {
         )
         persist(updated)
         snapshot = updated
+        if (manualOrder) {
+            persistOrder(updated.servers.map(ServerRecord::id))
+        } else {
+            prefs.edit().remove(SERVER_ORDER).apply()
+        }
         // Delete is intentionally local and temporary. A successful full
         // sync restores every server still present in the subscription.
         prefs.edit().remove(HIDDEN_SERVER_IDS).apply()
@@ -147,7 +173,12 @@ class SubscriptionRepository(private val context: Context) {
 
     private fun ensureLoaded() {
         if (loaded) return
-        snapshot = loadFromDisk()
+        val loadedSnapshot = loadFromDisk()
+        snapshot = if (prefs.getBoolean(SERVER_ORDER_MANUAL, false)) {
+            loadedSnapshot.copy(servers = ServerOrderPolicy.apply(storedOrder(), loadedSnapshot.servers))
+        } else {
+            loadedSnapshot
+        }
         loaded = true
     }
 
@@ -172,6 +203,18 @@ class SubscriptionRepository(private val context: Context) {
         null
     }
 
+    private fun storedOrder(): List<String> = runCatching {
+        val array = JSONArray(prefs.getString(SERVER_ORDER, "[]") ?: "[]")
+        (0 until array.length()).mapNotNull { array.optString(it).takeIf(String::isNotBlank) }
+    }.getOrElse {
+        prefs.edit().remove(SERVER_ORDER).apply()
+        emptyList()
+    }
+
+    private fun persistOrder(ids: List<String>) {
+        prefs.edit().putString(SERVER_ORDER, JSONArray(ids.distinct()).toString()).apply()
+    }
+
     private fun ensureVisibleSelection(hidden: Set<String>) {
         val current = selectedId()
         if (current != null && snapshot.servers.any { it.id == current && it.id !in hidden }) return
@@ -183,6 +226,8 @@ class SubscriptionRepository(private val context: Context) {
 
     companion object {
         private const val HIDDEN_SERVER_IDS = "hiddenServerIds"
+        private const val SERVER_ORDER = "serverOrder"
+        private const val SERVER_ORDER_MANUAL = "serverOrderManual"
         private const val MAX_SUBSCRIPTION_BYTES = 4 * 1024 * 1024
         private val lock = Any()
     }

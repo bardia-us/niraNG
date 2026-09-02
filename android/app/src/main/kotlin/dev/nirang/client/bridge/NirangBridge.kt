@@ -19,6 +19,8 @@ import dev.nirang.client.registration.DeviceRegistrationManager
 import dev.nirang.client.settings.NativeSettings
 import dev.nirang.client.subscription.SubscriptionRepository
 import dev.nirang.client.subscription.SubscriptionScheduler
+import dev.nirang.client.update.UpdateDownloadEvents
+import dev.nirang.client.update.UpdateInstaller
 import dev.nirang.client.vpn.ConnectionStore
 import dev.nirang.client.vpn.NirangVpnService
 import dev.nirang.client.vpn.NirangTileService
@@ -42,10 +44,12 @@ class NirangBridge(
     private val pingManager = PingManager(activity.applicationContext, repository)
     private val methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, METHOD_CHANNEL)
     private val eventChannel = EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENT_CHANNEL)
+    private val updateEventChannel = EventChannel(flutterEngine.dartExecutor.binaryMessenger, UPDATE_EVENT_CHANNEL)
 
     init {
         methodChannel.setMethodCallHandler(this)
         eventChannel.setStreamHandler(NativeEvents)
+        updateEventChannel.setStreamHandler(UpdateDownloadEvents)
     }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
@@ -62,6 +66,7 @@ class NirangBridge(
             "getBootstrap" -> success(result) { bootstrap() }
             "refreshSubscription" -> refreshSubscription(result)
             "selectServer" -> selectServer(call, result)
+            "reorderServers" -> reorderServers(call, result)
             "deleteServer" -> deleteServer(call, result)
             "restoreDeletedServers" -> restoreDeletedServers(result)
             "connect" -> connect(call, result)
@@ -107,6 +112,8 @@ class NirangBridge(
             }
             "openTelegram" -> openTelegram(result)
             "openExternalUrl" -> openExternalUrl(call, result)
+            "supportedAbis" -> result.success(Build.SUPPORTED_ABIS.toList())
+            "downloadAndInstallUpdate" -> downloadAndInstallUpdate(call, result)
             else -> result.notImplemented()
         }
     }
@@ -115,6 +122,7 @@ class NirangBridge(
         if (!disposed.compareAndSet(false, true)) return
         methodChannel.setMethodCallHandler(null)
         eventChannel.setStreamHandler(null)
+        updateEventChannel.setStreamHandler(null)
         pingManager.close()
         executor.shutdownNow()
     }
@@ -251,6 +259,17 @@ class NirangBridge(
         result.success(repository.safeServers())
     }
 
+    private fun reorderServers(call: MethodCall, result: MethodChannel.Result) {
+        val ids = call.argument<List<String>>("ids").orEmpty()
+        if (!repository.reorder(ids)) {
+            result.error("invalid_order", "Server order no longer matches the current subscription", null)
+            return
+        }
+        val servers = repository.safeServers()
+        NativeEvents.emit("servers", servers)
+        result.success(servers)
+    }
+
     private fun deleteServer(call: MethodCall, result: MethodChannel.Result) {
         val id = call.argument<String>("id")
         val activeServerId = ConnectionStore.snapshot()["serverId"] as? String
@@ -283,7 +302,7 @@ class NirangBridge(
         }
         val requested = call.argument<String>("id") ?: repository.selectedServer()?.id
         executor.execute {
-            runCatching { DeviceRegistrationManager.requireAllowed(activity) }
+            runCatching { DeviceRegistrationManager.requireAllowedForConnect(activity) }
                 .onSuccess { postToFlutter { continueConnect(requested, result) } }
                 .onFailure { error ->
                     handleRemoteAccessFailure(error)
@@ -402,6 +421,26 @@ class NirangBridge(
             .onFailure { result.error("unavailable", "No application can open the release link", null) }
     }
 
+    private fun downloadAndInstallUpdate(call: MethodCall, result: MethodChannel.Result) {
+        val url = call.argument<String>("url").orEmpty()
+        val expectedSize = call.argument<Number>("size")?.toLong() ?: 0L
+        val sha256 = call.argument<String>("sha256")?.takeIf(String::isNotBlank)
+        executor.execute {
+            runCatching { UpdateInstaller.download(activity, url, expectedSize, sha256) }
+                .onSuccess { apk ->
+                    postToFlutter {
+                        runCatching { UpdateInstaller.launchInstaller(activity, apk) }
+                            .onSuccess { result.success(true) }
+                            .onFailure { result.error("installer_unavailable", safeError(it), null) }
+                    }
+                }
+                .onFailure { error ->
+                    SafeLog.warning(activity, "In-app update download failed: ${error.javaClass.simpleName}")
+                    postToFlutter { result.error("update_download_failed", safeError(error), null) }
+                }
+        }
+    }
+
     private fun bootstrap(): Map<String, Any?> {
         val snapshot = repository.snapshot()
         return mapOf(
@@ -435,13 +474,14 @@ class NirangBridge(
 
     private fun safeError(error: Throwable): String = (error.message ?: error.javaClass.simpleName)
         .replace(Regex("https?://\\S+", RegexOption.IGNORE_CASE), "endpoint")
-        .replace(Regex("(?i)(vless|vmess|trojan)://\\S+"), "configuration")
+        .replace(Regex("(?i)(vless|vmess|trojan|ss|socks5?|https?|hy2|hysteria2?)://\\S+"), "configuration")
         .replace(Regex("[0-9a-fA-F]{8}-[0-9a-fA-F-]{27,}"), "identifier")
         .take(240)
 
     companion object {
         private const val METHOD_CHANNEL = "dev.nirang.client/control"
         private const val EVENT_CHANNEL = "dev.nirang.client/events"
+        private const val UPDATE_EVENT_CHANNEL = "dev.nirang.client/update_download"
         private val ACTIVE_CONNECTION_STATES = setOf(
             ConnectionState.PREPARING,
             ConnectionState.CONNECTING,
