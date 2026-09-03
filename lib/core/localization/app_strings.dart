@@ -182,6 +182,15 @@ class AppStrings {
       'downloadWithBrowser': 'Download with browser',
       'downloadingUpdate': 'Downloading update…',
       'preparingInstaller': 'Preparing Android installer…',
+      'updateDownloads': 'Update downloads',
+      'downloadContinuesInBackground':
+          'You can close this window. The download continues while niraNG is running.',
+      'downloadPaused': 'Download paused',
+      'resumeDownload': 'Resume download',
+      'readyToInstall': 'Ready to install',
+      'noUpdateDownload': 'No downloaded update',
+      'hide': 'Hide',
+      'install': 'Install',
       'updateDownloadFailed':
           'The in-app download failed. You can still download the APK with your browser.',
       'updateApkUnavailable':
@@ -380,6 +389,15 @@ class AppStrings {
       'downloadWithBrowser': 'دانلود با مرورگر',
       'downloadingUpdate': 'در حال دانلود به‌روزرسانی…',
       'preparingInstaller': 'در حال آماده‌سازی نصب‌کننده اندروید…',
+      'updateDownloads': 'مدیریت دانلود به‌روزرسانی',
+      'downloadContinuesInBackground':
+          'می‌توانید این پنجره را ببندید؛ تا وقتی niraNG در حال اجراست دانلود ادامه دارد.',
+      'downloadPaused': 'دانلود متوقف شده است',
+      'resumeDownload': 'ادامه دانلود',
+      'readyToInstall': 'آماده نصب',
+      'noUpdateDownload': 'فایل به‌روزرسانی موجود نیست',
+      'hide': 'بستن پنجره',
+      'install': 'نصب',
       'updateDownloadFailed':
           'دانلود داخل برنامه ناموفق بود. همچنان می‌توانید APK را با مرورگر دانلود کنید.',
       'updateApkUnavailable':

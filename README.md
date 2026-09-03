@@ -52,9 +52,9 @@ flutter build apk --release --split-per-abi
 خروجی‌ها در مسیر زیر ساخته می‌شوند:
 
 ```text
-build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
-build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
-build/app/outputs/flutter-apk/app-x86_64-release.apk
+build/app/outputs/flutter-apk/niraNG-v<version>-arm64-v8a.apk
+build/app/outputs/flutter-apk/niraNG-v<version>-armeabi-v7a.apk
+build/app/outputs/flutter-apk/niraNG-v<version>-x86_64.apk
 ```
 
 ## Native core

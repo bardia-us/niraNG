@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import dev.nirang.client.BuildConfig
+import dev.nirang.client.MainActivity
 import dev.nirang.client.R
 import dev.nirang.client.logs.SafeLog
 import dev.nirang.client.model.ConnectionState
@@ -50,6 +51,7 @@ class NirangBridge(
         methodChannel.setMethodCallHandler(this)
         eventChannel.setStreamHandler(NativeEvents)
         updateEventChannel.setStreamHandler(UpdateDownloadEvents)
+        UpdateInstaller.initialize(activity.applicationContext)
     }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
@@ -113,7 +115,20 @@ class NirangBridge(
             "openTelegram" -> openTelegram(result)
             "openExternalUrl" -> openExternalUrl(call, result)
             "supportedAbis" -> result.success(Build.SUPPORTED_ABIS.toList())
-            "downloadAndInstallUpdate" -> downloadAndInstallUpdate(call, result)
+            "startUpdateDownload" -> startUpdateDownload(call, result)
+            "resumeUpdateDownload" -> {
+                runCatching { UpdateInstaller.resume(activity) }
+                    .onSuccess(result::success)
+                    .onFailure { result.error("update_download_failed", safeError(it), null) }
+            }
+            "getUpdateDownload" -> result.success(UpdateInstaller.snapshot(activity))
+            "cancelUpdateDownload" -> result.success(UpdateInstaller.cancel(activity))
+            "deleteUpdateDownload" -> result.success(UpdateInstaller.delete(activity))
+            "installDownloadedUpdate" -> {
+                runCatching { UpdateInstaller.launchInstaller(activity) }
+                    .onSuccess { result.success(true) }
+                    .onFailure { result.error("installer_unavailable", safeError(it), null) }
+            }
             else -> result.notImplemented()
         }
     }
@@ -204,7 +219,12 @@ class NirangBridge(
                     "Device registration consent could not be saved"
                 }
                 true
-            }.onSuccess { accepted -> postToFlutter { result.success(accepted) } }
+            }.onSuccess { accepted ->
+                postToFlutter {
+                    result.success(accepted)
+                    (activity as? MainActivity)?.continuePendingTileConnection()
+                }
+            }
                 .onFailure { error ->
                     handleRemoteAccessFailure(error)
                     postToFlutter {
@@ -227,6 +247,7 @@ class NirangBridge(
                 )
                 NativeEvents.emit("subscription", data)
                 postToFlutter { result.success(data) }
+                postToFlutter { (activity as? MainActivity)?.continuePendingTileConnection() }
             } catch (error: Exception) {
                 SafeLog.warning(activity, "Subscription update failed")
                 handleRemoteAccessFailure(error)
@@ -311,6 +332,21 @@ class NirangBridge(
                     }
                 }
         }
+    }
+
+    /** Uses the exact normal connect/access/permission path after a Tile-opened Activity is ready. */
+    fun connectFromTileIfReady(): Boolean {
+        if (!DeviceRegistrationManager.hasConsent(activity)) return false
+        val server = repository.selectedServer() ?: return false
+        connect(
+            MethodCall("connect", mapOf("id" to server.id)),
+            object : MethodChannel.Result {
+                override fun success(result: Any?) = Unit
+                override fun error(errorCode: String, errorMessage: String?, errorDetails: Any?) = Unit
+                override fun notImplemented() = Unit
+            },
+        )
+        return true
     }
 
     private fun continueConnect(requested: String?, result: MethodChannel.Result) {
@@ -421,24 +457,15 @@ class NirangBridge(
             .onFailure { result.error("unavailable", "No application can open the release link", null) }
     }
 
-    private fun downloadAndInstallUpdate(call: MethodCall, result: MethodChannel.Result) {
+    private fun startUpdateDownload(call: MethodCall, result: MethodChannel.Result) {
         val url = call.argument<String>("url").orEmpty()
         val expectedSize = call.argument<Number>("size")?.toLong() ?: 0L
         val sha256 = call.argument<String>("sha256")?.takeIf(String::isNotBlank)
-        executor.execute {
-            runCatching { UpdateInstaller.download(activity, url, expectedSize, sha256) }
-                .onSuccess { apk ->
-                    postToFlutter {
-                        runCatching { UpdateInstaller.launchInstaller(activity, apk) }
-                            .onSuccess { result.success(true) }
-                            .onFailure { result.error("installer_unavailable", safeError(it), null) }
-                    }
-                }
-                .onFailure { error ->
-                    SafeLog.warning(activity, "In-app update download failed: ${error.javaClass.simpleName}")
-                    postToFlutter { result.error("update_download_failed", safeError(error), null) }
-                }
-        }
+        val name = call.argument<String>("name").orEmpty()
+        val version = call.argument<String>("version").orEmpty()
+        runCatching { UpdateInstaller.start(activity, url, expectedSize, sha256, name, version) }
+            .onSuccess(result::success)
+            .onFailure { result.error("update_download_failed", safeError(it), null) }
     }
 
     private fun bootstrap(): Map<String, Any?> {

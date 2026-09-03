@@ -16,10 +16,11 @@ class NirangNative {
       .where((event) => event is Map)
       .cast<Map<dynamic, dynamic>>();
 
-  static Stream<Map<dynamic, dynamic>> get updateDownloadEvents => _updateEvents
-      .receiveBroadcastStream()
-      .where((event) => event is Map)
-      .cast<Map<dynamic, dynamic>>();
+  static final Stream<Map<dynamic, dynamic>> updateDownloadEvents =
+      _updateEvents
+          .receiveBroadcastStream()
+          .where((event) => event is Map)
+          .cast<Map<dynamic, dynamic>>();
 
   static Future<bool> deviceRegistrationStatus() async =>
       await _methods.invokeMethod<bool>('deviceRegistrationStatus') ?? false;
@@ -90,15 +91,46 @@ class NirangNative {
         'supportedAbis',
       ))?.map((value) => '$value').toList(growable: false) ??
       const [];
-  static Future<void> downloadAndInstallUpdate({
+  static Future<Map<dynamic, dynamic>> startUpdateDownload({
     required String url,
     required int size,
+    required String name,
+    required String version,
     String? sha256,
-  }) => _methods.invokeMethod('downloadAndInstallUpdate', {
-    'url': url,
-    'size': size,
-    'sha256': sha256,
-  });
+  }) async =>
+      (await _methods.invokeMethod<Map<dynamic, dynamic>>(
+        'startUpdateDownload',
+        {
+          'url': url,
+          'size': size,
+          'name': name,
+          'version': version,
+          'sha256': sha256,
+        },
+      )) ??
+      {};
+  static Future<Map<dynamic, dynamic>> getUpdateDownload() async =>
+      (await _methods.invokeMethod<Map<dynamic, dynamic>>(
+        'getUpdateDownload',
+      )) ??
+      {};
+  static Future<Map<dynamic, dynamic>> resumeUpdateDownload() async =>
+      (await _methods.invokeMethod<Map<dynamic, dynamic>>(
+        'resumeUpdateDownload',
+      )) ??
+      {};
+  static Future<Map<dynamic, dynamic>> cancelUpdateDownload() async =>
+      (await _methods.invokeMethod<Map<dynamic, dynamic>>(
+        'cancelUpdateDownload',
+      )) ??
+      {};
+  static Future<Map<dynamic, dynamic>> deleteUpdateDownload() async =>
+      (await _methods.invokeMethod<Map<dynamic, dynamic>>(
+        'deleteUpdateDownload',
+      )) ??
+      {};
+  static Future<void> installDownloadedUpdate() =>
+      _methods.invokeMethod('installDownloadedUpdate');
   static Future<void> recordTelegramDecision(String decision) =>
       _methods.invokeMethod('recordTelegramDecision', {'decision': decision});
   static Future<void> recordFlutterError(String message) =>

@@ -1,8 +1,11 @@
 package dev.nirang.client.vpn
 
+import android.Manifest
+import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.drawable.Icon
 import android.net.VpnService
 import android.os.Build
@@ -53,23 +56,29 @@ class NirangTileService : TileService() {
     private fun connectOrOpenApp() {
         val server = SubscriptionRepository(applicationContext).selectedServer()
         val settings = NativeSettings(applicationContext)
-        val hasVpnPermission = settings.connectionMode == "proxy" || VpnService.prepare(this) == null
-        if (
-            server == null ||
-            !DeviceRegistrationManager.hasConsent(this) ||
-            !hasVpnPermission
+        val hasVpnPermission = settings.connectionMode == "proxy" ||
+            runCatching { VpnService.prepare(this) == null }.getOrDefault(false)
+        val hasNotificationPermission = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        if (QuickSettingsConnectPolicy.action(
+                hasServer = server != null,
+                hasRegistrationConsent = DeviceRegistrationManager.hasConsent(this),
+                hasVpnPermission = hasVpnPermission,
+                hasNotificationPermission = hasNotificationPermission,
+            ) == QuickSettingsConnectAction.OPEN_APP_FOR_PREREQUISITES
         ) {
             openApp()
             return
         }
+        val selectedServer = server ?: return
         DeviceRegistrationManager.runIfAllowed(
             applicationContext,
-            onAllowed = { NirangVpnService.start(applicationContext, server.id) },
+            onAllowed = { NirangVpnService.start(applicationContext, selectedServer.id) },
             onDenied = {
                 ConnectionStore.transition(
                     ConnectionState.ERROR,
-                    server.id,
-                    server.name,
+                    selectedServer.id,
+                    selectedServer.name,
                     getString(R.string.operation_failed_native),
                 )
             },
@@ -79,9 +88,25 @@ class NirangTileService : TileService() {
     @Suppress("DEPRECATION")
     private fun openApp() {
         val intent = Intent(this, MainActivity::class.java).apply {
+            action = MainActivity.ACTION_CONNECT_FROM_TILE
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         }
-        startActivityAndCollapse(intent)
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                val pendingIntent = PendingIntent.getActivity(
+                    this,
+                    TILE_CONNECT_REQUEST_CODE,
+                    intent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                )
+                startActivityAndCollapse(pendingIntent)
+            } else {
+                startActivityAndCollapse(intent)
+            }
+        }.onFailure {
+            ConnectionStore.transition(ConnectionState.ERROR, message = getString(R.string.operation_failed_native))
+            requestRefresh(applicationContext)
+        }
     }
 
     private fun render(snapshot: ConnectionSnapshot) {
@@ -113,6 +138,7 @@ class NirangTileService : TileService() {
     }
 
     companion object {
+        private const val TILE_CONNECT_REQUEST_CODE = 4211
         /** Ask Android to bind/listen again even when the Quick Settings panel is closed. */
         fun requestRefresh(context: Context) {
             runCatching {

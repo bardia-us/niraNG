@@ -373,6 +373,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ),
         const Divider(indent: 56),
         _Header(context.s('updates')),
+        const UpdateDownloadSettingsTile(),
         ListTile(
           leading: const Icon(Icons.dashboard_customize_outlined),
           title: Text(context.s('quickSettingsTile')),

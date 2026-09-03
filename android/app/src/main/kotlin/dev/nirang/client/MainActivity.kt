@@ -21,6 +21,20 @@ class MainActivity : FlutterActivity() {
     private var bridge: NirangBridge? = null
     private var pendingServerId: String? = null
     private var pendingResult: MethodChannel.Result? = null
+    private var pendingTileConnection = false
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        captureTileRequest(intent)
+        continuePendingTileConnection()
+    }
+
+    override fun onPostResume() {
+        super.onPostResume()
+        captureTileRequest(intent)
+        continuePendingTileConnection()
+    }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
@@ -125,7 +139,20 @@ class MainActivity : FlutterActivity() {
         result?.error("permission_request_failed", message, null)
     }
 
+    /** Called again after consent/startup/subscription becomes ready. */
+    fun continuePendingTileConnection() {
+        if (!pendingTileConnection || pendingResult != null) return
+        if (bridge?.connectFromTileIfReady() == true) pendingTileConnection = false
+    }
+
+    private fun captureTileRequest(source: Intent?) {
+        if (source?.action != ACTION_CONNECT_FROM_TILE) return
+        pendingTileConnection = true
+        source.action = null
+    }
+
     companion object {
+        const val ACTION_CONNECT_FROM_TILE = "dev.nirang.client.action.CONNECT_FROM_TILE"
         private const val VPN_PERMISSION_REQUEST = 4108
         private const val NOTIFICATION_PERMISSION_REQUEST = 4109
     }

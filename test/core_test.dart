@@ -136,13 +136,13 @@ void main() {
         {
           'name': 'app-armeabi-v7a-release.apk',
           'browser_download_url':
-              'https://github.com/bardia-us/niraNG/releases/download/v1.1.4/app-armeabi-v7a-release.apk',
+              'https://github.com/bardia-us/niraNG/releases/download/v1.1.4/niraNG-v1.1.4-armeabi-v7a.apk',
           'size': 100,
         },
         {
           'name': 'app-arm64-v8a-release.apk',
           'browser_download_url':
-              'https://github.com/bardia-us/niraNG/releases/download/v1.1.4/app-arm64-v8a-release.apk',
+              'https://github.com/bardia-us/niraNG/releases/download/v1.1.4/niraNG-v1.1.4-arm64-v8a.apk',
           'size': 120,
           'digest':
               'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
