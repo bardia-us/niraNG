@@ -6,6 +6,8 @@ import 'package:nirang/core/localization/app_strings.dart';
 import 'package:nirang/core/platform/native_models.dart';
 import 'package:nirang/core/theme/app_theme.dart';
 import 'package:nirang/core/update_checker.dart';
+import 'package:nirang/features/settings/per_app_ordering.dart';
+import 'package:nirang/features/vpn/app_controller.dart';
 
 void main() {
   test('formats persisted byte counters without speed units', () {
@@ -118,6 +120,26 @@ void main() {
     expect(settings.domainStrategy, 'AsIs');
     expect(settings.routingMode, 'bypassIran');
     expect(settings.enableIpv6, isTrue);
+    expect(settings.directDnsEnabled, isTrue);
+    expect(settings.directDns, '178.22.122.100');
+    expect(settings.routeOnly, isTrue);
+  });
+
+  test('selected applications are ordered before unselected applications', () {
+    final ordered = orderSelectedFirst(
+      const ['Zulu', 'Alpha', 'Beta'],
+      isSelected: (value) => value == 'Zulu',
+      label: (value) => value,
+    );
+
+    expect(ordered, const ['Zulu', 'Alpha', 'Beta']);
+  });
+
+  test('only explicit version notice remarks are not connectable', () {
+    expect(isSubscriptionNoticeName('هر دفعه آپدیت کنید - V8.8'), isTrue);
+    expect(isSubscriptionNoticeName('Update every time - V1.2'), isTrue);
+    expect(isSubscriptionNoticeName('Update route Amsterdam'), isFalse);
+    expect(isSubscriptionNoticeName('Normal VLESS 1.1.1.1'), isFalse);
   });
 
   test('semantic release versions compare without lexical mistakes', () {

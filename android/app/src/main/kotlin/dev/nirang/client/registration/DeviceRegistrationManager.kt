@@ -12,6 +12,7 @@ import java.io.IOException
 import java.io.InputStream
 import java.net.URL
 import java.security.MessageDigest
+import java.security.SecureRandom
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -28,7 +29,7 @@ class RemoteAccessException(val apiReason: String, message: String) : IOExceptio
 object DeviceRegistrationManager {
     private const val ENDPOINT = "https://neovip.ir/apiniraN/api.php"
     private const val CONSENT_VERSION = 2
-    private const val SCHEMA_VERSION = 4
+    private const val SCHEMA_VERSION = 6
     private const val CONNECT_TIMEOUT_MS = 6_000
     private const val READ_TIMEOUT_MS = 20_000
     private const val MAX_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -56,7 +57,6 @@ object DeviceRegistrationManager {
             .putString(LAST_SEEN, now)
             .commit()
         if (!saved) return false
-        synchronize(context.applicationContext, register = true)
         return true
     }
 
@@ -75,13 +75,15 @@ object DeviceRegistrationManager {
     }
 
     fun runIfAllowed(context: Context, onAllowed: () -> Unit, onDenied: (Throwable) -> Unit) {
-        val appContext = context.applicationContext
-        executor.execute {
-            runCatching { requireAllowedForConnect(appContext) }
-                .onSuccess { onAllowed() }
-                .onFailure(onDenied)
+        if (isLocallyBlocked(context)) {
+            onDenied(RemoteAccessException("blocked_by_administrator", "This device has been blocked by the administrator"))
+        } else {
+            onAllowed()
         }
     }
+
+    fun isLocallyBlocked(context: Context): Boolean =
+        preferences(context).getString(REMOTE_STATE, STATE_UNKNOWN) == STATE_BLOCKED
 
     @Throws(IOException::class)
     fun requireAllowed(context: Context) {
@@ -89,21 +91,19 @@ object DeviceRegistrationManager {
         synchronize(context.applicationContext, register = accessToken(context) == null)
     }
 
-    /** Avoids doing the same HTTPS status check twice during immediate startup/connect,
-     * while every later connect still verifies server-side access. */
-    fun requireAllowedForConnect(context: Context) {
-        check(hasConsent(context)) { "Device registration consent is required" }
-        val now = SystemClock.elapsedRealtime()
-        if (lastAllowedElapsedRealtime > 0 && now - lastAllowedElapsedRealtime <= CONNECT_ACCESS_FRESHNESS_MS) return
-        requireAllowed(context)
-    }
 
     @Throws(IOException::class)
     fun fetchSubscription(context: Context): RemoteSubscription {
         check(hasConsent(context)) { "Device registration consent is required" }
         if (accessToken(context) == null) synchronize(context.applicationContext, register = true)
-        val request = authorizedPayload(context, "subscription")
-        val response = execute(context, request, accessToken(context), MAX_RESPONSE_BYTES)
+        var request = authorizedPayload(context, "subscription")
+        var response = execute(context, request, accessToken(context), MAX_RESPONSE_BYTES)
+        if (response.status == 401 && response.json?.optString("reason") in setOf("token_expired", "invalid_device_credentials")) {
+            SecureTokenStore.clear(context)
+            synchronize(context.applicationContext, register = true)
+            request = authorizedPayload(context, "subscription")
+            response = execute(context, request, accessToken(context), MAX_RESPONSE_BYTES)
+        }
         if (response.status !in 200..299) handleDeniedResponse(context, response)
         require(response.bytes.isNotEmpty()) { "Subscription response is empty" }
         markAllowed(context)
@@ -137,6 +137,8 @@ object DeviceRegistrationManager {
         appVersion: String,
         firstSeen: String,
         lastSeen: String,
+        requestTimestamp: Long = System.currentTimeMillis() / 1_000L,
+        nonce: String = requestNonce(),
     ): JSONObject = JSONObject().apply {
         put("action", "register")
         put("schema_version", SCHEMA_VERSION)
@@ -151,6 +153,8 @@ object DeviceRegistrationManager {
         put("app_version", appVersion)
         put("first_seen", firstSeen)
         put("last_seen", lastSeen)
+        put("request_timestamp", requestTimestamp)
+        put("request_nonce", nonce)
     }
 
     internal fun deriveDeviceKey(androidId: String, packageName: String = "dev.nirang.client"): String {
@@ -180,7 +184,9 @@ object DeviceRegistrationManager {
         if (register) {
             val token = json.optString("access_token")
             require(token.matches(Regex("[A-Za-z0-9_-]{43}"))) { "Registration token is invalid" }
-            editor.putString(ACCESS_TOKEN, token)
+            val expiresInSeconds = json.optLong("expires_in", DEFAULT_TOKEN_LIFETIME_SECONDS)
+                .coerceIn(60L, MAX_TOKEN_LIFETIME_SECONDS)
+            SecureTokenStore.put(context, token, System.currentTimeMillis() + expiresInSeconds * 1_000L)
         }
         editor.apply()
         lastAllowedElapsedRealtime = SystemClock.elapsedRealtime()
@@ -195,12 +201,15 @@ object DeviceRegistrationManager {
             put("installation_id", validInstallationId(prefs.getString(INSTALLATION_ID, null)) ?: error("Installation ID is unavailable"))
             put("device_key", deviceKey(context))
             put("app_version", BuildConfig.VERSION_NAME)
+            put("request_timestamp", System.currentTimeMillis() / 1_000L)
+            put("request_nonce", requestNonce())
         }
     }
 
     private fun execute(context: Context, payload: JSONObject, token: String?, maxBytes: Int): ApiResponse {
         val body = payload.toString().toByteArray(Charsets.UTF_8)
         val connection = (URL(ENDPOINT).openConnection() as HttpsURLConnection).apply {
+            sslSocketFactory = ApiPinning.socketFactory
             requestMethod = "POST"
             connectTimeout = CONNECT_TIMEOUT_MS
             readTimeout = READ_TIMEOUT_MS
@@ -253,8 +262,15 @@ object DeviceRegistrationManager {
         lastAllowedElapsedRealtime = SystemClock.elapsedRealtime()
     }
 
-    private fun accessToken(context: Context): String? = preferences(context).getString(ACCESS_TOKEN, null)
+    private fun accessToken(context: Context): String? = SecureTokenStore.get(context)
         ?.takeIf { it.matches(Regex("[A-Za-z0-9_-]{43}")) }
+    private fun requestNonce(): String {
+        val bytes = ByteArray(16).also(SecureRandom()::nextBytes)
+        return android.util.Base64.encodeToString(
+            bytes,
+            android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING,
+        )
+    }
     private fun preferences(context: Context) = context.getSharedPreferences("nirang_installation", Context.MODE_PRIVATE)
     private fun validInstallationId(value: String?): String? = value?.takeIf { runCatching { UUID.fromString(it).version() == 4 }.getOrDefault(false) }
     private fun clean(value: String?, fallback: String): String = value.orEmpty().replace(Regex("[\\u0000-\\u001f\\u007f]"), " ").trim().ifEmpty { fallback }.take(160)
@@ -272,7 +288,6 @@ object DeviceRegistrationManager {
     private const val INSTALLATION_ID = "id"
     private const val FIRST_SEEN = "deviceRegistrationFirstSeen"
     private const val LAST_SEEN = "deviceRegistrationLastSeen"
-    private const val ACCESS_TOKEN = "remoteAccessToken"
     private const val REMOTE_STATE = "remoteAccessState"
     private const val STATE_ALLOWED = "allowed"
     private const val STATE_BLOCKED = "blocked"
@@ -280,5 +295,6 @@ object DeviceRegistrationManager {
     private const val STATE_UNKNOWN = "unknown"
     private val accessLock = Any()
     private val SAFE_API_ERROR = Regex("[a-z0-9_]{1,64}")
-    private const val CONNECT_ACCESS_FRESHNESS_MS = 10_000L
+    private const val DEFAULT_TOKEN_LIFETIME_SECONDS = 86_400L
+    private const val MAX_TOKEN_LIFETIME_SECONDS = 7L * 86_400L
 }

@@ -415,7 +415,7 @@ class _ServersGlassHeader extends StatelessWidget {
           padding: const EdgeInsetsDirectional.only(start: 14, end: 4),
           child: Row(
             children: [
-              Flexible(
+              Expanded(
                 child: Text(
                   '${context.s('servers')} ($serverCount)',
                   maxLines: 1,
@@ -425,7 +425,6 @@ class _ServersGlassHeader extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 4),
               TextButton.icon(
                 onPressed: onPing,
                 style: TextButton.styleFrom(

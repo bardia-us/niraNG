@@ -24,6 +24,8 @@ class NirangNative {
 
   static Future<bool> deviceRegistrationStatus() async =>
       await _methods.invokeMethod<bool>('deviceRegistrationStatus') ?? false;
+  static Future<void> verifyDeviceAccess() =>
+      _methods.invokeMethod('verifyDeviceAccess');
   static Future<void> acceptDeviceRegistration() =>
       _methods.invokeMethod('acceptDeviceRegistration');
   static Future<void> exitApplication() =>
@@ -90,6 +92,11 @@ class NirangNative {
       (await _methods.invokeMethod<List<dynamic>>(
         'supportedAbis',
       ))?.map((value) => '$value').toList(growable: false) ??
+      const [];
+  static Future<List<Map<dynamic, dynamic>>> installedApps() async =>
+      (await _methods.invokeMethod<List<dynamic>>(
+        'getInstalledApps',
+      ))?.whereType<Map>().toList(growable: false) ??
       const [];
   static Future<Map<dynamic, dynamic>> startUpdateDownload({
     required String url,

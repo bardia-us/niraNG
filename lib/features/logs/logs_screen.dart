@@ -56,69 +56,62 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
       if (!mounted || !_scrollController.hasClients) return;
       _nearBottom = _scrollController.position.extentAfter < 48;
     });
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 8, 8),
-          child: Row(
-            children: [
-              Text(
-                context.s('logs'),
-                style: Theme.of(context).textTheme.titleSmall,
-              ),
-              const Spacer(),
-              IconButton(
-                tooltip: context.s('refresh'),
-                onPressed: ref.read(appControllerProvider.notifier).refreshLogs,
-                icon: const Icon(Icons.refresh_rounded),
-              ),
-              IconButton(
-                tooltip: context.s('clear'),
-                onPressed: logs.isEmpty
-                    ? null
-                    : () => _confirmClear(context, ref),
-                icon: const Icon(Icons.delete_outline_rounded),
-              ),
-            ],
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(context.s('logs')),
+        actions: [
+          IconButton(
+            tooltip: context.s('refresh'),
+            onPressed: ref.read(appControllerProvider.notifier).refreshLogs,
+            icon: const Icon(Icons.refresh_rounded),
           ),
-        ),
-        const Divider(),
-        Expanded(
-          child: logs.isEmpty
-              ? Center(child: Text(context.s('noLogs')))
-              : NotificationListener<ScrollNotification>(
-                  onNotification: (notification) {
-                    _nearBottom = notification.metrics.extentAfter < 48;
-                    return false;
-                  },
-                  child: ListView.separated(
-                    controller: _scrollController,
-                    cacheExtent: 420,
-                    itemCount: logs.length,
-                    separatorBuilder: (_, _) => const Divider(indent: 50),
-                    itemBuilder: (context, index) {
-                      final log = logs[index];
-                      final color = switch (log.level) {
-                        'error' => Theme.of(context).colorScheme.error,
-                        'warning' => context.semanticColors.warning,
-                        _ => Theme.of(context).colorScheme.primary,
-                      };
-                      return ListTile(
-                        leading: Icon(Icons.circle, size: 9, color: color),
-                        title: Text(
-                          log.message,
-                          maxLines: 5,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        subtitle: Text(
-                          formatDateTime(log.time.millisecondsSinceEpoch),
-                        ),
-                      );
+          IconButton(
+            tooltip: context.s('clear'),
+            onPressed: logs.isEmpty ? null : () => _confirmClear(context, ref),
+            icon: const Icon(Icons.delete_outline_rounded),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          const Divider(height: 1),
+          Expanded(
+            child: logs.isEmpty
+                ? Center(child: Text(context.s('noLogs')))
+                : NotificationListener<ScrollNotification>(
+                    onNotification: (notification) {
+                      _nearBottom = notification.metrics.extentAfter < 48;
+                      return false;
                     },
+                    child: ListView.separated(
+                      controller: _scrollController,
+                      cacheExtent: 420,
+                      itemCount: logs.length,
+                      separatorBuilder: (_, _) => const Divider(indent: 50),
+                      itemBuilder: (context, index) {
+                        final log = logs[index];
+                        final color = switch (log.level) {
+                          'error' => Theme.of(context).colorScheme.error,
+                          'warning' => context.semanticColors.warning,
+                          _ => Theme.of(context).colorScheme.primary,
+                        };
+                        return ListTile(
+                          leading: Icon(Icons.circle, size: 9, color: color),
+                          title: Text(
+                            log.message,
+                            maxLines: 5,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          subtitle: Text(
+                            formatDateTime(log.time.millisecondsSinceEpoch),
+                          ),
+                        );
+                      },
+                    ),
                   ),
-                ),
-        ),
-      ],
+          ),
+        ],
+      ),
     );
   }
 

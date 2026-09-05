@@ -19,14 +19,18 @@ class DeviceRegistrationPayloadTest {
             appVersion = "1.0.9",
             firstSeen = "2026-08-28T12:00:00.000Z",
             lastSeen = "2026-08-28T13:00:00.000Z",
+            requestTimestamp = 1_788_000_000L,
+            nonce = "abcdefghijklmnopqrstuv",
         )
 
         assertEquals("android", payload.getString("platform"))
         assertEquals("niraNG", payload.getString("app_name"))
         assertEquals("Samsung", payload.getString("manufacturer"))
         assertEquals("Galaxy S24 5G", payload.getString("model"))
-        assertEquals(4, payload.getInt("schema_version"))
+        assertEquals(6, payload.getInt("schema_version"))
         assertEquals("a".repeat(64), payload.getString("device_key"))
+        assertTrue(payload.getLong("request_timestamp") > 0)
+        assertTrue(payload.getString("request_nonce").matches(Regex("[A-Za-z0-9_-]{22}")))
         for (forbidden in listOf("imei", "serial", "mac", "android_id", "sim", "ssid", "contacts")) {
             assertFalse(payload.has(forbidden))
         }

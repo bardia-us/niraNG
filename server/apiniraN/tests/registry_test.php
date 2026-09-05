@@ -37,7 +37,7 @@ try {
     foreach ($pdo->query('PRAGMA table_info(installations)') as $column) {
         $columns[] = $column['name'];
     }
-    foreach (['device_key', 'access_token_hash', 'reinstalled_after_block', 'bypass_attempts', 'last_access_status', 'schema_version'] as $column) {
+    foreach (['device_key', 'access_token_hash', 'access_token_expires_at', 'reinstalled_after_block', 'bypass_attempts', 'last_access_status', 'schema_version'] as $column) {
         assert_same(true, in_array($column, $columns, true), 'migration column ' . $column);
     }
 

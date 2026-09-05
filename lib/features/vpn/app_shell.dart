@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -8,9 +9,9 @@ import '../../core/localization/app_strings.dart';
 import '../../core/platform/native_models.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/update_checker.dart';
+import '../../core/registration/device_registration.dart';
 import '../../core/widgets/glass_dialog.dart';
 import '../../core/widgets/update_dialog.dart';
-import '../logs/logs_screen.dart';
 import '../servers/servers_screen.dart';
 import '../settings/settings_screen.dart';
 import 'app_controller.dart';
@@ -29,11 +30,42 @@ class _AppShellState extends ConsumerState<AppShell> {
   bool _performancePromptQueued = false;
   bool _startupUpdateCheckQueued = false;
   bool _startupUpdateCheckFinished = false;
+  bool _autoConnectQueued = false;
 
   @override
   void initState() {
     super.initState();
     NirangDiagnostics.currentFeature = 'home';
+    deviceAccessVerified.addListener(_onAccessVerified);
+  }
+
+  @override
+  void dispose() {
+    deviceAccessVerified.removeListener(_onAccessVerified);
+    super.dispose();
+  }
+
+  void _onAccessVerified() => _tryAutoConnect();
+
+  void _tryAutoConnect() {
+    if (_autoConnectQueued || deviceAccessBlock.value != null) return;
+    final app = ref.read(appControllerProvider).asData?.value;
+    if (app == null ||
+        !app.settings.autoConnect ||
+        !app.connection.canConnect ||
+        app.selectedServer == null) {
+      return;
+    }
+    _autoConnectQueued = true;
+    unawaited(_connectAutomatically());
+  }
+
+  Future<void> _connectAutomatically() async {
+    try {
+      await ref.read(appControllerProvider.notifier).connect();
+    } catch (_) {
+      // AppController publishes the user-facing failure state and diagnostic log.
+    }
   }
 
   @override
@@ -59,6 +91,7 @@ class _AppShellState extends ConsumerState<AppShell> {
           );
           return;
         }
+        if (deviceAccessVerified.value > 0) _tryAutoConnect();
         if (!_startupUpdateCheckQueued &&
             app.settings.performanceModePrompted &&
             !app.connection.isBusy) {
@@ -104,12 +137,7 @@ class _AppShellState extends ConsumerState<AppShell> {
       );
     }
 
-    const pages = [
-      HomeScreen(),
-      ServersScreen(),
-      SettingsScreen(),
-      LogsScreen(),
-    ];
+    const pages = [HomeScreen(), ServersScreen(), SettingsScreen()];
     final theme = Theme.of(context);
     final reducedEffects = shellState.performanceMode;
     final navigationBar = NavigationBar(
@@ -124,12 +152,8 @@ class _AppShellState extends ConsumerState<AppShell> {
           'home',
           'servers',
           'settings',
-          'logs',
         ][value];
         setState(() => _index = value);
-        if (value == 3) {
-          ref.read(appControllerProvider.notifier).refreshLogs();
-        }
       },
       destinations: [
         NavigationDestination(
@@ -146,11 +170,6 @@ class _AppShellState extends ConsumerState<AppShell> {
           icon: const Icon(Icons.settings_outlined),
           selectedIcon: const Icon(Icons.settings_rounded),
           label: context.s('settings'),
-        ),
-        NavigationDestination(
-          icon: const Icon(Icons.article_outlined),
-          selectedIcon: const Icon(Icons.article_rounded),
-          label: context.s('logs'),
         ),
       ],
     );
@@ -195,7 +214,12 @@ class _AppShellState extends ConsumerState<AppShell> {
             ],
           ),
         ),
-        body: IndexedStack(index: _index, children: pages),
+        body: Stack(
+          children: [
+            IndexedStack(index: _index, children: pages),
+            const _TransientStatusBanner(),
+          ],
+        ),
         bottomNavigationBar: reducedEffects
             ? navigationBar
             : ClipRect(
@@ -309,6 +333,74 @@ class _AppShellState extends ConsumerState<AppShell> {
     _reminderQueued = true;
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => _showTelegramReminder(),
+    );
+  }
+}
+
+class _TransientStatusBanner extends ConsumerWidget {
+  const _TransientStatusBanner();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final notice = ref.watch(
+      appControllerProvider.select((value) => value.asData?.value.notice),
+    );
+    final scheme = Theme.of(context).colorScheme;
+    final semantic = context.semanticColors;
+    final color = switch (notice?.tone) {
+      NoticeTone.success => semantic.success,
+      NoticeTone.error => scheme.error,
+      _ => scheme.primary,
+    };
+    return PositionedDirectional(
+      start: 16,
+      end: 16,
+      bottom: 12,
+      child: IgnorePointer(
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 180),
+          child: notice == null
+              ? const SizedBox.shrink()
+              : Material(
+                  key: ValueKey(notice.id),
+                  color: Color.alphaBlend(
+                    color.withValues(alpha: .14),
+                    scheme.surfaceContainerHigh,
+                  ),
+                  elevation: 2,
+                  borderRadius: BorderRadius.circular(13),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (notice.tone == NoticeTone.processing)
+                          SizedBox.square(
+                            dimension: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: color,
+                            ),
+                          )
+                        else
+                          Icon(
+                            notice.tone == NoticeTone.success
+                                ? Icons.check_circle_rounded
+                                : Icons.error_rounded,
+                            size: 18,
+                            color: color,
+                          ),
+                        const SizedBox(width: 9),
+                        Flexible(child: Text(notice.message)),
+                      ],
+                    ),
+                  ),
+                ),
+        ),
+      ),
     );
   }
 }

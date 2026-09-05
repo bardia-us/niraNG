@@ -114,6 +114,16 @@ final class _FakeCoordinator implements DeviceRegistrationCoordinator {
   }
 
   @override
+  Future<void> verifyAccess() async {
+    if (blocked) {
+      throw PlatformException(
+        code: 'blocked',
+        message: 'blocked_by_administrator',
+      );
+    }
+  }
+
+  @override
   Future<void> accept() async {
     accepts++;
     accepted = true;

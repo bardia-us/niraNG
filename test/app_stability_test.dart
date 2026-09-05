@@ -34,6 +34,18 @@ const _serverB = ServerInfo(
   status: 'idle',
 );
 
+const _subscriptionNoticeServer = ServerInfo(
+  id: 'notice',
+  name: 'هر دفعه آپدیت کنید - V8.8',
+  country: 'IR',
+  protocol: 'VLESS',
+  transport: 'TCP',
+  security: 'TLS',
+  port: 443,
+  selected: true,
+  status: 'idle',
+);
+
 class _FakeAppController extends AppController {
   _FakeAppController({
     this.language = 'en',
@@ -41,6 +53,7 @@ class _FakeAppController extends AppController {
     this.themeMode = 'system',
     this.performanceMode = false,
     this.connection = const ConnectionInfo(),
+    this.servers = const [_serverA, _serverB],
   });
 
   final String language;
@@ -48,6 +61,7 @@ class _FakeAppController extends AppController {
   final String themeMode;
   final bool performanceMode;
   final ConnectionInfo connection;
+  final List<ServerInfo> servers;
   int pingRequests = 0;
   int settingsUpdates = 0;
   int logRefreshes = 0;
@@ -56,7 +70,7 @@ class _FakeAppController extends AppController {
 
   @override
   Future<AppSnapshot> build() async => AppSnapshot(
-    servers: const [_serverA, _serverB],
+    servers: servers,
     connection: connection,
     subscriptionConfigured: true,
     settings: NativeSettings(
@@ -194,6 +208,35 @@ class _PerformancePromptController extends AppController {
   }
 }
 
+Future<void> _openSettingsSection(WidgetTester tester, String title) async {
+  final section = find.text(title);
+  await tester.scrollUntilVisible(
+    section,
+    260,
+    scrollable: find.byType(Scrollable).first,
+  );
+  if (tester.getCenter(section).dy > 470) {
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -150));
+    await tester.pumpAndSettle();
+  }
+  await tester.tap(section);
+  await tester.pumpAndSettle();
+}
+
+Future<void> _tapVisibleSetting(WidgetTester tester, Finder finder) async {
+  await tester.scrollUntilVisible(
+    finder,
+    220,
+    scrollable: find.byType(Scrollable).first,
+  );
+  if (tester.getCenter(finder).dy > 470) {
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -140));
+    await tester.pumpAndSettle();
+  }
+  await tester.tap(finder);
+  await tester.pumpAndSettle();
+}
+
 void main() {
   testWidgets('performance mode prompt is recorded after one explicit choice', (
     tester,
@@ -240,6 +283,59 @@ void main() {
     expect(find.byType(NavigationBar), findsOneWidget);
     expect(find.text('Local traffic usage'), findsNothing);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('connect without a selected server shows a friendly notice', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _FakeAppController(servers: const []),
+          ),
+        ],
+        child: const NirangApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Connect'));
+    await tester.pump();
+
+    expect(find.text('Please select a server first.'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pump(const Duration(seconds: 4));
+  });
+
+  testWidgets('subscription notice config is rejected without raw core error', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () =>
+                _FakeAppController(servers: const [_subscriptionNoticeServer]),
+          ),
+        ],
+        child: const NirangApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Connect'));
+    await tester.pump();
+
+    expect(
+      find.text(
+        'This server is not for connection. Please select another server.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Xray'), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.pump(const Duration(seconds: 4));
   });
 
   testWidgets('startup loading state stays responsive and completes cleanly', (
@@ -326,6 +422,14 @@ void main() {
 
     expect(find.text('Servers (2)'), findsOneWidget);
     expect(find.byType(BackdropFilter), findsWidgets);
+    expect(
+      tester.getCenter(find.byIcon(Icons.sync_rounded)).dx,
+      greaterThan(tester.getCenter(find.text('Test all')).dx),
+    );
+    expect(
+      tester.getCenter(find.text('Test all')).dx,
+      greaterThan(tester.getCenter(find.text('Servers (2)')).dx),
+    );
 
     await controller.updateSettings({'performanceMode': true});
     await tester.pumpAndSettle();
@@ -458,6 +562,33 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('fragment dialog has one readable scroll surface', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [appControllerProvider.overrideWith(_FakeAppController.new)],
+        child: const NirangApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.settings_outlined));
+    await tester.pumpAndSettle();
+    await _openSettingsSection(tester, 'Core settings');
+    await tester.tap(find.text('Fragment'));
+    await tester.pumpAndSettle();
+
+    final dialog = find.byType(NirangAlertDialog);
+    expect(dialog, findsOneWidget);
+    expect(
+      find.descendant(of: dialog, matching: find.byType(SingleChildScrollView)),
+      findsOneWidget,
+    );
+    expect(find.text('Fragment length (min-max)'), findsOneWidget);
+    expect(find.text('Fragment interval (min-max ms)'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'settings picker cancel discards changes and apply commits once',
     (tester) async {
@@ -475,11 +606,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byIcon(Icons.settings_outlined));
       await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(
-        find.text('Theme'),
-        300,
-        scrollable: find.byType(Scrollable).first,
-      );
+      await _openSettingsSection(tester, 'Performance');
       await tester.tap(find.text('Theme'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Dark'));
@@ -519,11 +646,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.settings_outlined));
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(
-      find.text('Remote DNS'),
-      250,
-      scrollable: find.byType(Scrollable).first,
-    );
+    await _openSettingsSection(tester, 'DNS');
     await tester.tap(find.text('Remote DNS'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextFormField), 'not a dns value');
@@ -630,25 +753,22 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.settings_outlined));
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(
-      find.text('Routing'),
-      250,
-      scrollable: find.byType(Scrollable).first,
-    );
-    await tester.tap(find.widgetWithText(ListTile, 'Routing'));
+    await _openSettingsSection(tester, 'Routing');
+    await tester.tap(find.widgetWithText(ListTile, 'Routing').last);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Bypass Iran'));
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
     expect(controller.state.asData!.value.settings.routingMode, 'global');
 
-    await tester.tap(find.widgetWithText(ListTile, 'Routing'));
+    await tester.tap(find.widgetWithText(ListTile, 'Routing').last);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Bypass Iran'));
     await tester.tap(find.text('Apply'));
     await tester.pumpAndSettle();
     expect(controller.state.asData!.value.settings.routingMode, 'bypassIran');
 
+    await _openSettingsSection(tester, 'DNS');
     await tester.scrollUntilVisible(
       find.text('Domain strategy'),
       220,
@@ -682,19 +802,20 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byIcon(Icons.article_outlined));
+    await tester.tap(find.byIcon(Icons.settings_outlined));
     await tester.pumpAndSettle();
+    await _openSettingsSection(tester, 'Advanced');
+    await _tapVisibleSetting(tester, find.text('Internal logs'));
     expect(find.text('Log entry 0'), findsOneWidget);
     expect(find.text('Log entry 249'), findsNothing);
-    await tester.tap(find.byIcon(Icons.home_outlined));
+    await tester.pageBack();
     await tester.pumpAndSettle();
 
     for (var iteration = 0; iteration < 4; iteration++) {
-      await tester.tap(find.byIcon(Icons.article_outlined));
-      await tester.pumpAndSettle();
+      await _tapVisibleSetting(tester, find.text('Internal logs'));
       await tester.drag(find.byType(ListView).last, const Offset(0, -500));
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.home_outlined));
+      await tester.pageBack();
       await tester.pumpAndSettle();
     }
 
@@ -784,13 +905,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byIcon(Icons.settings_outlined));
       await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(
-        find.text('Theme'),
-        240,
-        scrollable: find.byType(Scrollable).first,
-      );
-      await tester.drag(find.byType(Scrollable).first, const Offset(0, 100));
-      await tester.pumpAndSettle();
+      await _openSettingsSection(tester, 'Performance');
       await tester.tap(find.text('Theme'));
       await tester.pumpAndSettle();
 

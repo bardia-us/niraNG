@@ -118,11 +118,7 @@ class _ConnectionCard extends StatelessWidget {
                   ],
                 ),
               ),
-              _ConnectionAction(
-                connection: connection,
-                enabled: selected != null,
-                controller: controller,
-              ),
+              _ConnectionAction(connection: connection, controller: controller),
             ],
           ),
           if (connection.error?.isNotEmpty == true) ...[
@@ -221,14 +217,9 @@ class _ConnectionCard extends StatelessWidget {
 }
 
 class _ConnectionAction extends StatelessWidget {
-  const _ConnectionAction({
-    required this.connection,
-    required this.enabled,
-    required this.controller,
-  });
+  const _ConnectionAction({required this.connection, required this.controller});
 
   final ConnectionInfo connection;
-  final bool enabled;
   final AppController controller;
 
   @override
@@ -256,7 +247,7 @@ class _ConnectionAction extends StatelessWidget {
       );
     }
     return FilledButton.icon(
-      onPressed: connection.canConnect && enabled
+      onPressed: connection.canConnect
           ? () => _perform(context, controller.connect)
           : null,
       icon: connection.isBusy

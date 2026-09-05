@@ -3,7 +3,7 @@ package dev.nirang.client.model
 object ServerEligibility {
     fun rejectionReason(server: ServerRecord): String? {
         val normalizedName = server.name.lowercase()
-        if (NOTICE_MARKERS.any(normalizedName::contains)) {
+        if (NOTICE_MARKERS.any(normalizedName::contains) && VERSION_MARKER.containsMatchIn(normalizedName)) {
             return "This entry is subscription information, not a connectable server"
         }
         val address = server.address.trim().lowercase()
@@ -22,4 +22,5 @@ object ServerEligibility {
         "update config",
     )
     private val NON_CONNECTABLE_ADDRESSES = setOf("", "0.0.0.0", "::", "localhost")
+    private val VERSION_MARKER = Regex("(?:^|[\\s-])v\\d+(?:\\.\\d+){1,3}(?:$|[\\s-])", RegexOption.IGNORE_CASE)
 }

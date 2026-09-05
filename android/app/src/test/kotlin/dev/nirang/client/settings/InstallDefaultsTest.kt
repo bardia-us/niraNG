@@ -13,6 +13,9 @@ class InstallDefaultsTest {
         assertEquals("AsIs", defaults.domainStrategy)
         assertEquals("bypassIran", defaults.routingMode)
         assertTrue(defaults.enableIpv6)
+        assertTrue(defaults.directDnsEnabled)
+        assertEquals("178.22.122.100", defaults.directDns)
+        assertTrue(defaults.routeOnly)
     }
 
     @Test
@@ -22,5 +25,8 @@ class InstallDefaultsTest {
         assertEquals("AsIs", defaults.domainStrategy)
         assertEquals("global", defaults.routingMode)
         assertFalse(defaults.enableIpv6)
+        assertFalse(defaults.directDnsEnabled)
+        assertEquals("", defaults.directDns)
+        assertFalse(defaults.routeOnly)
     }
 }

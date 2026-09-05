@@ -6,6 +6,16 @@ import org.junit.Test
 
 class NotificationControlPolicyTest {
     @Test
+    fun `launcher badge exists only while VPN is really connected`() {
+        ConnectionState.entries.forEach { state ->
+            assertEquals(
+                if (state == ConnectionState.CONNECTED) 1 else 0,
+                NotificationControlPolicy.badgeCount(state),
+            )
+        }
+    }
+
+    @Test
     fun `only real connected state exposes disconnect`() {
         assertEquals(
             NotificationControlAction.DISCONNECT,

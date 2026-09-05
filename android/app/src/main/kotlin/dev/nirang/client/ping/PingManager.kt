@@ -23,15 +23,17 @@ class PingManager(
     private val generation = AtomicInteger(0)
     private val pending = AtomicInteger(0)
     private val tasks = mutableListOf<Future<*>>()
+    private val lifecycle = PingLifecycleTracker()
 
-    fun testSingle(serverId: String) {
+    fun testSingle(serverId: String, onComplete: (() -> Unit)? = null) {
         cancelTasks(emitEvent = false)
         val currentGeneration = generation.get()
         pending.set(1)
         repository.updatePing(serverId, null, "testing")
+        lifecycle.start(serverId)
         emit(serverId, null, "testing")
         val limiter = Semaphore(1)
-        synchronized(tasks) { tasks += executor.submit { test(serverId, currentGeneration, limiter) } }
+        synchronized(tasks) { tasks += executor.submit { test(serverId, currentGeneration, limiter, onComplete) } }
     }
 
     fun testAll() {
@@ -43,8 +45,9 @@ class PingManager(
         if (ids.isEmpty()) NativeEvents.emit("pingCompleted", null)
         ids.forEach { serverId ->
             repository.updatePing(serverId, null, "testing")
+            lifecycle.start(serverId)
             emit(serverId, null, "testing")
-            synchronized(tasks) { tasks += executor.submit { test(serverId, currentGeneration, limiter) } }
+            synchronized(tasks) { tasks += executor.submit { test(serverId, currentGeneration, limiter, null) } }
         }
     }
 
@@ -65,10 +68,19 @@ class PingManager(
             tasks.forEach { it.cancel(true) }
             tasks.clear()
         }
+        lifecycle.cancelAll().forEach { serverId ->
+            repository.updatePing(serverId, null, "idle")
+            emit(serverId, null, "idle")
+        }
         if (emitEvent) NativeEvents.emit("pingCancelled", null)
     }
 
-    private fun test(serverId: String, expectedGeneration: Int, limiter: Semaphore) {
+    private fun test(
+        serverId: String,
+        expectedGeneration: Int,
+        limiter: Semaphore,
+        onComplete: (() -> Unit)?,
+    ) {
         var acquired = false
         try {
             limiter.acquire()
@@ -78,6 +90,7 @@ class PingManager(
             if (ServerEligibility.rejectionReason(server) != null) {
                 repository.updatePing(serverId, null, "failed")
                 emit(serverId, null, "failed")
+                lifecycle.finish(serverId)
                 return
             }
             val delay = runCatching {
@@ -95,12 +108,16 @@ class PingManager(
             val status = if (delay >= 0) "success" else "timeout"
             repository.updatePing(serverId, delay.takeIf { it >= 0 }, status)
             emit(serverId, delay.takeIf { it >= 0 }, status)
+            lifecycle.finish(serverId)
             SafeLog.info(context, "Ping completed")
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
         } finally {
             if (acquired) limiter.release()
             if (generation.get() == expectedGeneration && pending.decrementAndGet() == 0) {
                 NativeEvents.emit("pingCompleted", null)
             }
+            onComplete?.invoke()
         }
     }
 
@@ -110,7 +127,7 @@ class PingManager(
 
     companion object {
         private const val MAX_CONCURRENCY = 32
-        private const val PING_TIMEOUT_SECONDS = 6L
+        private const val PING_TIMEOUT_SECONDS = 5L
         private const val TEST_URL = "https://www.google.com/generate_204"
     }
 }

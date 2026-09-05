@@ -68,6 +68,17 @@ object XrayConfigBuilder {
         validateServer(server)
         put("log", JSONObject().apply { put("loglevel", "warning") })
         put("dns", buildDns(settings))
+        if (settings?.observatoryEnabled == true) {
+            val sections = buildObservatorySections(
+                settings.leastPingInterval,
+                settings.leastLoadInterval,
+                settings.leastLoadHttpMethod,
+                settings.leastLoadSampling,
+                settings.leastLoadTimeout,
+            )
+            put("observatory", sections.getJSONObject("observatory"))
+            put("burstObservatory", sections.getJSONObject("burstObservatory"))
+        }
         if (settings?.enableLocalDns == true && settings.enableFakeDns) {
             put("fakedns", JSONArray().put(JSONObject().apply {
                 put("ipPool", "198.18.0.0/15")
@@ -253,6 +264,10 @@ object XrayConfigBuilder {
                 put("path", server.parameters["path"] ?: "/")
                 server.parameters["host"]?.takeIf(String::isNotBlank)?.let { put("host", it) }
                 server.parameters["mode"]?.takeIf(String::isNotBlank)?.let { put("mode", it) }
+                server.parameters["extra"]?.trim()?.takeIf(String::isNotEmpty)?.let { raw ->
+                    put("extra", runCatching { JSONObject(raw) }
+                        .getOrElse { throw IllegalArgumentException("XHTTP extra must be a JSON object", it) })
+                }
             })
             "tcp" -> server.parameters["headerType"]?.takeIf { it != "none" && it.isNotBlank() }?.let { headerType ->
                 put("tcpSettings", JSONObject().apply {
@@ -286,6 +301,9 @@ object XrayConfigBuilder {
                 put("publicKey", server.parameters["pbk"] ?: "")
                 put("shortId", server.parameters["sid"] ?: "")
                 put("spiderX", server.parameters["spx"] ?: "/")
+                (server.parameters["mldsa65Verify"] ?: server.parameters["pqv"])
+                    ?.takeIf(String::isNotBlank)
+                    ?.let { put("mldsa65Verify", it) }
             })
         }
         val profileFinalMask = server.parameters["fm"]?.trim()?.takeIf(String::isNotEmpty)
@@ -341,16 +359,73 @@ object XrayConfigBuilder {
             ?.takeIf(String::isNotEmpty) ?: server.address
     }
 
-    private fun buildDns(settings: NativeSettings?): JSONObject = JSONObject().apply {
-        val servers = settings?.remoteDns
-            ?.let(::splitRules)
-            ?.distinct()
-            .orEmpty()
+    private fun buildDns(settings: NativeSettings?): JSONObject = buildDnsSettings(
+        remoteDns = settings?.remoteDns ?: "localhost",
+        directDnsEnabled = settings?.directDnsEnabled == true,
+        directDns = settings?.directDns.orEmpty(),
+        routingMode = settings?.routingMode ?: "global",
+        customDomains = settings?.customDomains.orEmpty(),
+        fakeDns = settings?.enableLocalDns == true && settings.enableFakeDns,
+        enableIpv6 = settings?.enableIpv6 == true,
+    )
+
+    internal fun buildDnsSettings(
+        remoteDns: String,
+        directDnsEnabled: Boolean,
+        directDns: String,
+        routingMode: String,
+        customDomains: String,
+        fakeDns: Boolean,
+        enableIpv6: Boolean,
+    ): JSONObject = JSONObject().apply {
+        val servers = remoteDns
+            .let(::splitRules)
+            .distinct()
             .ifEmpty { listOf("localhost") }
-            .toMutableList()
-        if (settings?.enableLocalDns == true && settings.enableFakeDns) servers.add(0, "fakedns")
+            .mapTo(mutableListOf<Any>()) { it }
+        val directDomains = when (routingMode) {
+            "bypassIran" -> listOf("domain:ir", "full:localhost", "domain:localhost", "domain:local")
+            "custom" -> splitDomainRules(customDomains)
+            else -> emptyList()
+        }
+        if (directDnsEnabled && directDns.isNotBlank() && directDomains.isNotEmpty()) {
+            splitRules(directDns).asReversed().forEach { resolver ->
+                servers.add(0, JSONObject().apply {
+                    put("address", asDirectDnsAddress(resolver))
+                    put("domains", JSONArray(directDomains))
+                    put("skipFallback", true)
+                })
+            }
+        }
+        if (fakeDns) servers.add(0, "fakedns")
         put("servers", JSONArray(servers))
-        put("queryStrategy", if (settings?.enableIpv6 == true) "UseIP" else "UseIPv4")
+        put("queryStrategy", if (enableIpv6) "UseIP" else "UseIPv4")
+    }
+
+    internal fun buildObservatorySections(
+        leastPingInterval: String,
+        leastLoadInterval: String,
+        httpMethod: String,
+        sampling: Int,
+        timeout: String,
+    ): JSONObject = JSONObject().apply {
+        put("observatory", JSONObject().apply {
+            put("subjectSelector", JSONArray().put("proxy"))
+            put("probeURL", "https://www.google.com/generate_204")
+            put("probeInterval", leastPingInterval)
+            put("enableConcurrency", false)
+        })
+        put("burstObservatory", JSONObject().apply {
+            put("subjectSelector", JSONArray().put("proxy"))
+            put("pingConfig", JSONObject().apply {
+                put("destination", "https://www.google.com/generate_204")
+                put("connectivity", "")
+                put("interval", leastLoadInterval)
+                put("httpMethod", httpMethod)
+                put("sampling", sampling)
+                put("timeout", timeout)
+            })
+        })
     }
 
     internal fun buildRouting(
@@ -463,6 +538,15 @@ object XrayConfigBuilder {
         if (server.security.equals("reality", true)) {
             require(!server.parameters["pbk"].isNullOrBlank()) { "Reality public key is missing" }
         }
+    }
+
+    private fun asDirectDnsAddress(value: String): String = when {
+        value.startsWith("https://", true) -> "https+local://${value.substringAfter("://")}"
+        value.startsWith("tcp://", true) -> "tcp+local://${value.substringAfter("://")}"
+        value.startsWith("quic://", true) -> "quic+local://${value.substringAfter("://")}"
+        value.contains("://") -> value
+        value.contains(':') -> "tcp+local://[$value]"
+        else -> "tcp+local://$value"
     }
 
     /** HTTP/3 over a reliable stream proxy can stall from head-of-line blocking.

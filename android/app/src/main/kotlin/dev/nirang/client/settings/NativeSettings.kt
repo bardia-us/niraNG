@@ -2,6 +2,7 @@ package dev.nirang.client.settings
 
 import android.content.Context
 import android.net.Uri
+import android.os.Build
 import dev.nirang.client.BuildConfig
 import java.net.Inet6Address
 import java.net.InetAddress
@@ -24,13 +25,15 @@ class NativeSettings(context: Context) {
     val enableLocalDns: Boolean get() = safeBoolean("enableLocalDns", true)
     val enableFakeDns: Boolean get() = safeBoolean("enableFakeDns", false)
     val remoteDns: String get() = safeString("remoteDns", DEFAULT_REMOTE_DNS).takeIf(::validDnsResolvers) ?: DEFAULT_REMOTE_DNS
+    val directDnsEnabled: Boolean get() = safeBoolean("directDnsEnabled", FRESH_INSTALL_DEFAULTS.directDnsEnabled)
+    val directDns: String get() = safeString("directDns", FRESH_INSTALL_DEFAULTS.directDns).takeIf { it.isEmpty() || validDnsResolvers(it) } ?: FRESH_INSTALL_DEFAULTS.directDns
     val vpnDns: String get() = safeString("vpnDns", DEFAULT_VPN_DNS).takeIf(::validIpAddress) ?: DEFAULT_VPN_DNS
     val vpnInterfaceAddress: String get() = safeString("vpnInterfaceAddress", DEFAULT_VPN_ADDRESS).takeIf(::validVpnAddress) ?: DEFAULT_VPN_ADDRESS
     val localSocksPort: Int get() = safeInt("localSocksPort", 10808).takeIf { it in 1024..65_535 } ?: 10808
     val realPingConcurrency: Int get() = safeInt("realPingConcurrency", 16).takeIf(ALLOWED_PING_CONCURRENCY::contains) ?: 16
     val domainStrategy: String get() = safeString("domainStrategy", "AsIs").takeIf(ALLOWED_DOMAIN_STRATEGIES::contains) ?: "AsIs"
     val sniffingEnabled: Boolean get() = safeBoolean("sniffingEnabled", true)
-    val routeOnly: Boolean get() = safeBoolean("routeOnly", false)
+    val routeOnly: Boolean get() = safeBoolean("routeOnly", FRESH_INSTALL_DEFAULTS.routeOnly)
     val fragmentEnabled: Boolean get() = safeBoolean("fragmentEnabled", false)
     val fragmentPackets: String get() = safeString("fragmentPackets", "tlshello").takeIf(::validFragmentPackets) ?: "tlshello"
     val fragmentLength: String get() = safeString("fragmentLength", "50-100").takeIf { validRange(it, 1, 65_535) } ?: "50-100"
@@ -45,6 +48,16 @@ class NativeSettings(context: Context) {
     val language: String get() = safeString("language", "en").takeIf(ALLOWED_LANGUAGES::contains) ?: "en"
     val performanceMode: Boolean get() = safeBoolean("performanceMode", false)
     val performanceModePrompted: Boolean get() = safeBoolean("performanceModePrompted", false)
+    val autoConnect: Boolean get() = safeBoolean("autoConnect", false)
+    val perAppMode: String get() = safeString("perAppMode", "all").takeIf(ALLOWED_PER_APP_MODES::contains) ?: "all"
+    val perAppPackages: Set<String> get() = safeStringSet("perAppPackages")
+    val addHttpProxyToVpn: Boolean get() = safeBoolean("addHttpProxyToVpn", false)
+    val observatoryEnabled: Boolean get() = safeBoolean("observatoryEnabled", false)
+    val leastPingInterval: String get() = safeString("leastPingInterval", "3m").takeIf(::validDuration) ?: "3m"
+    val leastLoadInterval: String get() = safeString("leastLoadInterval", "5m").takeIf(::validDuration) ?: "5m"
+    val leastLoadHttpMethod: String get() = safeString("leastLoadHttpMethod", "HEAD").uppercase().takeIf { it in setOf("HEAD", "GET") } ?: "HEAD"
+    val leastLoadSampling: Int get() = safeInt("leastLoadSampling", 2).takeIf { it in 1..10 } ?: 2
+    val leastLoadTimeout: String get() = safeString("leastLoadTimeout", "30s").takeIf(::validDuration) ?: "30s"
     val ipCheckUrl: String get() = safeString("ipCheckUrl", DEFAULT_IP_CHECK).takeIf(::validHttpsUrl) ?: DEFAULT_IP_CHECK
 
     fun toMap(): Map<String, Any?> = mapOf(
@@ -55,6 +68,8 @@ class NativeSettings(context: Context) {
         "enableLocalDns" to enableLocalDns,
         "enableFakeDns" to enableFakeDns,
         "remoteDns" to remoteDns,
+        "directDnsEnabled" to directDnsEnabled,
+        "directDns" to directDns,
         "vpnDns" to vpnDns,
         "vpnInterfaceAddress" to vpnInterfaceAddress,
         "localSocksPort" to localSocksPort,
@@ -76,6 +91,17 @@ class NativeSettings(context: Context) {
         "language" to language,
         "performanceMode" to performanceMode,
         "performanceModePrompted" to performanceModePrompted,
+        "autoConnect" to autoConnect,
+        "perAppMode" to perAppMode,
+        "perAppPackages" to perAppPackages.sorted(),
+        "addHttpProxyToVpn" to addHttpProxyToVpn,
+        "httpProxyToVpnSupported" to (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q),
+        "observatoryEnabled" to observatoryEnabled,
+        "leastPingInterval" to leastPingInterval,
+        "leastLoadInterval" to leastLoadInterval,
+        "leastLoadHttpMethod" to leastLoadHttpMethod,
+        "leastLoadSampling" to leastLoadSampling,
+        "leastLoadTimeout" to leastLoadTimeout,
         "ipCheckUrl" to ipCheckUrl,
         "telegramUrlConfigured" to BuildConfig.TELEGRAM_URL.isNotBlank(),
         "telegramContact" to BuildConfig.TELEGRAM_CONTACT,
@@ -102,6 +128,10 @@ class NativeSettings(context: Context) {
         values["remoteDns"]?.toString()?.trim()?.let {
             require(validDnsResolvers(it)) { "Remote DNS resolvers are invalid" }
             strings["remoteDns"] = it
+        }
+        values["directDns"]?.toString()?.trim()?.let {
+            require(it.isEmpty() || validDnsResolvers(it)) { "Direct DNS resolvers are invalid" }
+            strings["directDns"] = it
         }
         values["vpnDns"]?.toString()?.trim()?.let {
             require(validIpAddress(it)) { "VPN DNS must be an IPv4 or IPv6 address" }
@@ -167,6 +197,37 @@ class NativeSettings(context: Context) {
             require(validHttpsUrl(it)) { "Public IP provider must be a valid HTTPS URL" }
             strings["ipCheckUrl"] = it
         }
+        values["perAppMode"]?.toString()?.let {
+            require(it in ALLOWED_PER_APP_MODES) { "Unsupported per-app proxy mode" }
+            strings["perAppMode"] = it
+        }
+        for (key in listOf("leastPingInterval", "leastLoadInterval", "leastLoadTimeout")) {
+            values[key]?.toString()?.trim()?.let {
+                require(validDuration(it)) { "$key must be a duration such as 3m or 30s" }
+                strings[key] = it
+            }
+        }
+        values["leastLoadHttpMethod"]?.toString()?.uppercase()?.let {
+            require(it in setOf("HEAD", "GET")) { "Observatory HTTP method must be HEAD or GET" }
+            strings["leastLoadHttpMethod"] = it
+        }
+
+        val leastLoadSamplingValue = (values["leastLoadSampling"] as? Number)?.toInt()
+        if (values.containsKey("leastLoadSampling")) {
+            require(leastLoadSamplingValue != null && leastLoadSamplingValue in 1..10) {
+                "Observatory sampling must be between 1 and 10"
+            }
+        }
+        val perAppPackagesValue = (values["perAppPackages"] as? List<*>)
+            ?.mapNotNull { it as? String }
+            ?.map(String::trim)
+            ?.filter(::validPackageName)
+            ?.distinct()
+            ?.take(MAX_PER_APP_PACKAGES)
+            ?.toSet()
+        if (values.containsKey("perAppPackages")) {
+            require(perAppPackagesValue != null) { "Per-app package selection is invalid" }
+        }
 
         val autoUpdateValue = values["autoUpdate"]
         if (values.containsKey("autoUpdate")) {
@@ -184,6 +245,8 @@ class NativeSettings(context: Context) {
         socksPort?.let { editor.putInt("localSocksPort", it) }
         pingConcurrency?.let { editor.putInt("realPingConcurrency", it) }
         fragmentMaxSplitValue?.let { editor.putInt("fragmentMaxSplit", it) }
+        leastLoadSamplingValue?.let { editor.putInt("leastLoadSampling", it) }
+        perAppPackagesValue?.let { editor.putStringSet("perAppPackages", it) }
         (autoUpdateValue as? Boolean)?.let { editor.putBoolean("autoUpdate", it) }
         interval?.let { editor.putInt("updateIntervalHours", it) }
         editor.apply()
@@ -220,11 +283,15 @@ class NativeSettings(context: Context) {
         val schemaVersion = runCatching { prefs.getInt(DEFAULTS_SCHEMA_KEY, 0) }.getOrDefault(0)
         if (schemaVersion >= DEFAULTS_SCHEMA_VERSION) return@synchronized
 
-        val defaults = InstallDefaults.forExistingState(prefs.all.isNotEmpty())
+        val existingState = schemaVersion > 0 || prefs.all.keys.any { it != DEFAULTS_SCHEMA_KEY }
+        val defaults = InstallDefaults.forExistingState(existingState)
         val editor = prefs.edit()
         if (!prefs.contains("routingMode")) editor.putString("routingMode", defaults.routingMode)
         if (!prefs.contains("domainStrategy")) editor.putString("domainStrategy", defaults.domainStrategy)
         if (!prefs.contains("enableIpv6")) editor.putBoolean("enableIpv6", defaults.enableIpv6)
+        if (!prefs.contains("directDnsEnabled")) editor.putBoolean("directDnsEnabled", defaults.directDnsEnabled)
+        if (!prefs.contains("directDns")) editor.putString("directDns", defaults.directDns)
+        if (!prefs.contains("routeOnly")) editor.putBoolean("routeOnly", defaults.routeOnly)
         editor.putInt(DEFAULTS_SCHEMA_KEY, DEFAULTS_SCHEMA_VERSION).commit()
     }
 
@@ -232,6 +299,12 @@ class NativeSettings(context: Context) {
     private fun safeBoolean(key: String, fallback: Boolean): Boolean = safePreference(key, fallback) { prefs.getBoolean(key, fallback) }
     private fun safeInt(key: String, fallback: Int): Int = safePreference(key, fallback) { prefs.getInt(key, fallback) }
     private fun safeLong(key: String, fallback: Long): Long = safePreference(key, fallback) { prefs.getLong(key, fallback) }
+    private fun safeStringSet(key: String): Set<String> = safePreference(key, emptySet()) {
+        prefs.getStringSet(key, emptySet()).orEmpty()
+            .filter(::validPackageName)
+            .take(MAX_PER_APP_PACKAGES)
+            .toSet()
+    }
 
     private inline fun <T> safePreference(key: String, fallback: T, read: () -> T): T = runCatching(read).getOrElse {
         prefs.edit().remove(key).apply()
@@ -240,7 +313,7 @@ class NativeSettings(context: Context) {
 
     companion object {
         private const val DEFAULTS_SCHEMA_KEY = "installDefaultsSchema"
-        private const val DEFAULTS_SCHEMA_VERSION = 1
+        private const val DEFAULTS_SCHEMA_VERSION = 2
         private val DEFAULTS_MIGRATION_LOCK = Any()
         private val FRESH_INSTALL_DEFAULTS = InstallDefaults.forExistingState(false)
         private const val DEFAULT_REMOTE_DNS = "https://dns.google/dns-query"
@@ -254,6 +327,8 @@ class NativeSettings(context: Context) {
         private val ALLOWED_PING_CONCURRENCY = setOf(4, 8, 16, 32)
         private val ALLOWED_THEMES = setOf("system", "light", "dark")
         private val ALLOWED_LANGUAGES = setOf("en", "fa")
+        private val ALLOWED_PER_APP_MODES = setOf("all", "selected", "exclude")
+        private const val MAX_PER_APP_PACKAGES = 500
         private val BOOLEAN_KEYS = setOf(
             "enableLocalDns",
             "enableFakeDns",
@@ -264,6 +339,10 @@ class NativeSettings(context: Context) {
             "preferIpv6",
             "performanceMode",
             "performanceModePrompted",
+            "directDnsEnabled",
+            "autoConnect",
+            "addHttpProxyToVpn",
+            "observatoryEnabled",
         )
         private val HOSTNAME = Regex("^(?=.{1,253}$)([A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)*[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
         private val IPV4 = Regex("^(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)(?:\\.(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)){3}$")
@@ -300,6 +379,13 @@ class NativeSettings(context: Context) {
             val uri = Uri.parse(value)
             uri.scheme.equals("https", true) && !uri.host.isNullOrBlank() && value.length <= 2048
         }.getOrDefault(false)
+
+        private fun validDuration(value: String): Boolean =
+            value.matches(Regex("^[1-9][0-9]{0,3}(?:ms|s|m|h)$"))
+
+        private fun validPackageName(value: String): Boolean =
+            value.length in 3..255 &&
+                value.matches(Regex("^[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z0-9_]+)+$"))
 
         private fun validRuleText(value: String): Boolean = value.length <= 16_384 && value.none { it == '\u0000' || (it.isISOControl() && it !in "\n\r\t") }
 

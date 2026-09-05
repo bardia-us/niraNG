@@ -24,6 +24,9 @@ fun privateBuildInput(name: String): String = providers
 
 val telegramChannelUrl = privateBuildInput("NIRANG_TELEGRAM_URL")
 val telegramContact = privateBuildInput("NIRANG_TELEGRAM_CONTACT")
+val apiSpkiPins = privateBuildInput("NIRANG_API_SPKI_PINS").ifBlank {
+    "sha256/Z8Ka2UpwypbfyfVFuSq2isahaWuwvepB3/4oxi5achg=,sha256/nWN7PSep5XDQdge5zK24CnCRXHr3KvzhKEGxsdqCX9E="
+}
 val keystoreProperties = Properties().apply {
     val file = rootProject.file("key.properties")
     if (file.exists()) FileInputStream(file).use(::load)
@@ -53,6 +56,7 @@ android {
         versionName = flutter.versionName
         buildConfigField("String", "TELEGRAM_URL", telegramChannelUrl.asBuildConfigString())
         buildConfigField("String", "TELEGRAM_CONTACT", telegramContact.asBuildConfigString())
+        buildConfigField("String", "API_SPKI_PINS", apiSpkiPins.asBuildConfigString())
     }
 
     buildFeatures {

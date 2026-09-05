@@ -25,6 +25,7 @@ class _NirangRegistrationBootstrapState
     extends State<NirangRegistrationBootstrap> {
   late Future<bool> _initialization;
   bool _accepting = false;
+  bool _backgroundVerificationQueued = false;
   String? _error;
 
   @override
@@ -45,6 +46,7 @@ class _NirangRegistrationBootstrapState
       final error = snapshot.error;
       if (_isBlocked(error)) markDeviceAccessBlocked(_platformMessage(error));
       if (snapshot.data == true) {
+        _queueBackgroundVerification();
         return ValueListenableBuilder<String?>(
           valueListenable: deviceAccessBlock,
           child: widget.child,
@@ -81,15 +83,36 @@ class _NirangRegistrationBootstrapState
 
   Future<bool> _verifyAccess() async {
     final accepted = await widget.coordinator.initialize();
-    if (accepted) clearDeviceAccessBlocked();
     return accepted;
   }
 
-  void _retry() {
-    setState(() {
-      _error = null;
-      _initialization = _verifyAccess();
+  void _queueBackgroundVerification() {
+    if (_backgroundVerificationQueued) return;
+    _backgroundVerificationQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        await widget.coordinator.verifyAccess();
+        clearDeviceAccessBlocked();
+        markDeviceAccessVerified();
+      } catch (error) {
+        if (_isBlocked(error)) markDeviceAccessBlocked(_platformMessage(error));
+        // Offline/startup API failures never keep the local UI on a loading page.
+      }
     });
+  }
+
+  void _retry() {
+    _retryAccess();
+  }
+
+  Future<void> _retryAccess() async {
+    try {
+      await widget.coordinator.verifyAccess();
+      clearDeviceAccessBlocked();
+      markDeviceAccessVerified();
+    } catch (error) {
+      if (_isBlocked(error)) markDeviceAccessBlocked(_platformMessage(error));
+    }
   }
 
   Widget _registrationApp(Widget home) => MaterialApp(
@@ -110,7 +133,10 @@ class _NirangRegistrationBootstrapState
     try {
       await widget.coordinator.accept();
       if (!mounted) return;
-      setState(() => _initialization = _verifyAccess());
+      setState(() {
+        _backgroundVerificationQueued = false;
+        _initialization = Future<bool>.value(true);
+      });
     } catch (error) {
       if (mounted) {
         if (_isBlocked(error)) {

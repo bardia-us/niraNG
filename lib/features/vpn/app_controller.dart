@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/platform/native_models.dart';
@@ -22,6 +23,8 @@ class AppController extends AsyncNotifier<AppSnapshot> {
   StreamSubscription<Map<dynamic, dynamic>>? _events;
   Future<void>? _logsRefresh;
   int _settingsRevision = 0;
+  Timer? _noticeTimer;
+  int _noticeRevision = 0;
 
   @override
   Future<AppSnapshot> build() async {
@@ -31,7 +34,10 @@ class AppController extends AsyncNotifier<AppSnapshot> {
         _set((value) => value.copyWith(subscriptionError: _errorText(error)));
       },
     );
-    ref.onDispose(() => _events?.cancel());
+    ref.onDispose(() {
+      _events?.cancel();
+      _noticeTimer?.cancel();
+    });
     return _parseBootstrap(await NirangNative.initialize());
   }
 
@@ -43,6 +49,7 @@ class AppController extends AsyncNotifier<AppSnapshot> {
   }
 
   Future<void> refreshSubscription() async {
+    _showNotice('Updating subscription…', NoticeTone.processing);
     _set(
       (value) =>
           value.copyWith(isRefreshing: true, clearSubscriptionError: true),
@@ -57,8 +64,10 @@ class AppController extends AsyncNotifier<AppSnapshot> {
           deletedServerCount: _number(data['deletedServerCount']),
         ),
       );
+      _showNotice('Subscription updated successfully', NoticeTone.success);
     } catch (error) {
       _set((value) => value.copyWith(subscriptionError: _errorText(error)));
+      _showNotice('Subscription update failed', NoticeTone.error);
       rethrow;
     } finally {
       _set((value) => value.copyWith(isRefreshing: false));
@@ -114,7 +123,52 @@ class AppController extends AsyncNotifier<AppSnapshot> {
     return _number(data['restored']);
   }
 
-  Future<void> connect() => NirangNative.connect(_current?.selectedServer?.id);
+  Future<void> connect() async {
+    final selected = _current?.selectedServer;
+    if (selected == null) {
+      _showNotice(
+        _message(
+          'Please select a server first.',
+          'لطفاً ابتدا یک سرور انتخاب کنید.',
+        ),
+        NoticeTone.error,
+      );
+      return;
+    }
+    if (isSubscriptionNoticeName(selected.name)) {
+      _showNotice(
+        _message(
+          'This server is not for connection. Please select another server.',
+          'این سرور برای اتصال نیست. لطفاً سرور دیگری انتخاب کنید.',
+        ),
+        NoticeTone.error,
+      );
+      return;
+    }
+    _showNotice('Starting service…', NoticeTone.processing);
+    try {
+      await NirangNative.connect(selected.id);
+    } on PlatformException catch (error) {
+      final message = switch (error.code) {
+        'no_server' => _message(
+          'Please select a server first.',
+          'لطفاً ابتدا یک سرور انتخاب کنید.',
+        ),
+        'not_connectable' => _message(
+          'This server is not for connection. Please select another server.',
+          'این سرور برای اتصال نیست. لطفاً سرور دیگری انتخاب کنید.',
+        ),
+        _ => _message('Connection could not be started.', 'اتصال شروع نشد.'),
+      };
+      _showNotice(message, NoticeTone.error);
+    } catch (_) {
+      _showNotice(
+        _message('Connection could not be started.', 'اتصال شروع نشد.'),
+        NoticeTone.error,
+      );
+    }
+  }
+
   Future<void> disconnect() => NirangNative.disconnect();
   Future<void> restartService() => NirangNative.restartService();
 
@@ -201,10 +255,34 @@ class AppController extends AsyncNotifier<AppSnapshot> {
     final data = event['data'];
     switch (type) {
       case 'connectionState':
-        _set(
-          (value) =>
-              value.copyWith(connection: ConnectionInfo.fromMap(_map(data))),
-        );
+        var connection = ConnectionInfo.fromMap(_map(data));
+        final selected = _current?.selectedServer;
+        if (connection.state == 'error' &&
+            selected != null &&
+            isSubscriptionNoticeName(selected.name)) {
+          connection = ConnectionInfo(
+            state: connection.state,
+            serverId: connection.serverId,
+            serverName: connection.serverName,
+            publicIp: connection.publicIp,
+            publicCountry: connection.publicCountry,
+            publicCity: connection.publicCity,
+            publicIpChecked: connection.publicIpChecked,
+            error: _message(
+              'This server is not for connection. Please select another server.',
+              'این سرور برای اتصال نیست. لطفاً سرور دیگری انتخاب کنید.',
+            ),
+          );
+        }
+        _set((value) => value.copyWith(connection: connection));
+        if (connection.state == 'connected') {
+          _showNotice('Service started successfully', NoticeTone.success);
+        } else if (connection.state == 'error') {
+          _showNotice(
+            connection.error ?? 'Connection failed',
+            NoticeTone.error,
+          );
+        }
       case 'servers':
         _set((value) => value.copyWith(servers: _servers(data)));
       case 'serverPing':
@@ -266,6 +344,36 @@ class AppController extends AsyncNotifier<AppSnapshot> {
     subscriptionError: map['subscriptionError']?.toString(),
     deletedServerCount: _number(map['deletedServerCount']),
   );
+
+  void _showNotice(String message, NoticeTone tone) {
+    final id = ++_noticeRevision;
+    _noticeTimer?.cancel();
+    _set((value) => value.copyWith(notice: TransientNotice(message, tone, id)));
+    _noticeTimer = Timer(
+      Duration(seconds: tone == NoticeTone.processing ? 5 : 3),
+      () => _set(
+        (value) =>
+            value.notice?.id == id ? value.copyWith(clearNotice: true) : value,
+      ),
+    );
+  }
+
+  String _message(String english, String persian) =>
+      _current?.settings.language == 'fa' ? persian : english;
+}
+
+bool isSubscriptionNoticeName(String name) {
+  final normalized = name.trim().toLowerCase();
+  final hasMarker =
+      normalized.contains('هر دفعه آپدیت کنید') ||
+      normalized.contains('هر دفعه به روز کنید') ||
+      normalized.contains('هر بار آپدیت کنید') ||
+      normalized.contains('update every time');
+  return hasMarker &&
+      RegExp(
+        r'(?:^|[\s-])v\d+(?:\.\d+){1,3}(?:$|[\s-])',
+        caseSensitive: false,
+      ).hasMatch(normalized);
 }
 
 Map<dynamic, dynamic> _map(dynamic value) => value is Map ? value : const {};

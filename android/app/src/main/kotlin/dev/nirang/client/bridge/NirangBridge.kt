@@ -5,6 +5,8 @@ import android.app.StatusBarManager
 import android.content.ComponentName
 import android.content.Intent
 import android.graphics.drawable.Icon
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -32,6 +34,7 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import java.io.ByteArrayOutputStream
 
 class NirangBridge(
     private val activity: Activity,
@@ -59,6 +62,7 @@ class NirangBridge(
             "deviceRegistrationStatus" -> {
                 deviceRegistrationStatus(result)
             }
+            "verifyDeviceAccess" -> verifyDeviceAccess(result)
             "acceptDeviceRegistration" -> acceptDeviceRegistration(result)
             "exitApplication" -> {
                 activity.finishAndRemoveTask()
@@ -115,6 +119,7 @@ class NirangBridge(
             "openTelegram" -> openTelegram(result)
             "openExternalUrl" -> openExternalUrl(call, result)
             "supportedAbis" -> result.success(Build.SUPPORTED_ABIS.toList())
+            "getInstalledApps" -> installedApps(result)
             "startUpdateDownload" -> startUpdateDownload(call, result)
             "resumeUpdateDownload" -> {
                 runCatching { UpdateInstaller.resume(activity) }
@@ -146,7 +151,6 @@ class NirangBridge(
         executor.execute {
             runCatching {
                 check(DeviceRegistrationManager.hasConsent(activity)) { "Device registration consent is required" }
-                DeviceRegistrationManager.requireAllowed(activity)
                 runCatching { activity.deleteSharedPreferences("nirang_traffic") }
                 val settings = NativeSettings(activity).also { it.incrementOpenCount() }
                 bootstrap().toMutableMap().apply { put("settings", settings.toMap()) }
@@ -171,13 +175,26 @@ class NirangBridge(
     }
 
     private fun deviceRegistrationStatus(result: MethodChannel.Result) {
+        if (DeviceRegistrationManager.hasConsent(activity) && DeviceRegistrationManager.isLocallyBlocked(activity)) {
+            result.error("blocked", "This device has been blocked by the administrator", null)
+        } else {
+            result.success(DeviceRegistrationManager.hasConsent(activity))
+        }
+    }
+
+    private fun verifyDeviceAccess(result: MethodChannel.Result) {
         if (!DeviceRegistrationManager.hasConsent(activity)) {
-            result.success(false)
+            result.error("consent_required", "Device registration consent is required", null)
             return
         }
         executor.execute {
             runCatching { DeviceRegistrationManager.requireAllowed(activity) }
-                .onSuccess { postToFlutter { result.success(true) } }
+                .onSuccess {
+                    postToFlutter {
+                        result.success(true)
+                        (activity as? MainActivity)?.continuePendingTileConnection()
+                    }
+                }
                 .onFailure { error ->
                     handleRemoteAccessFailure(error)
                     postToFlutter {
@@ -222,7 +239,6 @@ class NirangBridge(
             }.onSuccess { accepted ->
                 postToFlutter {
                     result.success(accepted)
-                    (activity as? MainActivity)?.continuePendingTileConnection()
                 }
             }
                 .onFailure { error ->
@@ -280,6 +296,40 @@ class NirangBridge(
         result.success(repository.safeServers())
     }
 
+    private fun installedApps(result: MethodChannel.Result) {
+        executor.execute {
+            val apps = runCatching {
+                val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+                activity.packageManager.queryIntentActivities(launcher, 0)
+                    .asSequence()
+                    .mapNotNull { info ->
+                        val packageName = info.activityInfo?.packageName?.takeIf { it != activity.packageName }
+                            ?: return@mapNotNull null
+                        val icon = runCatching {
+                            val drawable = info.loadIcon(activity.packageManager)
+                            val bitmap = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888)
+                            drawable.setBounds(0, 0, 64, 64)
+                            drawable.draw(Canvas(bitmap))
+                            ByteArrayOutputStream().use { output ->
+                                bitmap.compress(Bitmap.CompressFormat.PNG, 90, output)
+                                bitmap.recycle()
+                                output.toByteArray()
+                            }
+                        }.getOrNull()
+                        mapOf(
+                            "packageName" to packageName,
+                            "name" to info.loadLabel(activity.packageManager).toString().take(120),
+                            "icon" to icon,
+                        )
+                    }
+                    .distinctBy { it["packageName"] }
+                    .sortedBy { (it["name"] as String).lowercase() }
+                    .toList()
+            }.getOrElse { emptyList() }
+            postToFlutter { result.success(apps) }
+        }
+    }
+
     private fun reorderServers(call: MethodCall, result: MethodChannel.Result) {
         val ids = call.argument<List<String>>("ids").orEmpty()
         if (!repository.reorder(ids)) {
@@ -322,16 +372,11 @@ class NirangBridge(
             return
         }
         val requested = call.argument<String>("id") ?: repository.selectedServer()?.id
-        executor.execute {
-            runCatching { DeviceRegistrationManager.requireAllowedForConnect(activity) }
-                .onSuccess { postToFlutter { continueConnect(requested, result) } }
-                .onFailure { error ->
-                    handleRemoteAccessFailure(error)
-                    postToFlutter {
-                        result.error(remoteErrorCode(error, "access_denied"), safeError(error), null)
-                    }
-                }
+        if (DeviceRegistrationManager.isLocallyBlocked(activity)) {
+            result.error("blocked", "This device has been blocked by the administrator", null)
+            return
         }
+        continueConnect(requested, result)
     }
 
     /** Uses the exact normal connect/access/permission path after a Tile-opened Activity is ready. */

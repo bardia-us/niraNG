@@ -12,6 +12,8 @@ object RestartPolicy {
         "enableFakeDns",
         "enableLocalDns",
         "remoteDns",
+        "directDnsEnabled",
+        "directDns",
         "vpnDns",
         "vpnMtu",
         "vpnInterfaceAddress",
@@ -23,6 +25,15 @@ object RestartPolicy {
         "fragmentInterval",
         "fragmentMaxSplit",
         "localSocksPort",
+        "perAppMode",
+        "perAppPackages",
+        "addHttpProxyToVpn",
+        "observatoryEnabled",
+        "leastPingInterval",
+        "leastLoadInterval",
+        "leastLoadHttpMethod",
+        "leastLoadSampling",
+        "leastLoadTimeout",
     )
 
     fun requiresRestart(changedKeys: Set<String>): Boolean =

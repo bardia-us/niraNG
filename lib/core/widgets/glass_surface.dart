@@ -11,42 +11,52 @@ class GlassSurface extends ConsumerWidget {
     super.key,
     this.padding,
     this.radius = 16,
-    this.blur = 10,
+    this.blur = 11,
+    this.surfaceOpacity,
   });
 
   final Widget child;
   final EdgeInsetsGeometry? padding;
   final double radius;
   final double blur;
+  final double? surfaceOpacity;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final dark = Theme.of(context).brightness == Brightness.dark;
     final reducedEffects = ref.watch(performanceModeProvider);
-    final lightTop = scheme.surface.withValues(alpha: .88);
+    final lightTop = scheme.surface.withValues(alpha: .84);
     final lightBottom = Color.alphaBlend(
       scheme.primaryContainer.withValues(alpha: .065),
       scheme.surface,
-    ).withValues(alpha: .84);
+    ).withValues(alpha: .80);
+    final overriddenSurface = surfaceOpacity == null
+        ? null
+        : Color.alphaBlend(
+            scheme.primaryContainer.withValues(alpha: dark ? .035 : .025),
+            scheme.surface,
+          ).withValues(alpha: surfaceOpacity!.clamp(0, 1));
     final content = DecoratedBox(
       decoration: BoxDecoration(
-        gradient: reducedEffects
+        gradient: reducedEffects || overriddenSurface != null
             ? null
             : LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  dark ? scheme.surface.withValues(alpha: .74) : lightTop,
+                  dark ? scheme.surface.withValues(alpha: .66) : lightTop,
                   dark
-                      ? scheme.primaryContainer.withValues(alpha: .12)
+                      ? scheme.primaryContainer.withValues(alpha: .38)
                       : lightBottom,
                 ],
               ),
-        color: reducedEffects
-            ? scheme.surfaceContainerLow.withValues(alpha: dark ? .94 : .97)
-            : null,
-        border: Border.all(color: scheme.outlineVariant.withValues(alpha: .52)),
+        color:
+            overriddenSurface ??
+            (reducedEffects
+                ? scheme.surfaceContainerLow.withValues(alpha: dark ? .94 : .97)
+                : null),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: .48)),
         borderRadius: BorderRadius.circular(radius),
       ),
       child: Padding(padding: padding ?? EdgeInsets.zero, child: child),

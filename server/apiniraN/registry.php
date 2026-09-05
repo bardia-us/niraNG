@@ -50,6 +50,7 @@ function registry_database(): PDO
         'app_name' => "TEXT NOT NULL DEFAULT 'niraN'",
         'device_key' => "TEXT NULL",
         'access_token_hash' => "TEXT NULL",
+        'access_token_expires_at' => "TEXT NULL",
         'reinstalled_after_block' => "INTEGER NOT NULL DEFAULT 0",
         'bypass_attempts' => "INTEGER NOT NULL DEFAULT 0",
         'last_access_status' => "TEXT NOT NULL DEFAULT 'unknown'",
@@ -81,6 +82,20 @@ function registry_database(): PDO
          ON installations(device_key) WHERE device_key IS NOT NULL'
     );
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_installations_token ON installations(access_token_hash)');
+    $pdo->exec(
+        'CREATE TABLE IF NOT EXISTS api_nonces (
+            nonce_hash TEXT PRIMARY KEY,
+            expires_at INTEGER NOT NULL
+        )'
+    );
+    $pdo->exec(
+        'CREATE TABLE IF NOT EXISTS api_rate_limits (
+            bucket_key TEXT NOT NULL,
+            window_start INTEGER NOT NULL,
+            request_count INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (bucket_key, window_start)
+        )'
+    );
     registry_set_default($pdo, 'minimum_controllable_version', NIRANG_DEFAULT_MINIMUM_ANDROID_VERSION);
     $legacyAndroidMinimum = registry_setting(
         $pdo,

@@ -83,13 +83,41 @@ class XrayPattCompatibilityTest {
         val stream = streamSettings(
             server(
                 transport = "splithttp",
-                parameters = mapOf("host" to "cdn.example.com", "path" to "/xhttp", "mode" to "auto"),
+                parameters = mapOf(
+                    "host" to "cdn.example.com",
+                    "path" to "/xhttp",
+                    "mode" to "auto",
+                    "extra" to "{\"downloadSettings\":{\"address\":\"edge.example.com\"}}",
+                ),
             ),
         )
 
         assertEquals("xhttp", stream.getString("network"))
         assertEquals("/xhttp", stream.getJSONObject("xhttpSettings").getString("path"))
+        assertEquals(
+            "edge.example.com",
+            stream.getJSONObject("xhttpSettings").getJSONObject("extra")
+                .getJSONObject("downloadSettings").getString("address"),
+        )
         assertFalse(stream.has("finalmask"))
+    }
+
+    @Test
+    fun `Reality ML DSA verify value reaches the runtime stream config`() {
+        val stream = streamSettings(
+            server(
+                security = "reality",
+                parameters = mapOf(
+                    "sni" to "example.com",
+                    "pbk" to "public-key",
+                    "pqv" to "mldsa-value",
+                ),
+            ),
+        )
+        assertEquals(
+            "mldsa-value",
+            stream.getJSONObject("realitySettings").getString("mldsa65Verify"),
+        )
     }
 
     @Test(expected = IllegalArgumentException::class)

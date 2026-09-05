@@ -8,6 +8,8 @@ import '../../core/widgets/update_dialog.dart';
 import '../../core/platform/native_models.dart';
 import '../../core/update_checker.dart';
 import '../vpn/app_controller.dart';
+import 'per_app_proxy_screen.dart';
+import '../logs/logs_screen.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -47,396 +49,625 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     return ListView(
       padding: const EdgeInsets.only(bottom: 24),
       children: [
-        _Header(context.s('vpnSettings')),
-        ListTile(
-          leading: const Icon(Icons.vpn_key_outlined),
-          title: Text(context.s('connectionMode')),
-          subtitle: Text(context.s(settings.connectionMode)),
-          onTap: () => _chooseValue(
-            context,
-            title: context.s('connectionMode'),
-            current: settings.connectionMode,
-            values: {'vpn': context.s('vpn'), 'proxy': context.s('proxy')},
-            onSelected: (value) =>
-                controller.updateSettings({'connectionMode': value}),
-          ),
-        ),
-        SwitchListTile(
-          secondary: const Icon(Icons.dns_outlined),
-          title: Text(context.s('enableLocalDns')),
-          subtitle: Text(context.s('enableLocalDnsSummary')),
-          value: settings.enableLocalDns,
-          onChanged: (value) => _perform(
-            context,
-            () => controller.updateSettings({'enableLocalDns': value}),
-          ),
-        ),
-        SwitchListTile(
-          secondary: const Icon(Icons.auto_awesome_outlined),
-          title: Text(context.s('enableFakeDns')),
-          subtitle: Text(context.s('enableFakeDnsSummary')),
-          value: settings.enableFakeDns,
-          onChanged: settings.enableLocalDns
-              ? (value) => _perform(
-                  context,
-                  () => controller.updateSettings({'enableFakeDns': value}),
-                )
-              : null,
-        ),
-        SwitchListTile(
-          secondary: const Icon(Icons.lan_outlined),
-          title: Text(context.s('enableIpv6')),
-          subtitle: Text(context.s('enableIpv6Summary')),
-          value: settings.enableIpv6,
-          onChanged: (value) => _perform(
-            context,
-            () => controller.updateSettings({'enableIpv6': value}),
-          ),
-        ),
-        SwitchListTile(
-          secondary: const Icon(Icons.swap_vert_circle_outlined),
-          title: Text(context.s('preferIpv6')),
-          subtitle: Text(context.s('preferIpv6Summary')),
-          value: settings.preferIpv6,
-          onChanged: settings.enableIpv6
-              ? (value) => _perform(
-                  context,
-                  () => controller.updateSettings({'preferIpv6': value}),
-                )
-              : null,
-        ),
-        ListTile(
-          enabled: !settings.enableLocalDns && settings.connectionMode == 'vpn',
-          leading: const Icon(Icons.router_outlined),
-          title: Text(context.s('vpnDns')),
-          subtitle: Text(settings.vpnDns),
-          onTap: settings.enableLocalDns || settings.connectionMode != 'vpn'
-              ? null
-              : () => _editSingleValue(
-                  context,
-                  title: context.s('vpnDns'),
-                  initial: settings.vpnDns,
-                  validator: (value) => _validateIpAddress(context, value),
-                  onSave: (value) =>
-                      controller.updateSettings({'vpnDns': value}),
+        _SettingsExpansion(
+          title: context.s('connection'),
+          icon: Icons.vpn_lock_outlined,
+          initiallyExpanded: true,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.vpn_key_outlined),
+              title: Text(context.s('connectionMode')),
+              subtitle: Text(context.s(settings.connectionMode)),
+              onTap: () => _chooseValue(
+                context,
+                title: context.s('connectionMode'),
+                current: settings.connectionMode,
+                values: {'vpn': context.s('vpn'), 'proxy': context.s('proxy')},
+                onSelected: (value) =>
+                    controller.updateSettings({'connectionMode': value}),
+              ),
+            ),
+            SwitchListTile(
+              secondary: const Icon(Icons.dns_outlined),
+              title: Text(context.s('enableLocalDns')),
+              subtitle: Text(context.s('enableLocalDnsSummary')),
+              value: settings.enableLocalDns,
+              onChanged: (value) => _perform(
+                context,
+                () => controller.updateSettings({'enableLocalDns': value}),
+              ),
+            ),
+            SwitchListTile(
+              secondary: const Icon(Icons.auto_awesome_outlined),
+              title: Text(context.s('enableFakeDns')),
+              subtitle: Text(context.s('enableFakeDnsSummary')),
+              value: settings.enableFakeDns,
+              onChanged: settings.enableLocalDns
+                  ? (value) => _perform(
+                      context,
+                      () => controller.updateSettings({'enableFakeDns': value}),
+                    )
+                  : null,
+            ),
+            SwitchListTile(
+              secondary: const Icon(Icons.lan_outlined),
+              title: Text(context.s('enableIpv6')),
+              subtitle: Text(context.s('enableIpv6Summary')),
+              value: settings.enableIpv6,
+              onChanged: (value) => _perform(
+                context,
+                () => controller.updateSettings({'enableIpv6': value}),
+              ),
+            ),
+            SwitchListTile(
+              secondary: const Icon(Icons.swap_vert_circle_outlined),
+              title: Text(context.s('preferIpv6')),
+              subtitle: Text(context.s('preferIpv6Summary')),
+              value: settings.preferIpv6,
+              onChanged: settings.enableIpv6
+                  ? (value) => _perform(
+                      context,
+                      () => controller.updateSettings({'preferIpv6': value}),
+                    )
+                  : null,
+            ),
+            ListTile(
+              enabled:
+                  !settings.enableLocalDns && settings.connectionMode == 'vpn',
+              leading: const Icon(Icons.router_outlined),
+              title: Text(context.s('vpnDns')),
+              subtitle: Text(settings.vpnDns),
+              onTap: settings.enableLocalDns || settings.connectionMode != 'vpn'
+                  ? null
+                  : () => _editSingleValue(
+                      context,
+                      title: context.s('vpnDns'),
+                      initial: settings.vpnDns,
+                      validator: (value) => _validateIpAddress(context, value),
+                      onSave: (value) =>
+                          controller.updateSettings({'vpnDns': value}),
+                    ),
+            ),
+            ListTile(
+              enabled: settings.connectionMode == 'vpn',
+              leading: const Icon(Icons.settings_ethernet_rounded),
+              title: Text(context.s('vpnInterfaceAddress')),
+              subtitle: Text(settings.vpnInterfaceAddress),
+              onTap: settings.connectionMode != 'vpn'
+                  ? null
+                  : () => _editSingleValue(
+                      context,
+                      title: context.s('vpnInterfaceAddress'),
+                      initial: settings.vpnInterfaceAddress,
+                      validator: (value) => _validateVpnAddress(context, value),
+                      onSave: (value) => controller.updateSettings({
+                        'vpnInterfaceAddress': value,
+                      }),
+                    ),
+            ),
+            ListTile(
+              enabled: settings.connectionMode == 'vpn',
+              leading: const Icon(Icons.straighten_rounded),
+              title: Text(context.s('vpnMtu')),
+              subtitle: Text(
+                '${settings.vpnMtu} · ${context.s('vpnMtuSummary')}',
+              ),
+              onTap: settings.connectionMode == 'vpn'
+                  ? () => _editMtu(context, controller, settings.vpnMtu)
+                  : null,
+            ),
+            ListTile(
+              leading: const Icon(Icons.electrical_services_outlined),
+              title: Text(context.s('localSocksPort')),
+              subtitle: Text('${settings.localSocksPort}'),
+              onTap: () =>
+                  _editPort(context, controller, settings.localSocksPort),
+            ),
+            ListTile(
+              leading: const Icon(Icons.apps_rounded),
+              title: Text(context.s('perAppProxy')),
+              subtitle: Text(
+                settings.perAppMode == 'all'
+                    ? context.s('allApps')
+                    : '${settings.perAppPackages.length} ${context.s('appsCount')} · ${context.s(settings.perAppMode == 'selected' ? 'selectedOnly' : 'excluded')}',
+              ),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => PerAppProxyScreen(settings: settings),
                 ),
+              ),
+            ),
+            SwitchListTile(
+              secondary: const Icon(Icons.http_rounded),
+              title: Text(context.s('addHttpProxyToVpn')),
+              subtitle: Text(context.s('addHttpProxyToVpnSummary')),
+              value: settings.addHttpProxyToVpn,
+              onChanged:
+                  settings.connectionMode == 'vpn' &&
+                      settings.httpProxyToVpnSupported
+                  ? (value) => _perform(
+                      context,
+                      () => controller.updateSettings({
+                        'addHttpProxyToVpn': value,
+                      }),
+                    )
+                  : null,
+            ),
+          ],
         ),
-        ListTile(
-          enabled: settings.connectionMode == 'vpn',
-          leading: const Icon(Icons.settings_ethernet_rounded),
-          title: Text(context.s('vpnInterfaceAddress')),
-          subtitle: Text(settings.vpnInterfaceAddress),
-          onTap: settings.connectionMode != 'vpn'
-              ? null
-              : () => _editSingleValue(
-                  context,
-                  title: context.s('vpnInterfaceAddress'),
-                  initial: settings.vpnInterfaceAddress,
-                  validator: (value) => _validateVpnAddress(context, value),
-                  onSave: (value) =>
-                      controller.updateSettings({'vpnInterfaceAddress': value}),
-                ),
-        ),
-        ListTile(
-          enabled: settings.connectionMode == 'vpn',
-          leading: const Icon(Icons.straighten_rounded),
-          title: Text(context.s('vpnMtu')),
-          subtitle: Text('${settings.vpnMtu} · ${context.s('vpnMtuSummary')}'),
-          onTap: settings.connectionMode == 'vpn'
-              ? () => _editMtu(context, controller, settings.vpnMtu)
-              : null,
-        ),
-        ListTile(
-          leading: const Icon(Icons.electrical_services_outlined),
-          title: Text(context.s('localSocksPort')),
-          subtitle: Text('${settings.localSocksPort}'),
-          onTap: () => _editPort(context, controller, settings.localSocksPort),
-        ),
-        const Divider(indent: 56),
-        _Header(context.s('coreSettings')),
-        SwitchListTile(
-          secondary: const Icon(Icons.manage_search_rounded),
-          title: Text(context.s('enableSniffing')),
-          subtitle: Text(context.s('sniffingSummary')),
-          value: settings.sniffingEnabled,
-          onChanged: (value) => _perform(
-            context,
-            () => controller.updateSettings({'sniffingEnabled': value}),
-          ),
-        ),
-        SwitchListTile(
-          secondary: const Icon(Icons.alt_route_rounded),
-          title: Text(context.s('enableRouteOnly')),
-          subtitle: Text(context.s('routeOnlySummary')),
-          value: settings.routeOnly,
-          onChanged: settings.sniffingEnabled
-              ? (value) => _perform(
-                  context,
-                  () => controller.updateSettings({'routeOnly': value}),
-                )
-              : null,
-        ),
-        ListTile(
-          leading: const Icon(Icons.speed_rounded),
-          title: Text(context.s('realPingConcurrency')),
-          subtitle: Text('${settings.realPingConcurrency}'),
-          onTap: () => _chooseValue(
-            context,
-            title: context.s('realPingConcurrency'),
-            current: '${settings.realPingConcurrency}',
-            values: const {'4': '4', '8': '8', '16': '16', '32': '32'},
-            onSelected: (value) => controller.updateSettings({
-              'realPingConcurrency': int.parse(value),
-            }),
-          ),
-        ),
-        ListTile(
-          leading: const Icon(Icons.call_split_rounded),
-          title: Text(context.s('fragment')),
-          subtitle: Text(
-            settings.fragmentEnabled
-                ? '${settings.fragmentPackets} · ${settings.fragmentLength} · ${settings.fragmentInterval} ms · ${settings.fragmentMaxSplit}'
-                : context.s('disabled'),
-          ),
-          trailing: Icon(
-            settings.fragmentEnabled
-                ? Icons.check_circle_rounded
-                : Icons.chevron_right_rounded,
-            color: settings.fragmentEnabled
-                ? Theme.of(context).colorScheme.primary
-                : null,
-          ),
-          onTap: () => _editFragment(context, controller, settings),
-        ),
-        const Divider(indent: 56),
-        _Header(context.s('routing')),
-        ListTile(
-          leading: const Icon(Icons.route_outlined),
-          title: Text(context.s('routing')),
-          subtitle: Text(_routingLabel(context, settings.routingMode)),
-          onTap: () => _chooseRouting(context, controller, settings),
-        ),
-        if (settings.routingMode == 'custom')
-          ListTile(
-            leading: const Icon(Icons.rule_rounded),
-            title: Text(context.s('custom')),
-            subtitle: Text(context.s('customRuleHint')),
-            onTap: () => _editCustomRules(context, controller, settings),
-          ),
-        const Divider(indent: 56),
-        _Header(context.s('dns')),
-        ListTile(
-          leading: const Icon(Icons.public_outlined),
-          title: Text(context.s('remoteDns')),
-          subtitle: Text(settings.remoteDns),
-          onTap: () => _editSingleValue(
-            context,
-            title: context.s('remoteDns'),
-            initial: settings.remoteDns,
-            validator: (value) => _validateDnsResolvers(context, value),
-            onSave: (value) => controller.updateSettings({'remoteDns': value}),
-          ),
-        ),
-        ListTile(
-          leading: const Icon(Icons.account_tree_outlined),
-          title: Text(context.s('domainStrategy')),
-          subtitle: Text(settings.domainStrategy),
-          onTap: () => _chooseValue(
-            context,
-            title: context.s('domainStrategy'),
-            current: settings.domainStrategy,
-            values: const {
-              'AsIs': 'AsIs',
-              'IPIfNonMatch': 'IPIfNonMatch',
-              'IPOnDemand': 'IPOnDemand',
-            },
-            onSelected: (value) =>
-                controller.updateSettings({'domainStrategy': value}),
-          ),
-        ),
-        const Divider(indent: 56),
-        _Header(context.s('subscriptionUpdate')),
-        ListTile(
-          leading: const Icon(Icons.sync_rounded),
-          title: Text(context.s('refresh')),
-          subtitle: Text(
-            '${context.s('lastUpdated')}: ${formatDateTime(app.lastUpdated)}',
-          ),
-          trailing: app.isRefreshing
-              ? const SizedBox.square(
-                  dimension: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.chevron_right_rounded),
-          onTap: app.isRefreshing
-              ? null
-              : () => _perform(context, controller.refreshSubscription),
-        ),
-        ListTile(
-          enabled: app.deletedServerCount > 0,
-          leading: const Icon(Icons.restore_from_trash_outlined),
-          title: Text(context.s('restoreDeletedServers')),
-          subtitle: Text(
-            app.deletedServerCount == 0
-                ? context.s('noDeletedServers')
-                : '${app.deletedServerCount} ${context.s('deletedServersCount')}',
-          ),
-          onTap: app.deletedServerCount == 0
-              ? null
-              : () => _perform(context, () async {
-                  await controller.restoreDeletedServers();
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(context.s('serversRestored'))),
-                    );
-                  }
+        _SettingsExpansion(
+          title: context.s('coreSettings'),
+          icon: Icons.memory_rounded,
+          children: [
+            SwitchListTile(
+              secondary: const Icon(Icons.manage_search_rounded),
+              title: Text(context.s('enableSniffing')),
+              subtitle: Text(context.s('sniffingSummary')),
+              value: settings.sniffingEnabled,
+              onChanged: (value) => _perform(
+                context,
+                () => controller.updateSettings({'sniffingEnabled': value}),
+              ),
+            ),
+            SwitchListTile(
+              secondary: const Icon(Icons.alt_route_rounded),
+              title: Text(context.s('enableRouteOnly')),
+              subtitle: Text(context.s('routeOnlySummary')),
+              value: settings.routeOnly,
+              onChanged: settings.sniffingEnabled
+                  ? (value) => _perform(
+                      context,
+                      () => controller.updateSettings({'routeOnly': value}),
+                    )
+                  : null,
+            ),
+            ListTile(
+              leading: const Icon(Icons.speed_rounded),
+              title: Text(context.s('realPingConcurrency')),
+              subtitle: Text('${settings.realPingConcurrency}'),
+              onTap: () => _chooseValue(
+                context,
+                title: context.s('realPingConcurrency'),
+                current: '${settings.realPingConcurrency}',
+                values: const {'4': '4', '8': '8', '16': '16', '32': '32'},
+                onSelected: (value) => controller.updateSettings({
+                  'realPingConcurrency': int.parse(value),
                 }),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.call_split_rounded),
+              title: Text(context.s('fragment')),
+              subtitle: Text(
+                settings.fragmentEnabled
+                    ? '${settings.fragmentPackets} · ${settings.fragmentLength} · ${settings.fragmentInterval} ms · ${settings.fragmentMaxSplit}'
+                    : context.s('disabled'),
+              ),
+              trailing: Icon(
+                settings.fragmentEnabled
+                    ? Icons.check_circle_rounded
+                    : Icons.chevron_right_rounded,
+                color: settings.fragmentEnabled
+                    ? Theme.of(context).colorScheme.primary
+                    : null,
+              ),
+              onTap: () => _editFragment(context, controller, settings),
+            ),
+          ],
         ),
-        SwitchListTile(
-          secondary: const Icon(Icons.update_rounded),
-          title: Text(context.s('autoUpdate')),
-          value: settings.autoUpdate,
-          onChanged: (value) => _perform(
-            context,
-            () => controller.updateSettings({'autoUpdate': value}),
-          ),
+        _SettingsExpansion(
+          title: context.s('routing'),
+          icon: Icons.route_outlined,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.route_outlined),
+              title: Text(context.s('routing')),
+              subtitle: Text(_routingLabel(context, settings.routingMode)),
+              onTap: () => _chooseRouting(context, controller, settings),
+            ),
+            if (settings.routingMode == 'custom')
+              ListTile(
+                leading: const Icon(Icons.rule_rounded),
+                title: Text(context.s('custom')),
+                subtitle: Text(context.s('customRuleHint')),
+                onTap: () => _editCustomRules(context, controller, settings),
+              ),
+          ],
         ),
-        ListTile(
-          enabled: settings.autoUpdate,
-          leading: const Icon(Icons.schedule_rounded),
-          title: Text(context.s('updateInterval')),
-          subtitle: Text(context.s('hours${settings.updateIntervalHours}')),
-          onTap: !settings.autoUpdate
-              ? null
-              : () => _chooseValue(
+        _SettingsExpansion(
+          title: context.s('dns'),
+          icon: Icons.dns_outlined,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.public_outlined),
+              title: Text(context.s('remoteDns')),
+              subtitle: Text(settings.remoteDns),
+              onTap: () => _editSingleValue(
+                context,
+                title: context.s('remoteDns'),
+                initial: settings.remoteDns,
+                validator: (value) => _validateDnsResolvers(context, value),
+                onSave: (value) =>
+                    controller.updateSettings({'remoteDns': value}),
+              ),
+            ),
+            SwitchListTile(
+              secondary: const Icon(Icons.alt_route_rounded),
+              title: Text(context.s('directDns')),
+              subtitle: Text(
+                settings.directDns.isEmpty
+                    ? context.s('directDnsSummary')
+                    : settings.directDns,
+              ),
+              value: settings.directDnsEnabled,
+              onChanged: (value) => _perform(
+                context,
+                () => controller.updateSettings({'directDnsEnabled': value}),
+              ),
+            ),
+            if (settings.directDnsEnabled)
+              ListTile(
+                leading: const Icon(Icons.edit_rounded),
+                title: Text(context.s('directDnsResolver')),
+                subtitle: Text(
+                  settings.directDns.isEmpty
+                      ? 'Not configured'
+                      : settings.directDns,
+                ),
+                onTap: () => _editSingleValue(
                   context,
-                  title: context.s('updateInterval'),
-                  current: '${settings.updateIntervalHours}',
-                  values: {
-                    '6': context.s('hours6'),
-                    '12': context.s('hours12'),
-                    '24': context.s('hours24'),
+                  title: context.s('directDnsResolver'),
+                  initial: settings.directDns,
+                  validator: (value) => _validateDnsResolvers(context, value),
+                  onSave: (value) =>
+                      controller.updateSettings({'directDns': value}),
+                ),
+              ),
+            ListTile(
+              leading: const Icon(Icons.account_tree_outlined),
+              title: Text(context.s('domainStrategy')),
+              subtitle: Text(settings.domainStrategy),
+              onTap: () => _chooseValue(
+                context,
+                title: context.s('domainStrategy'),
+                current: settings.domainStrategy,
+                values: const {
+                  'AsIs': 'AsIs',
+                  'IPIfNonMatch': 'IPIfNonMatch',
+                  'IPOnDemand': 'IPOnDemand',
+                },
+                onSelected: (value) =>
+                    controller.updateSettings({'domainStrategy': value}),
+              ),
+            ),
+          ],
+        ),
+        _SettingsExpansion(
+          title: context.s('general'),
+          icon: Icons.settings_outlined,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.sync_rounded),
+              title: Text(context.s('refresh')),
+              subtitle: Text(
+                '${context.s('lastUpdated')}: ${formatDateTime(app.lastUpdated)}',
+              ),
+              trailing: app.isRefreshing
+                  ? const SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.chevron_right_rounded),
+              onTap: app.isRefreshing
+                  ? null
+                  : () => _perform(context, controller.refreshSubscription),
+            ),
+            ListTile(
+              enabled: app.deletedServerCount > 0,
+              leading: const Icon(Icons.restore_from_trash_outlined),
+              title: Text(context.s('restoreDeletedServers')),
+              subtitle: Text(
+                app.deletedServerCount == 0
+                    ? context.s('noDeletedServers')
+                    : '${app.deletedServerCount} ${context.s('deletedServersCount')}',
+              ),
+              onTap: app.deletedServerCount == 0
+                  ? null
+                  : () => _perform(context, () async {
+                      await controller.restoreDeletedServers();
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(context.s('serversRestored'))),
+                        );
+                      }
+                    }),
+            ),
+            SwitchListTile(
+              secondary: const Icon(Icons.update_rounded),
+              title: Text(context.s('autoUpdate')),
+              value: settings.autoUpdate,
+              onChanged: (value) => _perform(
+                context,
+                () => controller.updateSettings({'autoUpdate': value}),
+              ),
+            ),
+            ListTile(
+              enabled: settings.autoUpdate,
+              leading: const Icon(Icons.schedule_rounded),
+              title: Text(context.s('updateInterval')),
+              subtitle: Text(context.s('hours${settings.updateIntervalHours}')),
+              onTap: !settings.autoUpdate
+                  ? null
+                  : () => _chooseValue(
+                      context,
+                      title: context.s('updateInterval'),
+                      current: '${settings.updateIntervalHours}',
+                      values: {
+                        '6': context.s('hours6'),
+                        '12': context.s('hours12'),
+                        '24': context.s('hours24'),
+                      },
+                      onSelected: (value) => controller.updateSettings({
+                        'updateIntervalHours': int.parse(value),
+                      }),
+                    ),
+            ),
+          ],
+        ),
+        _SettingsExpansion(
+          title: context.s('performance'),
+          icon: Icons.bolt_outlined,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.contrast_rounded),
+              title: Text(context.s('theme')),
+              subtitle: Text(context.s(settings.themeMode)),
+              onTap: () => _chooseValue(
+                context,
+                title: context.s('theme'),
+                current: settings.themeMode,
+                values: {
+                  'system': context.s('system'),
+                  'light': context.s('light'),
+                  'dark': context.s('dark'),
+                },
+                onSelected: (value) =>
+                    controller.updateSettings({'themeMode': value}),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.language_rounded),
+              title: Text(context.s('language')),
+              subtitle: Text(
+                settings.language == 'fa'
+                    ? context.s('persian')
+                    : context.s('english'),
+              ),
+              onTap: () => _chooseValue(
+                context,
+                title: context.s('language'),
+                current: settings.language,
+                values: {
+                  'en': context.s('english'),
+                  'fa': context.s('persian'),
+                },
+                onSelected: (value) =>
+                    controller.updateSettings({'language': value}),
+              ),
+            ),
+            SwitchListTile(
+              secondary: const Icon(Icons.bolt_rounded),
+              title: Text(context.s('performanceMode')),
+              subtitle: Text(context.s('performanceModeSummary')),
+              value: settings.performanceMode,
+              onChanged: (value) => _perform(
+                context,
+                () => controller.updateSettings({
+                  'performanceMode': value,
+                  'performanceModePrompted': true,
+                }),
+              ),
+            ),
+            SwitchListTile(
+              secondary: const Icon(Icons.power_settings_new_rounded),
+              title: Text(context.s('autoConnect')),
+              subtitle: Text(context.s('autoConnectSummary')),
+              value: settings.autoConnect,
+              onChanged: (value) => _perform(
+                context,
+                () => controller.updateSettings({'autoConnect': value}),
+              ),
+            ),
+          ],
+        ),
+        _SettingsExpansion(
+          title: context.s('observatory'),
+          icon: Icons.monitor_heart_outlined,
+          children: [
+            SwitchListTile(
+              secondary: const Icon(Icons.monitor_heart_outlined),
+              title: Text(context.s('enableObservatory')),
+              subtitle: Text(
+                'leastPing ${settings.leastPingInterval} · leastLoad ${settings.leastLoadInterval}',
+              ),
+              value: settings.observatoryEnabled,
+              onChanged: (value) => _perform(
+                context,
+                () => controller.updateSettings({'observatoryEnabled': value}),
+              ),
+            ),
+            if (settings.observatoryEnabled) ...[
+              ListTile(
+                leading: const Icon(Icons.speed_rounded),
+                title: Text(context.s('leastPingInterval')),
+                subtitle: Text(settings.leastPingInterval),
+                onTap: () => _chooseValue(
+                  context,
+                  title: context.s('leastPingInterval'),
+                  current: settings.leastPingInterval,
+                  values: const {
+                    '1m': '1m',
+                    '3m': '3m',
+                    '5m': '5m',
+                    '10m': '10m',
                   },
+                  onSelected: (value) =>
+                      controller.updateSettings({'leastPingInterval': value}),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.query_stats_rounded),
+                title: Text(context.s('leastLoadInterval')),
+                subtitle: Text(settings.leastLoadInterval),
+                onTap: () => _chooseValue(
+                  context,
+                  title: context.s('leastLoadInterval'),
+                  current: settings.leastLoadInterval,
+                  values: const {
+                    '1m': '1m',
+                    '5m': '5m',
+                    '10m': '10m',
+                    '30m': '30m',
+                  },
+                  onSelected: (value) =>
+                      controller.updateSettings({'leastLoadInterval': value}),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.http_rounded),
+                title: Text(context.s('leastLoadProbe')),
+                subtitle: Text(
+                  '${settings.leastLoadHttpMethod} · sampling ${settings.leastLoadSampling} · timeout ${settings.leastLoadTimeout}',
+                ),
+                onTap: () => _chooseValue(
+                  context,
+                  title: 'HTTP method',
+                  current: settings.leastLoadHttpMethod,
+                  values: const {'HEAD': 'HEAD', 'GET': 'GET'},
+                  onSelected: (value) =>
+                      controller.updateSettings({'leastLoadHttpMethod': value}),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.functions_rounded),
+                title: Text(context.s('sampling')),
+                subtitle: Text('${settings.leastLoadSampling}'),
+                onTap: () => _chooseValue(
+                  context,
+                  title: context.s('sampling'),
+                  current: '${settings.leastLoadSampling}',
+                  values: const {'1': '1', '2': '2', '3': '3', '5': '5'},
                   onSelected: (value) => controller.updateSettings({
-                    'updateIntervalHours': int.parse(value),
+                    'leastLoadSampling': int.parse(value),
                   }),
                 ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.timer_outlined),
+                title: Text(context.s('timeout')),
+                subtitle: Text(settings.leastLoadTimeout),
+                onTap: () => _chooseValue(
+                  context,
+                  title: 'leastLoad timeout',
+                  current: settings.leastLoadTimeout,
+                  values: const {'10s': '10s', '30s': '30s', '60s': '60s'},
+                  onSelected: (value) =>
+                      controller.updateSettings({'leastLoadTimeout': value}),
+                ),
+              ),
+            ],
+          ],
         ),
-        const Divider(indent: 56),
-        _Header(context.s('appearance')),
-        ListTile(
-          leading: const Icon(Icons.contrast_rounded),
-          title: Text(context.s('theme')),
-          subtitle: Text(context.s(settings.themeMode)),
-          onTap: () => _chooseValue(
-            context,
-            title: context.s('theme'),
-            current: settings.themeMode,
-            values: {
-              'system': context.s('system'),
-              'light': context.s('light'),
-              'dark': context.s('dark'),
-            },
-            onSelected: (value) =>
-                controller.updateSettings({'themeMode': value}),
-          ),
+        _SettingsExpansion(
+          title: context.s('updates'),
+          icon: Icons.system_update_alt_rounded,
+          children: [
+            const UpdateDownloadSettingsTile(),
+            ListTile(
+              leading: const Icon(Icons.dashboard_customize_outlined),
+              title: Text(context.s('quickSettingsTile')),
+              subtitle: Text(context.s('quickSettingsTileSummary')),
+              trailing: const Icon(Icons.add_rounded),
+              onTap: () => _addQuickSettingsTile(context, controller),
+            ),
+            ListTile(
+              leading: const Icon(Icons.system_update_alt_rounded),
+              title: Text(context.s('checkForUpdates')),
+              subtitle: Text(
+                '${context.s('currentVersion')}: ${app.appVersion}',
+              ),
+              trailing: _checkingUpdates
+                  ? const SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.chevron_right_rounded),
+              onTap: _checkingUpdates
+                  ? null
+                  : () => _checkForUpdates(context, app.appVersion),
+            ),
+          ],
         ),
-        ListTile(
-          leading: const Icon(Icons.language_rounded),
-          title: Text(context.s('language')),
-          subtitle: Text(
-            settings.language == 'fa'
-                ? context.s('persian')
-                : context.s('english'),
-          ),
-          onTap: () => _chooseValue(
-            context,
-            title: context.s('language'),
-            current: settings.language,
-            values: {'en': context.s('english'), 'fa': context.s('persian')},
-            onSelected: (value) =>
-                controller.updateSettings({'language': value}),
-          ),
-        ),
-        SwitchListTile(
-          secondary: const Icon(Icons.bolt_rounded),
-          title: Text(context.s('performanceMode')),
-          subtitle: Text(context.s('performanceModeSummary')),
-          value: settings.performanceMode,
-          onChanged: (value) => _perform(
-            context,
-            () => controller.updateSettings({
-              'performanceMode': value,
-              'performanceModePrompted': true,
-            }),
-          ),
-        ),
-        const Divider(indent: 56),
-        _Header(context.s('updates')),
-        const UpdateDownloadSettingsTile(),
-        ListTile(
-          leading: const Icon(Icons.dashboard_customize_outlined),
-          title: Text(context.s('quickSettingsTile')),
-          subtitle: Text(context.s('quickSettingsTileSummary')),
-          trailing: const Icon(Icons.add_rounded),
-          onTap: () => _addQuickSettingsTile(context, controller),
-        ),
-        ListTile(
-          leading: const Icon(Icons.system_update_alt_rounded),
-          title: Text(context.s('checkForUpdates')),
-          subtitle: Text('${context.s('currentVersion')}: ${app.appVersion}'),
-          trailing: _checkingUpdates
-              ? const SizedBox.square(
-                  dimension: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.chevron_right_rounded),
-          onTap: _checkingUpdates
-              ? null
-              : () => _checkForUpdates(context, app.appVersion),
-        ),
-        const Divider(indent: 56),
-        _Header(context.s('settings')),
-        ListTile(
-          leading: const Icon(Icons.public_rounded),
-          title: Text(context.s('ipProvider')),
-          subtitle: Text(
-            settings.ipCheckUrl,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          onTap: () => _editSingleValue(
-            context,
-            title: context.s('ipProvider'),
-            initial: settings.ipCheckUrl,
-            validator: (value) => _validateHttps(context, value),
-            onSave: (value) => controller.updateSettings({'ipCheckUrl': value}),
-          ),
-        ),
-        ListTile(
-          enabled: settings.telegramUrlConfigured,
-          leading: const Icon(Icons.send_outlined),
-          title: Text(context.s('telegram')),
-          subtitle: Text(
-            settings.telegramContact.isEmpty
-                ? context.s('telegramSubtitle')
-                : '${settings.telegramContact} · ${context.s('telegramSubtitle')}',
-          ),
-          trailing: const Icon(Icons.open_in_new_rounded, size: 19),
-          onTap: () => _perform(context, controller.openTelegram),
-        ),
-        ListTile(
-          leading: const Icon(Icons.info_outline_rounded),
-          title: Text(context.s('about')),
-          subtitle: Text('niraNG ${app.appVersion}'),
-          onTap: () => _showAbout(context, app.coreVersion, app.appVersion),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-          child: Text(
-            context.s('applyNextConnection'),
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
+        _SettingsExpansion(
+          title: context.s('advanced'),
+          icon: Icons.tune_rounded,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.public_rounded),
+              title: Text(context.s('ipProvider')),
+              subtitle: Text(
+                settings.ipCheckUrl,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              onTap: () => _editSingleValue(
+                context,
+                title: context.s('ipProvider'),
+                initial: settings.ipCheckUrl,
+                validator: (value) => _validateHttps(context, value),
+                onSave: (value) =>
+                    controller.updateSettings({'ipCheckUrl': value}),
+              ),
+            ),
+            ListTile(
+              enabled: settings.telegramUrlConfigured,
+              leading: const Icon(Icons.send_outlined),
+              title: Text(context.s('telegram')),
+              subtitle: Text(
+                settings.telegramContact.isEmpty
+                    ? context.s('telegramSubtitle')
+                    : '${settings.telegramContact} · ${context.s('telegramSubtitle')}',
+              ),
+              trailing: const Icon(Icons.open_in_new_rounded, size: 19),
+              onTap: () => _perform(context, controller.openTelegram),
+            ),
+            ListTile(
+              leading: const Icon(Icons.bug_report_outlined),
+              title: Text(context.s('internalLogs')),
+              subtitle: Text(context.s('internalLogsSummary')),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () {
+                controller.refreshLogs();
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(builder: (_) => const LogsScreen()),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.info_outline_rounded),
+              title: Text(context.s('about')),
+              subtitle: Text('niraNG ${app.appVersion}'),
+              onTap: () => _showAbout(context, app.coreVersion, app.appVersion),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: Text(
+                context.s('applyNextConnection'),
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -858,66 +1089,64 @@ class _FragmentDialogState extends State<_FragmentDialog> {
 
   @override
   Widget build(BuildContext context) => NirangAlertDialog(
+    blur: 4,
+    surfaceOpacity: .96,
     title: Text(context.s('fragmentSettings')),
     content: Form(
       key: _formKey,
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text(context.s('enableFragment')),
-              value: _enabled,
-              onChanged: (value) => setState(() => _enabled = value),
-            ),
-            DropdownButtonFormField<String>(
-              initialValue: _packets,
-              decoration: InputDecoration(
-                labelText: context.s('fragmentPackets'),
-              ),
-              items: const ['tlshello', '1-1', '1-2', '1-3', '1-4', '1-5']
-                  .map(
-                    (value) =>
-                        DropdownMenuItem(value: value, child: Text(value)),
-                  )
-                  .toList(growable: false),
-              onChanged: (value) => _packets = value ?? _packets,
-            ),
-            const SizedBox(height: 10),
-            TextFormField(
-              controller: _length,
-              decoration: InputDecoration(
-                labelText: context.s('fragmentLength'),
-                hintText: '50-100',
-              ),
-              validator: (value) => _range(value, 65535),
-            ),
-            const SizedBox(height: 10),
-            TextFormField(
-              controller: _interval,
-              decoration: InputDecoration(
-                labelText: context.s('fragmentInterval'),
-                hintText: '10-20',
-              ),
-              validator: (value) => _range(value, 10000),
-            ),
-            const SizedBox(height: 10),
-            TextFormField(
-              controller: _maxSplit,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                labelText: context.s('fragmentMaxSplit'),
-              ),
-              validator: (value) {
-                final number = int.tryParse(value?.trim() ?? '');
-                return number != null && number >= 0 && number <= 10000
-                    ? null
-                    : context.s('invalidFragmentMaxSplit');
-              },
-            ),
-          ],
-        ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(context.s('enableFragment')),
+            value: _enabled,
+            onChanged: (value) => setState(() => _enabled = value),
+          ),
+          _FragmentFieldLabel(context.s('fragmentPackets')),
+          const SizedBox(height: 6),
+          DropdownButtonFormField<String>(
+            initialValue: _packets,
+            decoration: const InputDecoration(),
+            items: const ['tlshello', '1-1', '1-2', '1-3', '1-4', '1-5']
+                .map(
+                  (value) => DropdownMenuItem(value: value, child: Text(value)),
+                )
+                .toList(growable: false),
+            onChanged: (value) => _packets = value ?? _packets,
+          ),
+          const SizedBox(height: 14),
+          _FragmentFieldLabel(context.s('fragmentLength')),
+          const SizedBox(height: 6),
+          TextFormField(
+            controller: _length,
+            decoration: const InputDecoration(hintText: '50-100'),
+            validator: (value) => _range(value, 65535),
+          ),
+          const SizedBox(height: 14),
+          _FragmentFieldLabel(context.s('fragmentInterval')),
+          const SizedBox(height: 6),
+          TextFormField(
+            controller: _interval,
+            decoration: const InputDecoration(hintText: '10-20'),
+            validator: (value) => _range(value, 10000),
+          ),
+          const SizedBox(height: 14),
+          _FragmentFieldLabel(context.s('fragmentMaxSplit')),
+          const SizedBox(height: 6),
+          TextFormField(
+            controller: _maxSplit,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(),
+            validator: (value) {
+              final number = int.tryParse(value?.trim() ?? '');
+              return number != null && number >= 0 && number <= 10000
+                  ? null
+                  : context.s('invalidFragmentMaxSplit');
+            },
+          ),
+        ],
       ),
     ),
     actions: [
@@ -939,6 +1168,21 @@ class _FragmentDialogState extends State<_FragmentDialog> {
         child: Text(context.s('apply')),
       ),
     ],
+  );
+}
+
+class _FragmentFieldLabel extends StatelessWidget {
+  const _FragmentFieldLabel(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Text(
+    text,
+    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+      color: Theme.of(context).colorScheme.onSurfaceVariant,
+      fontWeight: FontWeight.w600,
+    ),
   );
 }
 
@@ -1028,19 +1272,34 @@ class _CustomRulesDialogState extends State<_CustomRulesDialog> {
   );
 }
 
-class _Header extends StatelessWidget {
-  const _Header(this.text);
-  final String text;
+class _SettingsExpansion extends StatelessWidget {
+  const _SettingsExpansion({
+    required this.title,
+    required this.icon,
+    required this.children,
+    this.initiallyExpanded = false,
+  });
+
+  final String title;
+  final IconData icon;
+  final List<Widget> children;
+  final bool initiallyExpanded;
+
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
-    child: Text(
-      text.toUpperCase(),
-      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-        letterSpacing: .8,
+  Widget build(BuildContext context) => ExpansionTile(
+    initiallyExpanded: initiallyExpanded,
+    maintainState: true,
+    tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+    childrenPadding: const EdgeInsets.only(bottom: 4),
+    leading: Icon(icon),
+    title: Text(
+      title,
+      style: Theme.of(context).textTheme.titleMedium?.copyWith(
         color: Theme.of(context).colorScheme.primary,
+        fontWeight: FontWeight.w700,
       ),
     ),
+    children: children,
   );
 }
 

@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.Network
+import android.net.ProxyInfo
 import android.net.VpnService
 import android.os.Build
 import android.os.Handler
@@ -21,6 +22,7 @@ import dev.nirang.client.logs.SafeLog
 import dev.nirang.client.model.ConnectionState
 import dev.nirang.client.model.ServerEligibility
 import dev.nirang.client.network.ProxyIpChecker
+import dev.nirang.client.ping.PingManager
 import dev.nirang.client.settings.NativeSettings
 import dev.nirang.client.subscription.SubscriptionRepository
 import dev.nirang.client.xray.XrayConfigBuilder
@@ -186,6 +188,7 @@ class NirangVpnService : VpnService() {
             SafeLog.info(this, "VPN started")
             SafeLog.info(this, "Xray started")
             submit { refreshPublicIp(settings.ipCheckUrl, server.id) }
+            refreshConnectedServerPing(repository, server.id)
         } catch (error: Throwable) {
             if (!operationGate.isCurrent(operation) || error.message == CANCELLED_OPERATION) {
                 cleanupResources()
@@ -242,6 +245,7 @@ class NirangVpnService : VpnService() {
             )
             SafeLog.warning(this, "Previous working server restored")
             submit { refreshPublicIp(settings.ipCheckUrl, fallback.id) }
+            refreshConnectedServerPing(repository, fallback.id)
             true
         }.getOrElse { false }
     }
@@ -249,6 +253,12 @@ class NirangVpnService : VpnService() {
     private fun markLastWorking(serverId: String) {
         getSharedPreferences(VPN_STATE_PREFS, MODE_PRIVATE)
             .edit().putString(LAST_WORKING_SERVER_ID, serverId).apply()
+    }
+
+    private fun refreshConnectedServerPing(repository: SubscriptionRepository, serverId: String) {
+        lateinit var manager: PingManager
+        manager = PingManager(applicationContext, repository)
+        manager.testSingle(serverId) { manager.close() }
     }
 
     private fun buildVpnInterface(serverName: String, settings: NativeSettings): ParcelFileDescriptor? {
@@ -260,16 +270,46 @@ class NirangVpnService : VpnService() {
             .setMtu(settings.vpnMtu)
             .addAddress(interfaceAddress, interfacePrefix)
             .addRoute("0.0.0.0", 0)
-            .addDisallowedApplication(packageName)
             .setBlocking(true)
+        applyPerAppPolicy(builder, settings)
         if (settings.enableIpv6) {
             builder
                 .addAddress("fdfe:dcba:9877::1", 126)
                 .addRoute("::", 0)
         }
         resolveVpnDns(settings)?.let { builder.addDnsServer(it) }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) builder.setMetered(false)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            builder.setMetered(false)
+            if (settings.addHttpProxyToVpn) {
+                builder.setHttpProxy(ProxyInfo.buildDirectProxy("127.0.0.1", XrayConfigBuilder.LOCAL_HTTP_PROXY_PORT))
+            }
+        }
         return builder.establish()
+    }
+
+    private fun applyPerAppPolicy(builder: Builder, settings: NativeSettings) {
+        val installedPackages = settings.perAppPackages.filter { candidate ->
+            runCatching {
+                packageManager.getApplicationInfo(candidate, 0)
+            }.isSuccess
+        }.toSet()
+        val rules = PerAppPolicy.resolve(
+            settings.perAppMode,
+            settings.perAppPackages,
+            installedPackages,
+            packageName,
+        )
+        rules.allowed.forEach { candidate ->
+            runCatching { builder.addAllowedApplication(candidate) }
+        }
+        rules.disallowed.forEach { candidate ->
+            runCatching { builder.addDisallowedApplication(candidate) }
+        }
+        if (rules.fellBackToAllApps) {
+            // Android has no "route no apps" builder mode. Keep the VPN usable
+            // if every selected application was uninstalled.
+            SafeLog.warning(this, "Per-app selection is empty; using all installed apps")
+        }
     }
 
     private fun resolveVpnDns(settings: NativeSettings): InetAddress? {
@@ -480,10 +520,14 @@ class NirangVpnService : VpnService() {
 
     private fun ensureNotificationChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val manager = getSystemService(NotificationManager::class.java)
         val channel = NotificationChannel(CHANNEL_ID, getString(R.string.vpn_channel_name), NotificationManager.IMPORTANCE_LOW).apply {
-            setShowBadge(false)
+            setShowBadge(true)
         }
-        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        manager.createNotificationChannel(channel)
+        if (manager.getNotificationChannel(LEGACY_CHANNEL_ID) != null) {
+            manager.deleteNotificationChannel(LEGACY_CHANNEL_ID)
+        }
     }
 
     private fun updateNotification(snapshot: ConnectionSnapshot) {
@@ -511,8 +555,12 @@ class NirangVpnService : VpnService() {
             .setContentText(listOfNotNull(status, snapshot.serverName).joinToString(" · "))
             .setContentIntent(openIntent)
             .setOngoing(true)
-            .setSilent(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setShowWhen(false)
+            .setOnlyAlertOnce(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setBadgeIconType(NotificationCompat.BADGE_ICON_SMALL)
+            .setNumber(NotificationControlPolicy.badgeCount(snapshot.state))
         if (NotificationControlPolicy.action(snapshot.state) == NotificationControlAction.DISCONNECT) {
             val disconnectIntent = PendingIntent.getService(
                 this,
@@ -536,7 +584,10 @@ class NirangVpnService : VpnService() {
         const val EXTRA_SERVER_NAME = "serverName"
         const val EXTRA_RESTART_GENERATION = "restartGeneration"
         const val EXTRA_ALLOW_FALLBACK = "allowFallback"
-        private const val CHANNEL_ID = "nirang_vpn"
+        // Android notification-channel behavior is immutable after creation. The legacy
+        // channel explicitly disabled launcher badges, so a new channel is required.
+        private const val CHANNEL_ID = "nirang_vpn_status"
+        private const val LEGACY_CHANNEL_ID = "nirang_vpn"
         private const val NOTIFICATION_ID = 4107
         private const val REQUEST_OPEN_APP = 41070
         private const val REQUEST_DISCONNECT = 41072

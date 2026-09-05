@@ -77,7 +77,19 @@ object SubscriptionParser {
     private fun parseVmess(raw: String): ServerRecord {
         val json = JSONObject(decodeBase64(raw.substringAfter("vmess://")) ?: error("Invalid VMess payload"))
         val parameters = buildMap {
-            mapOf("alterId" to "aid", "encryption" to "scy", "host" to "host", "path" to "path", "sni" to "sni", "alpn" to "alpn", "fp" to "fp", "flow" to "flow", "headerType" to "type")
+            mapOf(
+                "alterId" to "aid",
+                "encryption" to "scy",
+                "host" to "host",
+                "path" to "path",
+                "sni" to "sni",
+                "alpn" to "alpn",
+                "fp" to "fp",
+                "flow" to "flow",
+                "headerType" to "type",
+                "extra" to "extra",
+                "mldsa65Verify" to "pqv",
+            )
                 .forEach { (target, source) -> json.optString(source).takeIf(String::isNotBlank)?.let { put(target, it) } }
         }
         return server(json.optString("ps", "Server").ifBlank { "Server" }, "vmess", normalizedHost(json.getString("add")), json.optString("port").toIntOrNull() ?: json.optInt("port", 443), json.getString("id"), json.optString("net", "tcp"), json.optString("tls", "none").ifBlank { "none" }, parameters)

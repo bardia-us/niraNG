@@ -167,13 +167,15 @@ class NativeSettings {
     this.enableLocalDns = true,
     this.enableFakeDns = false,
     this.remoteDns = 'https://dns.google/dns-query',
+    this.directDnsEnabled = true,
+    this.directDns = '178.22.122.100',
     this.vpnDns = '1.1.1.1',
     this.vpnInterfaceAddress = '10.10.14.1/30',
     this.localSocksPort = 10808,
     this.realPingConcurrency = 16,
     this.domainStrategy = 'AsIs',
     this.sniffingEnabled = true,
-    this.routeOnly = false,
+    this.routeOnly = true,
     this.fragmentEnabled = false,
     this.fragmentPackets = 'tlshello',
     this.fragmentLength = '50-100',
@@ -188,6 +190,17 @@ class NativeSettings {
     this.language = 'en',
     this.performanceMode = false,
     this.performanceModePrompted = false,
+    this.autoConnect = false,
+    this.perAppMode = 'all',
+    this.perAppPackages = const [],
+    this.addHttpProxyToVpn = false,
+    this.httpProxyToVpnSupported = true,
+    this.observatoryEnabled = false,
+    this.leastPingInterval = '3m',
+    this.leastLoadInterval = '5m',
+    this.leastLoadHttpMethod = 'HEAD',
+    this.leastLoadSampling = 2,
+    this.leastLoadTimeout = '30s',
     this.ipCheckUrl = 'https://api.ip.sb/geoip',
     this.telegramUrlConfigured = true,
     this.telegramContact = '',
@@ -201,13 +214,15 @@ class NativeSettings {
     enableLocalDns: map['enableLocalDns'] != false,
     enableFakeDns: map['enableFakeDns'] == true,
     remoteDns: '${map['remoteDns'] ?? 'https://dns.google/dns-query'}',
+    directDnsEnabled: map['directDnsEnabled'] != false,
+    directDns: '${map['directDns'] ?? '178.22.122.100'}',
     vpnDns: '${map['vpnDns'] ?? '1.1.1.1'}',
     vpnInterfaceAddress: '${map['vpnInterfaceAddress'] ?? '10.10.14.1/30'}',
     localSocksPort: _int(map['localSocksPort']) ?? 10808,
     realPingConcurrency: _int(map['realPingConcurrency']) ?? 16,
     domainStrategy: '${map['domainStrategy'] ?? 'AsIs'}',
     sniffingEnabled: map['sniffingEnabled'] != false,
-    routeOnly: map['routeOnly'] == true,
+    routeOnly: map['routeOnly'] != false,
     fragmentEnabled: map['fragmentEnabled'] == true,
     fragmentPackets: '${map['fragmentPackets'] ?? 'tlshello'}',
     fragmentLength: '${map['fragmentLength'] ?? '50-100'}',
@@ -222,6 +237,19 @@ class NativeSettings {
     language: '${map['language'] ?? 'en'}',
     performanceMode: map['performanceMode'] == true,
     performanceModePrompted: map['performanceModePrompted'] == true,
+    autoConnect: map['autoConnect'] == true,
+    perAppMode: '${map['perAppMode'] ?? 'all'}',
+    perAppPackages: (map['perAppPackages'] as List<dynamic>? ?? const [])
+        .map((value) => '$value')
+        .toList(growable: false),
+    addHttpProxyToVpn: map['addHttpProxyToVpn'] == true,
+    httpProxyToVpnSupported: map['httpProxyToVpnSupported'] != false,
+    observatoryEnabled: map['observatoryEnabled'] == true,
+    leastPingInterval: '${map['leastPingInterval'] ?? '3m'}',
+    leastLoadInterval: '${map['leastLoadInterval'] ?? '5m'}',
+    leastLoadHttpMethod: '${map['leastLoadHttpMethod'] ?? 'HEAD'}',
+    leastLoadSampling: _int(map['leastLoadSampling']) ?? 2,
+    leastLoadTimeout: '${map['leastLoadTimeout'] ?? '30s'}',
     ipCheckUrl: '${map['ipCheckUrl'] ?? 'https://api.ip.sb/geoip'}',
     telegramUrlConfigured: map['telegramUrlConfigured'] != false,
     telegramContact: '${map['telegramContact'] ?? ''}',
@@ -234,6 +262,8 @@ class NativeSettings {
   final bool enableLocalDns;
   final bool enableFakeDns;
   final String remoteDns;
+  final bool directDnsEnabled;
+  final String directDns;
   final String vpnDns;
   final String vpnInterfaceAddress;
   final int localSocksPort;
@@ -255,6 +285,17 @@ class NativeSettings {
   final String language;
   final bool performanceMode;
   final bool performanceModePrompted;
+  final bool autoConnect;
+  final String perAppMode;
+  final List<String> perAppPackages;
+  final bool addHttpProxyToVpn;
+  final bool httpProxyToVpnSupported;
+  final bool observatoryEnabled;
+  final String leastPingInterval;
+  final String leastLoadInterval;
+  final String leastLoadHttpMethod;
+  final int leastLoadSampling;
+  final String leastLoadTimeout;
   final String ipCheckUrl;
   final bool telegramUrlConfigured;
   final String telegramContact;
@@ -275,6 +316,8 @@ class NativeSettings {
       enableLocalDns: boolValue('enableLocalDns', enableLocalDns),
       enableFakeDns: boolValue('enableFakeDns', enableFakeDns),
       remoteDns: stringValue('remoteDns', remoteDns),
+      directDnsEnabled: boolValue('directDnsEnabled', directDnsEnabled),
+      directDns: stringValue('directDns', directDns),
       vpnDns: stringValue('vpnDns', vpnDns),
       vpnInterfaceAddress: stringValue(
         'vpnInterfaceAddress',
@@ -302,6 +345,24 @@ class NativeSettings {
         'performanceModePrompted',
         performanceModePrompted,
       ),
+      autoConnect: boolValue('autoConnect', autoConnect),
+      perAppMode: stringValue('perAppMode', perAppMode),
+      perAppPackages: values['perAppPackages'] is List
+          ? (values['perAppPackages']! as List)
+                .map((value) => '$value')
+                .toList(growable: false)
+          : perAppPackages,
+      addHttpProxyToVpn: boolValue('addHttpProxyToVpn', addHttpProxyToVpn),
+      httpProxyToVpnSupported: httpProxyToVpnSupported,
+      observatoryEnabled: boolValue('observatoryEnabled', observatoryEnabled),
+      leastPingInterval: stringValue('leastPingInterval', leastPingInterval),
+      leastLoadInterval: stringValue('leastLoadInterval', leastLoadInterval),
+      leastLoadHttpMethod: stringValue(
+        'leastLoadHttpMethod',
+        leastLoadHttpMethod,
+      ),
+      leastLoadSampling: intValue('leastLoadSampling', leastLoadSampling),
+      leastLoadTimeout: stringValue('leastLoadTimeout', leastLoadTimeout),
       ipCheckUrl: stringValue('ipCheckUrl', ipCheckUrl),
       telegramUrlConfigured: telegramUrlConfigured,
       telegramContact: telegramContact,
@@ -361,6 +422,7 @@ class AppSnapshot {
     this.isRefreshing = false,
     this.isPinging = false,
     this.deletedServerCount = 0,
+    this.notice,
   });
 
   final List<ServerInfo> servers;
@@ -377,6 +439,7 @@ class AppSnapshot {
   final bool isRefreshing;
   final bool isPinging;
   final int deletedServerCount;
+  final TransientNotice? notice;
 
   ServerInfo? get selectedServer {
     for (final server in servers) {
@@ -401,6 +464,8 @@ class AppSnapshot {
     bool? isRefreshing,
     bool? isPinging,
     int? deletedServerCount,
+    TransientNotice? notice,
+    bool clearNotice = false,
   }) => AppSnapshot(
     servers: servers ?? this.servers,
     connection: connection ?? this.connection,
@@ -419,5 +484,16 @@ class AppSnapshot {
     isRefreshing: isRefreshing ?? this.isRefreshing,
     isPinging: isPinging ?? this.isPinging,
     deletedServerCount: deletedServerCount ?? this.deletedServerCount,
+    notice: clearNotice ? null : notice ?? this.notice,
   );
+}
+
+enum NoticeTone { processing, success, error }
+
+class TransientNotice {
+  const TransientNotice(this.message, this.tone, this.id);
+
+  final String message;
+  final NoticeTone tone;
+  final int id;
 }

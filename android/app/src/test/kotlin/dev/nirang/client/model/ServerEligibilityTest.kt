@@ -13,6 +13,8 @@ class ServerEligibilityTest {
     @Test
     fun `ordinary server remains connectable`() {
         assertNull(ServerEligibility.rejectionReason(server("Netherlands", "nl.example.com")))
+        assertNull(ServerEligibility.rejectionReason(server("Cloudflare", "1.1.1.1")))
+        assertNull(ServerEligibility.rejectionReason(server("Update route Amsterdam", "1.1.1.1")))
     }
 
     private fun server(name: String, address: String) = ServerRecord(

@@ -11,6 +11,9 @@ class RestartPolicyTest {
         assertTrue(RestartPolicy.requiresRestart(setOf("routingMode")))
         assertTrue(RestartPolicy.requiresRestart(setOf("vpnMtu")))
         assertTrue(RestartPolicy.requiresRestart(setOf("connectionMode")))
+        assertTrue(RestartPolicy.requiresRestart(setOf("perAppPackages")))
+        assertTrue(RestartPolicy.requiresRestart(setOf("directDns")))
+        assertTrue(RestartPolicy.requiresRestart(setOf("observatoryEnabled")))
     }
 
     @Test
