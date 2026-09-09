@@ -14,6 +14,7 @@ class RestartPolicyTest {
         assertTrue(RestartPolicy.requiresRestart(setOf("perAppPackages")))
         assertTrue(RestartPolicy.requiresRestart(setOf("directDns")))
         assertTrue(RestartPolicy.requiresRestart(setOf("observatoryEnabled")))
+        assertTrue(RestartPolicy.requiresRestart(setOf("blockQuic")))
     }
 
     @Test

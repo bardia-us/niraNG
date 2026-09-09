@@ -342,20 +342,28 @@ function proxy_subscription(PDO $pdo, array $payload): void
     $environmentKey = $access['platform'] === 'windows'
         ? 'NIRAN_WINDOWS_SUBSCRIPTION_UPSTREAM'
         : 'NIRANG_ANDROID_SUBSCRIPTION_UPSTREAM';
-    $upstream = getenv($environmentKey);
+    $upstream = registry_environment($environmentKey);
     if (!is_string($upstream) || $upstream === '') {
-        $upstream = getenv('NIRANG_SUBSCRIPTION_UPSTREAM');
+        $upstream = registry_environment('NIRANG_SUBSCRIPTION_UPSTREAM');
     }
     if (!is_string($upstream) || preg_match('#^https://#i', $upstream) !== 1 || !function_exists('curl_init')) {
         respond(503, ['ok' => false, 'error' => 'subscription_unavailable']);
     }
     $forwardHeaders = [];
+    $requestHeaders = ['Accept: text/plain, application/json', 'Cache-Control: no-cache'];
+    $hmacSecret = registry_environment('NIRAN_SUBSCRIPTION_HMAC_SECRET');
+    if (is_string($hmacSecret) && strlen($hmacSecret) >= 32) {
+        $requestHeaders = array_merge(
+            $requestHeaders,
+            registry_subscription_auth_headers($upstream, $hmacSecret)
+        );
+    }
     $curl = curl_init($upstream);
     curl_setopt_array($curl, [
         CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => false,
         CURLOPT_CONNECTTIMEOUT => 8, CURLOPT_TIMEOUT => 20, CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
-        CURLOPT_HTTPHEADER => ['Accept: text/plain, application/json', 'Cache-Control: no-cache'],
-        CURLOPT_USERAGENT => $access['platform'] === 'windows' ? 'niraN-registry/0.3.1' : 'niraNG-registry/1.1.1',
+        CURLOPT_HTTPHEADER => $requestHeaders,
+        CURLOPT_USERAGENT => $access['platform'] === 'windows' ? 'niraN-registry/0.3.4' : 'niraNG-registry/1.1.6',
         CURLOPT_HEADERFUNCTION => static function ($handle, string $line) use (&$forwardHeaders): int {
             $parts = explode(':', $line, 2);
             if (count($parts) === 2) {

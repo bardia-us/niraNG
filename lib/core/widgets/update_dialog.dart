@@ -38,7 +38,9 @@ Future<void> showUpdateOptionsDialog(
           child: Text(dialogContext.s('downloadWithBrowser')),
         ),
         FilledButton.icon(
-          onPressed: () => Navigator.pop(dialogContext, 'install'),
+          onPressed: asset.sha256 == null
+              ? null
+              : () => Navigator.pop(dialogContext, 'install'),
           icon: const Icon(Icons.download_rounded),
           label: Text(dialogContext.s('downloadAndInstall')),
         ),
@@ -292,13 +294,14 @@ class _DownloadSnapshot {
   final String url;
   final bool canResume;
   final bool canInstall;
-  bool get active => state == 'downloading';
+  bool get active => state == 'downloading' || state == 'verifying';
   bool get complete => state == 'complete' && canInstall;
   bool get failed => state == 'failed';
   bool get idle => state == 'idle' && received == 0;
 }
 
 String _statusText(BuildContext context, _DownloadSnapshot d) {
+  if (d.state == 'verifying') return context.s('verifyingUpdate');
   if (d.active) return context.s('downloadingUpdate');
   if (d.complete) return '${context.s('readyToInstall')} ${d.version}'.trim();
   if (d.canResume) return context.s('downloadPaused');

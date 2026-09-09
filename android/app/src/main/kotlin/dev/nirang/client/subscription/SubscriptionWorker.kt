@@ -13,6 +13,7 @@ import androidx.work.WorkerParameters
 import dev.nirang.client.logs.SafeLog
 import dev.nirang.client.bridge.NativeEvents
 import dev.nirang.client.registration.RemoteAccessException
+import dev.nirang.client.registration.RemoteAccessState
 import dev.nirang.client.settings.NativeSettings
 import dev.nirang.client.vpn.NirangVpnService
 import java.io.IOException
@@ -25,7 +26,7 @@ class SubscriptionWorker(context: Context, params: WorkerParameters) : Worker(co
             SafeLog.info(applicationContext, "Subscription updated")
             ListenableWorker.Result.success()
         } catch (error: RemoteAccessException) {
-            if (error.apiReason == "blocked_by_administrator") {
+            if (error.accessState == RemoteAccessState.BLOCKED) {
                 NirangVpnService.stop(applicationContext)
                 NativeEvents.emit(
                     "accessBlocked",

@@ -66,6 +66,9 @@ class AppController extends AsyncNotifier<AppSnapshot> {
       );
       _showNotice('Subscription updated successfully', NoticeTone.success);
     } catch (error) {
+      if (error is PlatformException && error.code == 'blocked') {
+        markDeviceAccessBlocked(error.message);
+      }
       _set((value) => value.copyWith(subscriptionError: _errorText(error)));
       _showNotice('Subscription update failed', NoticeTone.error);
       rethrow;
@@ -324,6 +327,8 @@ class AppController extends AsyncNotifier<AppSnapshot> {
       case 'accessBlocked':
         final details = _map(data);
         markDeviceAccessBlocked('${details['message'] ?? ''}');
+      case 'accessAllowed':
+        clearDeviceAccessBlocked();
       case 'pingCompleted':
       case 'pingCancelled':
         _set((value) => value.copyWith(isPinging: false));

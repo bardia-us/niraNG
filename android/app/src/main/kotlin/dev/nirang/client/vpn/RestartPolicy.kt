@@ -19,6 +19,7 @@ object RestartPolicy {
         "vpnInterfaceAddress",
         "sniffingEnabled",
         "routeOnly",
+        "blockQuic",
         "fragmentEnabled",
         "fragmentPackets",
         "fragmentLength",

@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.json.JSONObject
 
 class DeviceRegistrationPayloadTest {
     @Test
@@ -48,5 +49,27 @@ class DeviceRegistrationPayloadTest {
         assertTrue(first.matches(Regex("[0-9a-f]{64}")))
         assertFalse(first.contains(androidId))
         assertNotEquals(first, otherPackage)
+    }
+
+    @Test
+    fun `blocked state does not depend on administrator reason text`() {
+        val response = JSONObject()
+            .put("blocked", true)
+            .put("reason", "Contact support for details")
+
+        assertEquals(
+            RemoteAccessState.BLOCKED,
+            DeviceRegistrationManager.classifyAccessState(403, response),
+        )
+    }
+
+    @Test
+    fun `minimum version denial remains distinct from a block`() {
+        val response = JSONObject().put("update_required", true)
+
+        assertEquals(
+            RemoteAccessState.OUTDATED,
+            DeviceRegistrationManager.classifyAccessState(426, response),
+        )
     }
 }

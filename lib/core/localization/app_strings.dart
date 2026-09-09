@@ -148,6 +148,9 @@ class AppStrings {
       'enableRouteOnly': 'Enable routeOnly',
       'routeOnlySummary':
           'Use sniffed domains for local routing without replacing the target address.',
+      'blockQuic': 'Block QUIC (UDP/443)',
+      'blockQuicSummary':
+          'Optional compatibility fallback for networks where HTTP/3 is unreliable.',
       'fragment': 'Fragment',
       'fragmentSettings': 'Fragment settings',
       'enableFragment': 'Enable Fragment',
@@ -181,6 +184,7 @@ class AppStrings {
       'downloadAndInstall': 'Download and install',
       'downloadWithBrowser': 'Download with browser',
       'downloadingUpdate': 'Downloading update…',
+      'verifyingUpdate': 'Verifying update integrity and signature…',
       'preparingInstaller': 'Preparing Android installer…',
       'updateDownloads': 'Update downloads',
       'downloadContinuesInBackground':
@@ -388,6 +392,9 @@ class AppStrings {
       'enableRouteOnly': 'فعال‌سازی routeOnly',
       'routeOnlySummary':
           'استفاده از دامنه تشخیص‌داده‌شده فقط برای مسیریابی محلی.',
+      'blockQuic': 'مسدودکردن QUIC (UDP/443)',
+      'blockQuicSummary':
+          'گزینه سازگاری اختیاری برای شبکه‌هایی که HTTP/3 در آن‌ها پایدار نیست.',
       'fragment': 'Fragment',
       'fragmentSettings': 'تنظیمات Fragment',
       'enableFragment': 'فعال‌سازی Fragment',
@@ -420,6 +427,7 @@ class AppStrings {
       'downloadAndInstall': 'دانلود و نصب داخل برنامه',
       'downloadWithBrowser': 'دانلود با مرورگر',
       'downloadingUpdate': 'در حال دانلود به‌روزرسانی…',
+      'verifyingUpdate': 'در حال بررسی صحت و امضای به‌روزرسانی…',
       'preparingInstaller': 'در حال آماده‌سازی نصب‌کننده اندروید…',
       'updateDownloads': 'مدیریت دانلود به‌روزرسانی',
       'downloadContinuesInBackground':

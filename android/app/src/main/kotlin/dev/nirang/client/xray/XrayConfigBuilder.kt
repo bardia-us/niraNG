@@ -113,7 +113,7 @@ object XrayConfigBuilder {
                 enableLocalDns = settings?.enableLocalDns != false,
                 includeTun = includeTun,
                 iranCidrs = iranCidrs,
-                blockQuic = shouldBlockQuic(server),
+                blockQuic = settings?.blockQuic == true,
             ),
         )
     }
@@ -548,12 +548,6 @@ object XrayConfigBuilder {
         value.contains(':') -> "tcp+local://[$value]"
         else -> "tcp+local://$value"
     }
-
-    /** HTTP/3 over a reliable stream proxy can stall from head-of-line blocking.
-     * Keep native UDP transports untouched and make affected apps fall back to HTTP/2. */
-    private fun shouldBlockQuic(server: ServerRecord): Boolean =
-        server.protocol.lowercase() in setOf("vless", "vmess", "trojan") &&
-            server.transport.lowercase() in setOf("tcp", "ws", "grpc", "xhttp", "splithttp")
 
     private fun JSONArray.putRoutingRule(
         outboundTag: String,

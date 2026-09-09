@@ -34,6 +34,7 @@ class NativeSettings(context: Context) {
     val domainStrategy: String get() = safeString("domainStrategy", "AsIs").takeIf(ALLOWED_DOMAIN_STRATEGIES::contains) ?: "AsIs"
     val sniffingEnabled: Boolean get() = safeBoolean("sniffingEnabled", true)
     val routeOnly: Boolean get() = safeBoolean("routeOnly", FRESH_INSTALL_DEFAULTS.routeOnly)
+    val blockQuic: Boolean get() = safeBoolean("blockQuic", FRESH_INSTALL_DEFAULTS.blockQuic)
     val fragmentEnabled: Boolean get() = safeBoolean("fragmentEnabled", false)
     val fragmentPackets: String get() = safeString("fragmentPackets", "tlshello").takeIf(::validFragmentPackets) ?: "tlshello"
     val fragmentLength: String get() = safeString("fragmentLength", "50-100").takeIf { validRange(it, 1, 65_535) } ?: "50-100"
@@ -77,6 +78,7 @@ class NativeSettings(context: Context) {
         "domainStrategy" to domainStrategy,
         "sniffingEnabled" to sniffingEnabled,
         "routeOnly" to routeOnly,
+        "blockQuic" to blockQuic,
         "fragmentEnabled" to fragmentEnabled,
         "fragmentPackets" to fragmentPackets,
         "fragmentLength" to fragmentLength,
@@ -258,6 +260,7 @@ class NativeSettings(context: Context) {
             .putString("domainStrategy", "AsIs")
             .putBoolean("sniffingEnabled", true)
             .putBoolean("routeOnly", false)
+            .putBoolean("blockQuic", false)
             .apply()
     }
 
@@ -292,6 +295,7 @@ class NativeSettings(context: Context) {
         if (!prefs.contains("directDnsEnabled")) editor.putBoolean("directDnsEnabled", defaults.directDnsEnabled)
         if (!prefs.contains("directDns")) editor.putString("directDns", defaults.directDns)
         if (!prefs.contains("routeOnly")) editor.putBoolean("routeOnly", defaults.routeOnly)
+        if (!prefs.contains("blockQuic")) editor.putBoolean("blockQuic", defaults.blockQuic)
         editor.putInt(DEFAULTS_SCHEMA_KEY, DEFAULTS_SCHEMA_VERSION).commit()
     }
 
@@ -313,7 +317,7 @@ class NativeSettings(context: Context) {
 
     companion object {
         private const val DEFAULTS_SCHEMA_KEY = "installDefaultsSchema"
-        private const val DEFAULTS_SCHEMA_VERSION = 2
+        private const val DEFAULTS_SCHEMA_VERSION = 3
         private val DEFAULTS_MIGRATION_LOCK = Any()
         private val FRESH_INSTALL_DEFAULTS = InstallDefaults.forExistingState(false)
         private const val DEFAULT_REMOTE_DNS = "https://dns.google/dns-query"
@@ -334,6 +338,7 @@ class NativeSettings(context: Context) {
             "enableFakeDns",
             "sniffingEnabled",
             "routeOnly",
+            "blockQuic",
             "fragmentEnabled",
             "enableIpv6",
             "preferIpv6",

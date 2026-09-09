@@ -157,14 +157,17 @@ class SubscriptionRepository(private val context: Context) {
     private fun loadFromDisk(): SubscriptionSnapshot {
         if (!cacheFile.exists()) return SubscriptionSnapshot(emptyList(), SubscriptionUsage(), 0L)
         return runCatching {
-            val json = JSONObject(cacheFile.readText())
+            val decoded = SecureSubscriptionCache.read(cacheFile)
+            val json = JSONObject(decoded.text)
             val array = json.getJSONArray("servers")
             val servers = (0 until array.length()).map { ServerRecord.fromPrivateJson(array.getJSONObject(it)) }
-            SubscriptionSnapshot(
+            val loadedSnapshot = SubscriptionSnapshot(
                 servers = servers,
                 usage = SubscriptionUsage.fromJson(json.optJSONObject("usage") ?: JSONObject()),
                 lastUpdatedEpochMillis = json.optLong("lastUpdated"),
             )
+            if (decoded.wasPlaintext) persist(loadedSnapshot)
+            loadedSnapshot
         }.getOrElse {
             runCatching { cacheFile.delete() }
             SubscriptionSnapshot(emptyList(), SubscriptionUsage(), 0L)
@@ -183,12 +186,7 @@ class SubscriptionRepository(private val context: Context) {
     }
 
     private fun persist(value: SubscriptionSnapshot) {
-        val temp = File(cacheFile.parentFile, "${cacheFile.name}.tmp")
-        temp.writeText(value.toPrivateJson().toString())
-        if (!temp.renameTo(cacheFile)) {
-            cacheFile.writeText(temp.readText())
-            temp.delete()
-        }
+        SecureSubscriptionCache.writeAtomic(cacheFile, value.toPrivateJson().toString())
     }
 
     private fun hiddenIds(): Set<String> = runCatching {

@@ -222,6 +222,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     )
                   : null,
             ),
+            SwitchListTile(
+              secondary: const Icon(Icons.block_rounded),
+              title: Text(context.s('blockQuic')),
+              subtitle: Text(context.s('blockQuicSummary')),
+              value: settings.blockQuic,
+              onChanged: (value) => _perform(
+                context,
+                () => controller.updateSettings({'blockQuic': value}),
+              ),
+            ),
             ListTile(
               leading: const Icon(Icons.speed_rounded),
               title: Text(context.s('realPingConcurrency')),

@@ -4,9 +4,21 @@ declare(strict_types=1);
 const NIRANG_DEFAULT_MINIMUM_ANDROID_VERSION = '1.1.1';
 const NIRANG_DEFAULT_MINIMUM_WINDOWS_VERSION = '0.3.1';
 
+function registry_environment(string $name): ?string
+{
+    $value = getenv($name);
+    if (is_string($value) && $value !== '') return $value;
+    $serverValue = $_SERVER[$name] ?? null;
+    if (is_string($serverValue) && $serverValue !== '') return $serverValue;
+    $environmentValue = $_ENV[$name] ?? null;
+    return is_string($environmentValue) && $environmentValue !== ''
+        ? $environmentValue
+        : null;
+}
+
 function registry_database(): PDO
 {
-    $configured = getenv('NIRAN_REGISTRY_DB');
+    $configured = registry_environment('NIRAN_REGISTRY_DB');
     $path = is_string($configured) && $configured !== ''
         ? $configured
         : dirname(__DIR__) . DIRECTORY_SEPARATOR . '.niran-private' . DIRECTORY_SEPARATOR . 'device-registry.sqlite';
@@ -238,6 +250,35 @@ function registry_bearer_token(): ?string
 function registry_token_hash(string $token): string
 {
     return hash('sha256', $token);
+}
+
+function registry_subscription_auth_headers(
+    string $upstream,
+    string $secret,
+    ?int $timestamp = null,
+    ?string $nonce = null
+): array {
+    if (strlen($secret) < 32) return [];
+    $parts = parse_url($upstream);
+    if (!is_array($parts) || empty($parts['path'])) {
+        throw new InvalidArgumentException('Invalid subscription upstream');
+    }
+    $target = $parts['path'] . (isset($parts['query']) ? '?' . $parts['query'] : '');
+    $timestampText = (string)($timestamp ?? time());
+    $nonceValue = $nonce ?? bin2hex(random_bytes(16));
+    if (preg_match('/^[0-9a-f]{32}$/', $nonceValue) !== 1) {
+        throw new InvalidArgumentException('Invalid subscription nonce');
+    }
+    $signature = hash_hmac(
+        'sha256',
+        "GET\n" . $target . "\n" . $timestampText . "\n" . $nonceValue,
+        $secret
+    );
+    return [
+        'X-NiraN-Timestamp: ' . $timestampText,
+        'X-NiraN-Nonce: ' . $nonceValue,
+        'X-NiraN-Signature: ' . $signature,
+    ];
 }
 
 function registry_access_payload(bool $allowed, bool $blocked, string $minimum, bool $updateRequired, string $reason): array

@@ -24,7 +24,13 @@ import javax.net.ssl.HttpsURLConnection
 
 data class RemoteSubscription(val bytes: ByteArray, val usageHeader: String?)
 
-class RemoteAccessException(val apiReason: String, message: String) : IOException(message)
+enum class RemoteAccessState { BLOCKED, OUTDATED, UNKNOWN }
+
+class RemoteAccessException(
+    val apiReason: String,
+    val accessState: RemoteAccessState,
+    message: String,
+) : IOException(message)
 
 object DeviceRegistrationManager {
     private const val ENDPOINT = "https://neovip.ir/apiniraN/api.php"
@@ -76,7 +82,13 @@ object DeviceRegistrationManager {
 
     fun runIfAllowed(context: Context, onAllowed: () -> Unit, onDenied: (Throwable) -> Unit) {
         if (isLocallyBlocked(context)) {
-            onDenied(RemoteAccessException("blocked_by_administrator", "This device has been blocked by the administrator"))
+            onDenied(
+                RemoteAccessException(
+                    "blocked_by_administrator",
+                    RemoteAccessState.BLOCKED,
+                    "This device has been blocked by the administrator",
+                ),
+            )
         } else {
             onAllowed()
         }
@@ -169,7 +181,11 @@ object DeviceRegistrationManager {
 
     private fun deviceKey(context: Context): String {
         val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
-            ?: throw RemoteAccessException("device_identity_unavailable", "Android device identity is unavailable")
+            ?: throw RemoteAccessException(
+                "device_identity_unavailable",
+                RemoteAccessState.UNKNOWN,
+                "Android device identity is unavailable",
+            )
         return deriveDeviceKey(androidId, context.packageName)
     }
 
@@ -241,10 +257,11 @@ object DeviceRegistrationManager {
         val json = response.json
         val reason = json?.optString("reason")?.takeIf(SAFE_API_ERROR::matches)
             ?: json?.optString("error")?.takeIf(SAFE_API_ERROR::matches) ?: "access_denied"
-        val state = when {
-            json?.optBoolean("blocked") == true || response.status == 403 -> STATE_BLOCKED
-            json?.optBoolean("update_required") == true || response.status == 426 -> STATE_OUTDATED
-            else -> STATE_UNKNOWN
+        val accessState = classifyAccessState(response.status, json)
+        val state = when (accessState) {
+            RemoteAccessState.BLOCKED -> STATE_BLOCKED
+            RemoteAccessState.OUTDATED -> STATE_OUTDATED
+            RemoteAccessState.UNKNOWN -> STATE_UNKNOWN
         }
         val editor = preferences(context).edit().putString(REMOTE_STATE, state)
         editor.apply()
@@ -254,7 +271,13 @@ object DeviceRegistrationManager {
             else -> "Device access could not be verified"
         }
         SafeLog.warning(context, "Remote access denied: HTTP ${response.status} reason=$reason")
-        throw RemoteAccessException(reason, message)
+        throw RemoteAccessException(reason, accessState, message)
+    }
+
+    internal fun classifyAccessState(status: Int, json: JSONObject?): RemoteAccessState = when {
+        json?.optBoolean("blocked") == true || status == 403 -> RemoteAccessState.BLOCKED
+        json?.optBoolean("update_required") == true || status == 426 -> RemoteAccessState.OUTDATED
+        else -> RemoteAccessState.UNKNOWN
     }
 
     private fun markAllowed(context: Context) {

@@ -10,6 +10,14 @@ function assert_same($expected, $actual, string $message): void
     }
 }
 
+$_SERVER['NIRAN_TEST_CPANEL_ENV'] = 'server-value';
+assert_same(
+    'server-value',
+    registry_environment('NIRAN_TEST_CPANEL_ENV'),
+    'cPanel SetEnv fallback'
+);
+unset($_SERVER['NIRAN_TEST_CPANEL_ENV']);
+
 $temporary = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'nirang-registry-' . bin2hex(random_bytes(8)) . '.sqlite';
 putenv('NIRAN_REGISTRY_DB=' . $temporary);
 
@@ -21,6 +29,25 @@ try {
     assert_same(false, registry_is_outdated('1.1.1+13', '1.1.1'), '1.1.1 must be controllable');
     assert_same(true, registry_is_outdated('0.3.0+3', '0.3.1'), 'niraN 0.3.0 must be outdated');
     assert_same(false, registry_is_outdated('0.3.1+4', '0.3.1'), 'niraN 0.3.1 must be controllable');
+
+    $headers = registry_subscription_auth_headers(
+        'https://example.com/subs/index.php?id=test',
+        str_repeat('s', 32),
+        1700000000,
+        str_repeat('a', 32)
+    );
+    assert_same('X-NiraN-Timestamp: 1700000000', $headers[0], 'signed subscription timestamp');
+    assert_same('X-NiraN-Nonce: ' . str_repeat('a', 32), $headers[1], 'signed subscription nonce');
+    assert_same(
+        'X-NiraN-Signature: ' . hash_hmac(
+            'sha256',
+            "GET\n/subs/index.php?id=test\n1700000000\n" . str_repeat('a', 32),
+            str_repeat('s', 32)
+        ),
+        $headers[2],
+        'signed subscription canonical payload'
+    );
+    assert_same([], registry_subscription_auth_headers('https://example.com/sub', 'short'), 'short HMAC secret must not sign');
 
     $allowed = registry_access_state('1.1.1', '1.1.1', 'allowed', false);
     assert_same('allowed', $allowed['status'], 'current allowed device');

@@ -19,6 +19,7 @@ import dev.nirang.client.model.ConnectionState
 import dev.nirang.client.model.ServerEligibility
 import dev.nirang.client.ping.PingManager
 import dev.nirang.client.registration.DeviceRegistrationManager
+import dev.nirang.client.registration.RemoteAccessState
 import dev.nirang.client.settings.NativeSettings
 import dev.nirang.client.subscription.SubscriptionRepository
 import dev.nirang.client.subscription.SubscriptionScheduler
@@ -262,6 +263,7 @@ class NirangBridge(
                     "deletedServerCount" to repository.deletedCount(),
                 )
                 NativeEvents.emit("subscription", data)
+                NativeEvents.emit("accessAllowed", null)
                 postToFlutter { result.success(data) }
                 postToFlutter { (activity as? MainActivity)?.continuePendingTileConnection() }
             } catch (error: Exception) {
@@ -414,7 +416,7 @@ class NirangBridge(
 
     private fun handleRemoteAccessFailure(error: Throwable) {
         val denied = error as? dev.nirang.client.registration.RemoteAccessException ?: return
-        if (denied.apiReason != "blocked_by_administrator") return
+        if (denied.accessState != RemoteAccessState.BLOCKED) return
         NirangVpnService.stop(activity)
         NativeEvents.emit(
             "accessBlocked",
@@ -424,7 +426,7 @@ class NirangBridge(
 
     private fun remoteErrorCode(error: Throwable, fallback: String): String {
         val denied = error as? dev.nirang.client.registration.RemoteAccessException
-        return if (denied?.apiReason == "blocked_by_administrator") "blocked" else fallback
+        return if (denied?.accessState == RemoteAccessState.BLOCKED) "blocked" else fallback
     }
 
     private fun restartService(result: MethodChannel.Result) {

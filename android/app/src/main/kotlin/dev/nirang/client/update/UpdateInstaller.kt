@@ -3,8 +3,13 @@ package dev.nirang.client.update
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
+import android.os.Build
+import android.os.SystemClock
 import androidx.core.content.FileProvider
 import dev.nirang.client.BuildConfig
+import dev.nirang.client.logs.SafeLog
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.File
@@ -48,7 +53,9 @@ object UpdateInstaller {
         val total = p.getLong("total", 0L)
         val received = when { complete.isFile -> complete.length(); partial.isFile -> partial.length(); else -> 0L }
         var state = p.getString("state", "idle").orEmpty()
-        if (state == "downloading" && !downloading.get()) state = if (received > 0) "paused" else "failed"
+        if (state in setOf("downloading", "verifying") && !downloading.get()) {
+            state = if (state == "downloading" && received in 1 until total) "paused" else "failed"
+        }
         if (state == "complete" && (!complete.isFile || received != total)) state = "failed"
         return mapOf(
             "state" to state, "received" to received, "total" to total,
@@ -124,6 +131,7 @@ object UpdateInstaller {
 
     private fun download(context: Context, token: Long) {
         val p = prefs(context)
+        val startedAt = SystemClock.elapsedRealtime()
         try {
             val url = p.getString("url", "").orEmpty()
             val expected = p.getLong("total", 0L)
@@ -163,9 +171,19 @@ object UpdateInstaller {
             }
             ensureActive(token)
             if (partial.length() != expected) throw IOException("Downloaded update size does not match GitHub")
+            val downloadedAt = SystemClock.elapsedRealtime()
+            p.edit().putString("state", "verifying").apply()
+            publish(snapshot(context))
             verifyDigest(partial, expectedDigest, token)
+            val digestVerifiedAt = SystemClock.elapsedRealtime()
+            verifySigningCertificate(context, partial)
+            val signatureVerifiedAt = SystemClock.elapsedRealtime()
             if (!partial.renameTo(apkFile(context))) throw IOException("Downloaded update could not be finalized")
             p.edit().putString("state", "complete").apply()
+            SafeLog.info(
+                context,
+                "Update stages: download=${downloadedAt - startedAt}ms, sha256=${digestVerifiedAt - downloadedAt}ms, signature=${signatureVerifiedAt - digestVerifiedAt}ms",
+            )
             publish(snapshot(context))
         } catch (_: DownloadCancelledException) {
             if (generation.get() == token) {
@@ -215,11 +233,49 @@ object UpdateInstaller {
         if (!actual.equals(expected, true)) throw IOException("Downloaded update checksum is invalid")
     }
 
-    private fun validateRequest(url: String, size: Long, sha256: String?, name: String) {
+    internal fun validateRequest(url: String, size: Long, sha256: String?, name: String) {
         require(size in 1..MAX_APK_BYTES) { "Update size is invalid" }
-        sha256?.let { require(it.matches(Regex("[0-9a-fA-F]{64}"))) { "Update digest is invalid" } }
+        require(sha256?.matches(Regex("[0-9a-fA-F]{64}")) == true) {
+            "A verified SHA-256 digest is required for in-app updates"
+        }
         require(name.lowercase().endsWith(".apk")) { "Update asset is invalid" }
         requireOfficialInitialUrl(URI(url))
+    }
+
+    @Suppress("DEPRECATION")
+    private fun verifySigningCertificate(context: Context, apk: File) {
+        val packageManager = context.packageManager
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            PackageManager.GET_SIGNING_CERTIFICATES
+        } else {
+            PackageManager.GET_SIGNATURES
+        }
+        val installed = packageManager.getPackageInfo(context.packageName, flags)
+        val candidate = packageManager.getPackageArchiveInfo(apk.absolutePath, flags)
+            ?: throw IOException("Downloaded update is not a valid APK")
+        if (candidate.packageName != context.packageName) {
+            throw IOException("Downloaded update belongs to a different application")
+        }
+        val installedCertificates = signingDigests(installed)
+        val candidateCertificates = signingDigests(candidate)
+        if (installedCertificates.isEmpty() || candidateCertificates.none(installedCertificates::contains)) {
+            throw IOException("Downloaded update signing certificate does not match niraNG")
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun signingDigests(info: PackageInfo): Set<String> {
+        val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val signingInfo = info.signingInfo ?: return emptySet()
+            if (signingInfo.hasMultipleSigners()) signingInfo.apkContentsSigners
+            else signingInfo.signingCertificateHistory
+        } else {
+            info.signatures
+        }.orEmpty()
+        return signatures.mapTo(mutableSetOf()) { signature ->
+            MessageDigest.getInstance("SHA-256").digest(signature.toByteArray())
+                .joinToString("") { "%02x".format(it) }
+        }
     }
 
     private fun open(url: URL, offset: Long) = (url.openConnection() as HttpsURLConnection).apply {

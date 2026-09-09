@@ -38,17 +38,22 @@ class XrayProtocolConfigTest {
     }
 
     @Test
-    fun `stream proxies block QUIC but native UDP-capable protocols do not`() {
-        val vlessRules = config(server("vless", "00000000-0000-4000-8000-000000000001", emptyMap(), "ws", "tls"))
-            .getJSONObject("routing").getJSONArray("rules")
-        assertTrue((0 until vlessRules.length()).map(vlessRules::getJSONObject).any { it.optString("network") == "udp" && it.optString("port") == "443" })
+    fun `QUIC routing is opt in and independent of proxy protocol`() {
+        val allowed = XrayConfigBuilder.buildRouting("global", enableLocalDns = false)
+        assertFalse(hasUdp443Block(allowed))
 
-        val ssRules = config(server("shadowsocks", "pass", mapOf("method" to "aes-128-gcm")))
-            .getJSONObject("routing").getJSONArray("rules")
-        assertFalse((0 until ssRules.length()).map(ssRules::getJSONObject).any { it.optString("port") == "443" })
+        val blocked = XrayConfigBuilder.buildRouting("global", enableLocalDns = false, blockQuic = true)
+        assertTrue(hasUdp443Block(blocked))
     }
 
     private fun config(server: ServerRecord) = JSONObject(XrayConfigBuilder.buildSafeFallbackConfig(server))
+    private fun hasUdp443Block(routing: JSONObject): Boolean {
+        val rules = routing.getJSONArray("rules")
+        return (0 until rules.length()).map(rules::getJSONObject).any {
+            it.optString("network") == "udp" && it.optString("port") == "443" &&
+                it.optString("outboundTag") == "blocked"
+        }
+    }
     private fun outbound(server: ServerRecord) = config(server).getJSONArray("outbounds").getJSONObject(0)
     private fun server(protocol: String, credential: String, parameters: Map<String, String>, transport: String = "tcp", security: String = "none") = ServerRecord(
         "id", "Test", "", protocol, "example.com", 443, credential, transport, security, parameters,
