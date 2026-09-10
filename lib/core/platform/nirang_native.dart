@@ -68,6 +68,10 @@ class NirangNative {
   static Future<String> requestQuickSettingsTile() async =>
       await _methods.invokeMethod<String>('requestQuickSettingsTile') ??
       'manual';
+  static Future<bool> batteryOptimizationStatus() async =>
+      await _methods.invokeMethod<bool>('batteryOptimizationStatus') ?? false;
+  static Future<void> openBatteryOptimizationSettings() =>
+      _methods.invokeMethod('openBatteryOptimizationSettings');
   static Future<void> pingServer(String id) =>
       _methods.invokeMethod('pingServer', {'id': id});
   static Future<void> pingAll() => _methods.invokeMethod('pingAll');

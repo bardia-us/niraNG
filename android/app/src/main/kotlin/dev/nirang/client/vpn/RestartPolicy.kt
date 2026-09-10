@@ -20,6 +20,7 @@ object RestartPolicy {
         "sniffingEnabled",
         "routeOnly",
         "blockQuic",
+        "muxEnabled",
         "fragmentEnabled",
         "fragmentPackets",
         "fragmentLength",

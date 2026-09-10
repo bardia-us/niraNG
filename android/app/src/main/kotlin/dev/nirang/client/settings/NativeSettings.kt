@@ -35,6 +35,7 @@ class NativeSettings(context: Context) {
     val sniffingEnabled: Boolean get() = safeBoolean("sniffingEnabled", true)
     val routeOnly: Boolean get() = safeBoolean("routeOnly", FRESH_INSTALL_DEFAULTS.routeOnly)
     val blockQuic: Boolean get() = safeBoolean("blockQuic", FRESH_INSTALL_DEFAULTS.blockQuic)
+    val muxEnabled: Boolean get() = safeBoolean("muxEnabled", FRESH_INSTALL_DEFAULTS.muxEnabled)
     val fragmentEnabled: Boolean get() = safeBoolean("fragmentEnabled", false)
     val fragmentPackets: String get() = safeString("fragmentPackets", "tlshello").takeIf(::validFragmentPackets) ?: "tlshello"
     val fragmentLength: String get() = safeString("fragmentLength", "50-100").takeIf { validRange(it, 1, 65_535) } ?: "50-100"
@@ -79,6 +80,7 @@ class NativeSettings(context: Context) {
         "sniffingEnabled" to sniffingEnabled,
         "routeOnly" to routeOnly,
         "blockQuic" to blockQuic,
+        "muxEnabled" to muxEnabled,
         "fragmentEnabled" to fragmentEnabled,
         "fragmentPackets" to fragmentPackets,
         "fragmentLength" to fragmentLength,
@@ -261,6 +263,7 @@ class NativeSettings(context: Context) {
             .putBoolean("sniffingEnabled", true)
             .putBoolean("routeOnly", false)
             .putBoolean("blockQuic", false)
+            .putBoolean("muxEnabled", false)
             .apply()
     }
 
@@ -296,6 +299,7 @@ class NativeSettings(context: Context) {
         if (!prefs.contains("directDns")) editor.putString("directDns", defaults.directDns)
         if (!prefs.contains("routeOnly")) editor.putBoolean("routeOnly", defaults.routeOnly)
         if (!prefs.contains("blockQuic")) editor.putBoolean("blockQuic", defaults.blockQuic)
+        if (!prefs.contains("muxEnabled")) editor.putBoolean("muxEnabled", defaults.muxEnabled)
         editor.putInt(DEFAULTS_SCHEMA_KEY, DEFAULTS_SCHEMA_VERSION).commit()
     }
 
@@ -317,7 +321,7 @@ class NativeSettings(context: Context) {
 
     companion object {
         private const val DEFAULTS_SCHEMA_KEY = "installDefaultsSchema"
-        private const val DEFAULTS_SCHEMA_VERSION = 3
+        private const val DEFAULTS_SCHEMA_VERSION = 4
         private val DEFAULTS_MIGRATION_LOCK = Any()
         private val FRESH_INSTALL_DEFAULTS = InstallDefaults.forExistingState(false)
         private const val DEFAULT_REMOTE_DNS = "https://dns.google/dns-query"
@@ -339,6 +343,7 @@ class NativeSettings(context: Context) {
             "sniffingEnabled",
             "routeOnly",
             "blockQuic",
+            "muxEnabled",
             "fragmentEnabled",
             "enableIpv6",
             "preferIpv6",

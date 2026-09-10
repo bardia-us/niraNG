@@ -11,6 +11,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
+import android.provider.Settings
 import dev.nirang.client.BuildConfig
 import dev.nirang.client.MainActivity
 import dev.nirang.client.R
@@ -83,6 +85,16 @@ class NirangBridge(
             }
             "restartService" -> restartService(result)
             "requestQuickSettingsTile" -> requestQuickSettingsTile(result)
+            "batteryOptimizationStatus" -> {
+                val powerManager = activity.getSystemService(PowerManager::class.java)
+                result.success(powerManager?.isIgnoringBatteryOptimizations(activity.packageName) == true)
+            }
+            "openBatteryOptimizationSettings" -> {
+                runCatching {
+                    activity.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                }.onSuccess { result.success(true) }
+                    .onFailure { result.error("unavailable", "Battery optimization settings are unavailable", null) }
+            }
             "pingServer" -> {
                 val id = call.argument<String>("id")
                 val server = id?.let(repository::server)

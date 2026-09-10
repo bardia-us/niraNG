@@ -151,6 +151,13 @@ class AppStrings {
       'blockQuic': 'Block QUIC (UDP/443)',
       'blockQuicSummary':
           'Optional compatibility fallback for networks where HTTP/3 is unreliable.',
+      'mux': 'Mux',
+      'muxSummary':
+          'Multiplex compatible VLESS/VMess connections. Off is recommended for video and downloads.',
+      'batteryOptimization': 'Battery optimization',
+      'batteryOptimizationSummary':
+          'Optional: allow unrestricted battery use if scheduled updates are delayed.',
+      'batteryOptimizationUnrestricted': 'Unrestricted battery use is enabled.',
       'fragment': 'Fragment',
       'fragmentSettings': 'Fragment settings',
       'enableFragment': 'Enable Fragment',
@@ -395,6 +402,13 @@ class AppStrings {
       'blockQuic': 'مسدودکردن QUIC (UDP/443)',
       'blockQuicSummary':
           'گزینه سازگاری اختیاری برای شبکه‌هایی که HTTP/3 در آن‌ها پایدار نیست.',
+      'mux': 'Mux',
+      'muxSummary':
+          'چند اتصال سازگار VLESS/VMess را تجمیع می‌کند؛ برای ویدیو و دانلود خاموش پیشنهاد می‌شود.',
+      'batteryOptimization': 'بهینه‌سازی باتری',
+      'batteryOptimizationSummary':
+          'اختیاری: اگر آپدیت زمان‌بندی‌شده دیر اجرا می‌شود، مصرف نامحدود را فعال کنید.',
+      'batteryOptimizationUnrestricted': 'مصرف نامحدود باتری فعال است.',
       'fragment': 'Fragment',
       'fragmentSettings': 'تنظیمات Fragment',
       'enableFragment': 'فعال‌سازی Fragment',

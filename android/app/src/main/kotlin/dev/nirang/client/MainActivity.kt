@@ -13,6 +13,7 @@ import dev.nirang.client.registration.DeviceRegistrationManager
 import dev.nirang.client.settings.NativeSettings
 import dev.nirang.client.vpn.ConnectionStore
 import dev.nirang.client.vpn.NirangVpnService
+import dev.nirang.client.vpn.TileConnectAuthorization
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -147,12 +148,17 @@ class MainActivity : FlutterActivity() {
 
     private fun captureTileRequest(source: Intent?) {
         if (source?.action != ACTION_CONNECT_FROM_TILE) return
-        pendingTileConnection = true
+        pendingTileConnection = TileConnectAuthorization.consume(
+            this,
+            source.getStringExtra(EXTRA_TILE_AUTHORIZATION),
+        )
         source.action = null
+        source.removeExtra(EXTRA_TILE_AUTHORIZATION)
     }
 
     companion object {
         const val ACTION_CONNECT_FROM_TILE = "dev.nirang.client.action.CONNECT_FROM_TILE"
+        const val EXTRA_TILE_AUTHORIZATION = "dev.nirang.client.extra.TILE_AUTHORIZATION"
         private const val VPN_PERMISSION_REQUEST = 4108
         private const val NOTIFICATION_PERMISSION_REQUEST = 4109
     }

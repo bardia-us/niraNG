@@ -177,6 +177,7 @@ class NativeSettings {
     this.sniffingEnabled = true,
     this.routeOnly = true,
     this.blockQuic = false,
+    this.muxEnabled = false,
     this.fragmentEnabled = false,
     this.fragmentPackets = 'tlshello',
     this.fragmentLength = '50-100',
@@ -225,6 +226,7 @@ class NativeSettings {
     sniffingEnabled: map['sniffingEnabled'] != false,
     routeOnly: map['routeOnly'] != false,
     blockQuic: map['blockQuic'] == true,
+    muxEnabled: map['muxEnabled'] == true,
     fragmentEnabled: map['fragmentEnabled'] == true,
     fragmentPackets: '${map['fragmentPackets'] ?? 'tlshello'}',
     fragmentLength: '${map['fragmentLength'] ?? '50-100'}',
@@ -274,6 +276,7 @@ class NativeSettings {
   final bool sniffingEnabled;
   final bool routeOnly;
   final bool blockQuic;
+  final bool muxEnabled;
   final bool fragmentEnabled;
   final String fragmentPackets;
   final String fragmentLength;
@@ -332,6 +335,7 @@ class NativeSettings {
       sniffingEnabled: boolValue('sniffingEnabled', sniffingEnabled),
       routeOnly: boolValue('routeOnly', routeOnly),
       blockQuic: boolValue('blockQuic', blockQuic),
+      muxEnabled: boolValue('muxEnabled', muxEnabled),
       fragmentEnabled: boolValue('fragmentEnabled', fragmentEnabled),
       fragmentPackets: stringValue('fragmentPackets', fragmentPackets),
       fragmentLength: stringValue('fragmentLength', fragmentLength),

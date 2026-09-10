@@ -6,6 +6,7 @@ import '../../core/localization/app_strings.dart';
 import '../../core/widgets/glass_dialog.dart';
 import '../../core/widgets/update_dialog.dart';
 import '../../core/platform/native_models.dart';
+import '../../core/platform/nirang_native.dart';
 import '../../core/update_checker.dart';
 import '../vpn/app_controller.dart';
 import 'per_app_proxy_screen.dart';
@@ -230,6 +231,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               onChanged: (value) => _perform(
                 context,
                 () => controller.updateSettings({'blockQuic': value}),
+              ),
+            ),
+            SwitchListTile(
+              secondary: const Icon(Icons.call_merge_rounded),
+              title: Text(context.s('mux')),
+              subtitle: Text(context.s('muxSummary')),
+              value: settings.muxEnabled,
+              onChanged: (value) => _perform(
+                context,
+                () => controller.updateSettings({'muxEnabled': value}),
               ),
             ),
             ListTile(
@@ -638,6 +649,25 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 validator: (value) => _validateHttps(context, value),
                 onSave: (value) =>
                     controller.updateSettings({'ipCheckUrl': value}),
+              ),
+            ),
+            FutureBuilder<bool>(
+              future: NirangNative.batteryOptimizationStatus(),
+              builder: (context, snapshot) => ListTile(
+                leading: const Icon(Icons.battery_saver_outlined),
+                title: Text(context.s('batteryOptimization')),
+                subtitle: Text(
+                  context.s(
+                    snapshot.data == true
+                        ? 'batteryOptimizationUnrestricted'
+                        : 'batteryOptimizationSummary',
+                  ),
+                ),
+                trailing: const Icon(Icons.open_in_new_rounded, size: 19),
+                onTap: () => _perform(
+                  context,
+                  NirangNative.openBatteryOptimizationSettings,
+                ),
               ),
             ),
             ListTile(

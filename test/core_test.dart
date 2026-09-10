@@ -101,6 +101,7 @@ void main() {
       'fragmentLength': '50-100',
       'fragmentInterval': '10-20',
       'fragmentMaxSplit': 8,
+      'muxEnabled': true,
     });
     expect(updated.themeMode, 'dark');
     expect(updated.vpnMtu, 1400);
@@ -112,6 +113,7 @@ void main() {
     expect(updated.enableFakeDns, isTrue);
     expect(updated.fragmentEnabled, isTrue);
     expect(updated.fragmentMaxSplit, 8);
+    expect(updated.muxEnabled, isTrue);
   });
 
   test('fresh Dart settings use the current network defaults', () {
@@ -123,6 +125,7 @@ void main() {
     expect(settings.directDnsEnabled, isTrue);
     expect(settings.directDns, '178.22.122.100');
     expect(settings.routeOnly, isTrue);
+    expect(settings.muxEnabled, isFalse);
   });
 
   test('selected applications are ordered before unselected applications', () {

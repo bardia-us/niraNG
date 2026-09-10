@@ -8,6 +8,7 @@ internal data class InstallDefaults(
     val directDns: String,
     val routeOnly: Boolean,
     val blockQuic: Boolean,
+    val muxEnabled: Boolean,
 ) {
     companion object {
         fun forExistingState(existingInstall: Boolean): InstallDefaults = if (existingInstall) {
@@ -19,6 +20,7 @@ internal data class InstallDefaults(
                 directDns = "",
                 routeOnly = false,
                 blockQuic = false,
+                muxEnabled = false,
             )
         } else {
             InstallDefaults(
@@ -29,6 +31,7 @@ internal data class InstallDefaults(
                 directDns = "178.22.122.100",
                 routeOnly = true,
                 blockQuic = false,
+                muxEnabled = false,
             )
         }
     }

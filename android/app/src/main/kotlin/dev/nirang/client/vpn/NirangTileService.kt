@@ -89,6 +89,7 @@ class NirangTileService : TileService() {
     private fun openApp() {
         val intent = Intent(this, MainActivity::class.java).apply {
             action = MainActivity.ACTION_CONNECT_FROM_TILE
+            putExtra(MainActivity.EXTRA_TILE_AUTHORIZATION, TileConnectAuthorization.issue(applicationContext))
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         }
         runCatching {

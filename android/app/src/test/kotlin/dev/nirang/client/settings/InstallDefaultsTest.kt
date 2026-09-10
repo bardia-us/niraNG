@@ -17,6 +17,7 @@ class InstallDefaultsTest {
         assertEquals("178.22.122.100", defaults.directDns)
         assertTrue(defaults.routeOnly)
         assertFalse(defaults.blockQuic)
+        assertFalse(defaults.muxEnabled)
     }
 
     @Test
@@ -30,5 +31,6 @@ class InstallDefaultsTest {
         assertEquals("", defaults.directDns)
         assertFalse(defaults.routeOnly)
         assertFalse(defaults.blockQuic)
+        assertFalse(defaults.muxEnabled)
     }
 }

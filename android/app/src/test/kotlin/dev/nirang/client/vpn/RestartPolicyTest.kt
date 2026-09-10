@@ -15,6 +15,7 @@ class RestartPolicyTest {
         assertTrue(RestartPolicy.requiresRestart(setOf("directDns")))
         assertTrue(RestartPolicy.requiresRestart(setOf("observatoryEnabled")))
         assertTrue(RestartPolicy.requiresRestart(setOf("blockQuic")))
+        assertTrue(RestartPolicy.requiresRestart(setOf("muxEnabled")))
     }
 
     @Test

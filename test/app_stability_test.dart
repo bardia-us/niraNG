@@ -575,7 +575,10 @@ void main() {
     await tester.tap(find.byIcon(Icons.settings_outlined));
     await tester.pumpAndSettle();
     await _openSettingsSection(tester, 'Core settings');
-    await tester.tap(find.text('Fragment'));
+    final fragment = find.text('Fragment');
+    await tester.ensureVisible(fragment);
+    await tester.pumpAndSettle();
+    await tester.tap(fragment);
     await tester.pumpAndSettle();
 
     final dialog = find.byType(NirangAlertDialog);

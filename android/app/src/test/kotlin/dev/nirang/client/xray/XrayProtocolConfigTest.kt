@@ -46,6 +46,31 @@ class XrayProtocolConfigTest {
         assertTrue(hasUdp443Block(blocked))
     }
 
+    @Test
+    fun `Mux remains opt in and is emitted only for compatible outbounds`() {
+        assertFalse(XrayConfigBuilder.buildMux(server("vless", "id", emptyMap()), false).getBoolean("enabled"))
+        assertTrue(XrayConfigBuilder.buildMux(server("vless", "id", emptyMap()), true).getBoolean("enabled"))
+        assertTrue(XrayConfigBuilder.buildMux(server("vmess", "id", emptyMap()), true).getBoolean("enabled"))
+        assertFalse(
+            XrayConfigBuilder.buildMux(
+                server("vless", "id", emptyMap(), transport = "xhttp"),
+                true,
+            ).getBoolean("enabled"),
+        )
+        assertFalse(
+            XrayConfigBuilder.buildMux(
+                server("vless", "id", mapOf("flow" to "xtls-rprx-vision")),
+                true,
+            ).getBoolean("enabled"),
+        )
+        assertFalse(
+            XrayConfigBuilder.buildMux(
+                server("shadowsocks", "secret", mapOf("method" to "chacha20-ietf-poly1305")),
+                true,
+            ).getBoolean("enabled"),
+        )
+    }
+
     private fun config(server: ServerRecord) = JSONObject(XrayConfigBuilder.buildSafeFallbackConfig(server))
     private fun hasUdp443Block(routing: JSONObject): Boolean {
         val rules = routing.getJSONArray("rules")

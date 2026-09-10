@@ -238,7 +238,19 @@ object XrayConfigBuilder {
             }
         })
         put("streamSettings", buildStreamSettings(server, settings))
-        put("mux", JSONObject().apply { put("enabled", false) })
+        put("mux", buildMux(server, settings?.muxEnabled == true))
+    }
+
+    internal fun buildMux(server: ServerRecord, requested: Boolean): JSONObject = JSONObject().apply {
+        put("enabled", requested && muxSupported(server))
+    }
+
+    private fun muxSupported(server: ServerRecord): Boolean {
+        val protocol = server.protocol.lowercase()
+        val transport = server.transport.lowercase()
+        return protocol in setOf("vless", "vmess") &&
+            transport !in setOf("xhttp", "splithttp") &&
+            server.parameters["flow"].isNullOrBlank()
     }
 
     private fun buildStreamSettings(server: ServerRecord, settings: NativeSettings?): JSONObject = JSONObject().apply {
