@@ -178,6 +178,9 @@ class NativeSettings {
     this.routeOnly = true,
     this.blockQuic = false,
     this.muxEnabled = false,
+    this.muxConcurrency = 8,
+    this.muxXudpConcurrency = 16,
+    this.muxQuicHandling = 'reject',
     this.fragmentEnabled = false,
     this.fragmentPackets = 'tlshello',
     this.fragmentLength = '50-100',
@@ -227,6 +230,9 @@ class NativeSettings {
     routeOnly: map['routeOnly'] != false,
     blockQuic: map['blockQuic'] == true,
     muxEnabled: map['muxEnabled'] == true,
+    muxConcurrency: _int(map['muxConcurrency']) ?? 8,
+    muxXudpConcurrency: _int(map['muxXudpConcurrency']) ?? 16,
+    muxQuicHandling: '${map['muxQuicHandling'] ?? 'reject'}',
     fragmentEnabled: map['fragmentEnabled'] == true,
     fragmentPackets: '${map['fragmentPackets'] ?? 'tlshello'}',
     fragmentLength: '${map['fragmentLength'] ?? '50-100'}',
@@ -277,6 +283,9 @@ class NativeSettings {
   final bool routeOnly;
   final bool blockQuic;
   final bool muxEnabled;
+  final int muxConcurrency;
+  final int muxXudpConcurrency;
+  final String muxQuicHandling;
   final bool fragmentEnabled;
   final String fragmentPackets;
   final String fragmentLength;
@@ -336,6 +345,9 @@ class NativeSettings {
       routeOnly: boolValue('routeOnly', routeOnly),
       blockQuic: boolValue('blockQuic', blockQuic),
       muxEnabled: boolValue('muxEnabled', muxEnabled),
+      muxConcurrency: intValue('muxConcurrency', muxConcurrency),
+      muxXudpConcurrency: intValue('muxXudpConcurrency', muxXudpConcurrency),
+      muxQuicHandling: stringValue('muxQuicHandling', muxQuicHandling),
       fragmentEnabled: boolValue('fragmentEnabled', fragmentEnabled),
       fragmentPackets: stringValue('fragmentPackets', fragmentPackets),
       fragmentLength: stringValue('fragmentLength', fragmentLength),

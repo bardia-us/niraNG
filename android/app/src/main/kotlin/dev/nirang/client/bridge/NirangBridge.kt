@@ -109,11 +109,16 @@ class NirangBridge(
                 pingManager.testAll()
                 result.success(true)
             }
+            "tcpPingAll" -> {
+                pingManager.testAllTcp()
+                result.success(true)
+            }
             "cancelPing" -> {
                 pingManager.cancel()
                 result.success(true)
             }
             "updateSettings" -> updateSettings(call, result)
+            "resetSettings" -> resetSettings(result)
             "getLogs" -> success(result) { SafeLog.list(activity) }
             "clearLogs" -> success(result) {
                 SafeLog.clear(activity)
@@ -514,6 +519,22 @@ class NirangBridge(
         runCatching { activity.startActivity(Intent(Intent.ACTION_VIEW, uri)) }
             .onSuccess { result.success(true) }
             .onFailure { result.error("unavailable", "No application can open the release link", null) }
+    }
+
+    private fun resetSettings(result: MethodChannel.Result) {
+        executor.execute {
+            runCatching {
+                val settings = NativeSettings(activity).resetAll()
+                SubscriptionScheduler.reconcile(activity)
+                val activeId = ConnectionStore.snapshot()["serverId"] as? String
+                if (activeId != null && ConnectionStore.state() in RESTART_ELIGIBLE_STATES) {
+                    NirangVpnService.restart(activity, activeId)
+                }
+                NativeEvents.emit("settings", settings)
+                settings
+            }.onSuccess { settings -> postToFlutter { result.success(settings) } }
+                .onFailure { error -> postToFlutter { result.error("reset_failed", safeError(error), null) } }
+        }
     }
 
     private fun startUpdateDownload(call: MethodCall, result: MethodChannel.Result) {

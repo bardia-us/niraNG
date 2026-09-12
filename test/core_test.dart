@@ -1,12 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nirang/core/formatters.dart';
+import 'package:nirang/core/async_operation_guard.dart';
 import 'package:nirang/core/localization/app_strings.dart';
 import 'package:nirang/core/platform/native_models.dart';
 import 'package:nirang/core/theme/app_theme.dart';
 import 'package:nirang/core/update_checker.dart';
 import 'package:nirang/features/settings/per_app_ordering.dart';
+import 'package:nirang/features/servers/server_sorting.dart';
 import 'package:nirang/features/vpn/app_controller.dart';
 
 void main() {
@@ -102,6 +106,9 @@ void main() {
       'fragmentInterval': '10-20',
       'fragmentMaxSplit': 8,
       'muxEnabled': true,
+      'muxConcurrency': 32,
+      'muxXudpConcurrency': 64,
+      'muxQuicHandling': 'allow',
     });
     expect(updated.themeMode, 'dark');
     expect(updated.vpnMtu, 1400);
@@ -114,6 +121,90 @@ void main() {
     expect(updated.fragmentEnabled, isTrue);
     expect(updated.fragmentMaxSplit, 8);
     expect(updated.muxEnabled, isTrue);
+    expect(updated.muxConcurrency, 32);
+    expect(updated.muxXudpConcurrency, 64);
+    expect(updated.muxQuicHandling, 'allow');
+  });
+
+  test('latency sort is stable and leaves failed or untested servers last', () {
+    const base = ServerInfo(
+      id: 'base',
+      name: 'Base',
+      country: '',
+      protocol: 'VLESS',
+      transport: 'TCP',
+      security: 'TLS',
+      port: 443,
+      selected: false,
+      status: 'idle',
+    );
+    final sorted = sortServersByTestResults([
+      base.copyWith(status: 'timeout'),
+      const ServerInfo(
+        id: 'slow',
+        name: 'Slow',
+        country: '',
+        protocol: 'VLESS',
+        transport: 'TCP',
+        security: 'TLS',
+        port: 443,
+        selected: false,
+        status: 'success',
+        ping: 220,
+      ),
+      const ServerInfo(
+        id: 'fast-a',
+        name: 'Fast A',
+        country: '',
+        protocol: 'VLESS',
+        transport: 'TCP',
+        security: 'TLS',
+        port: 443,
+        selected: false,
+        status: 'success',
+        ping: 80,
+      ),
+      const ServerInfo(
+        id: 'fast-b',
+        name: 'Fast B',
+        country: '',
+        protocol: 'VLESS',
+        transport: 'TCP',
+        security: 'TLS',
+        port: 443,
+        selected: false,
+        status: 'success',
+        ping: 80,
+      ),
+      base.copyWith(status: 'idle'),
+    ]);
+
+    expect(sorted.map((server) => server.id), [
+      'fast-a',
+      'fast-b',
+      'slow',
+      'base',
+      'base',
+    ]);
+  });
+
+  test('async operation guard coalesces duplicate heavy commands', () async {
+    final guard = AsyncOperationGuard(cooldown: Duration.zero);
+    final release = Completer<void>();
+    var calls = 0;
+    Future<void> operation() async {
+      calls++;
+      await release.future;
+    }
+
+    final first = guard.run('ping', operation);
+    final duplicate = guard.run('ping', operation);
+    expect(guard.isRunning('ping'), isTrue);
+    expect(calls, 1);
+    release.complete();
+    await Future.wait([first, duplicate]);
+    expect(calls, 1);
+    expect(guard.isRunning('ping'), isFalse);
   });
 
   test('fresh Dart settings use the current network defaults', () {

@@ -9,6 +9,9 @@ internal data class InstallDefaults(
     val routeOnly: Boolean,
     val blockQuic: Boolean,
     val muxEnabled: Boolean,
+    val muxConcurrency: Int,
+    val muxXudpConcurrency: Int,
+    val muxQuicHandling: String,
 ) {
     companion object {
         fun forExistingState(existingInstall: Boolean): InstallDefaults = if (existingInstall) {
@@ -21,6 +24,9 @@ internal data class InstallDefaults(
                 routeOnly = false,
                 blockQuic = false,
                 muxEnabled = false,
+                muxConcurrency = 8,
+                muxXudpConcurrency = 16,
+                muxQuicHandling = "reject",
             )
         } else {
             InstallDefaults(
@@ -32,6 +38,9 @@ internal data class InstallDefaults(
                 routeOnly = true,
                 blockQuic = false,
                 muxEnabled = false,
+                muxConcurrency = 8,
+                muxXudpConcurrency = 16,
+                muxQuicHandling = "reject",
             )
         }
     }

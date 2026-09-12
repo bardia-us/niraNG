@@ -18,6 +18,9 @@ class InstallDefaultsTest {
         assertTrue(defaults.routeOnly)
         assertFalse(defaults.blockQuic)
         assertFalse(defaults.muxEnabled)
+        assertEquals(8, defaults.muxConcurrency)
+        assertEquals(16, defaults.muxXudpConcurrency)
+        assertEquals("reject", defaults.muxQuicHandling)
     }
 
     @Test
@@ -32,5 +35,8 @@ class InstallDefaultsTest {
         assertFalse(defaults.routeOnly)
         assertFalse(defaults.blockQuic)
         assertFalse(defaults.muxEnabled)
+        assertEquals(8, defaults.muxConcurrency)
+        assertEquals(16, defaults.muxXudpConcurrency)
+        assertEquals("reject", defaults.muxQuicHandling)
     }
 }

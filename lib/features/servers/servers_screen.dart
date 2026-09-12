@@ -28,6 +28,7 @@ class ServersScreen extends ConsumerWidget {
           isRefreshing: app?.isRefreshing ?? false,
           configured: app?.subscriptionConfigured ?? false,
           performanceMode: app?.settings.performanceMode ?? false,
+          connection: app?.connection ?? const ConnectionInfo(),
         );
       }),
     );
@@ -36,6 +37,8 @@ class ServersScreen extends ConsumerWidget {
       isPinging: view.isPinging,
       isRefreshing: view.isRefreshing,
       subscriptionConfigured: view.configured,
+      connection: view.connection,
+      settings: NativeSettings(performanceMode: view.performanceMode),
     );
     final controller = ref.read(appControllerProvider.notifier);
     const headerHeight = 64.0;
@@ -196,19 +199,110 @@ class ServersScreen extends ConsumerWidget {
               isPinging: app.isPinging,
               isRefreshing: app.isRefreshing,
               reducedEffects: view.performanceMode,
-              onPing: app.servers.isEmpty
-                  ? null
-                  : app.isPinging
-                  ? controller.cancelPing
-                  : () => _perform(context, controller.pingAll),
-              onRefresh: app.isRefreshing
-                  ? null
-                  : () => _perform(context, controller.refreshSubscription),
+              onMenu: (anchor) =>
+                  _serverPageActions(context, controller, app, anchor),
             ),
           ),
         ),
       ],
     );
+  }
+
+  Future<void> _serverPageActions(
+    BuildContext context,
+    AppController controller,
+    AppSnapshot app,
+    Rect anchor,
+  ) async {
+    final size = MediaQuery.sizeOf(context);
+    final menuWidth = (size.width - 16).clamp(220.0, 292.0).toDouble();
+    final maxLeft = (size.width - menuWidth - 8).clamp(8.0, double.infinity);
+    final maxTop = (size.height - 360).clamp(8.0, double.infinity);
+    final left = (anchor.right - menuWidth).clamp(8.0, maxLeft);
+    final top = (anchor.bottom + 5).clamp(8.0, maxTop);
+    final action = await showGeneralDialog<_ServerPageAction>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+      barrierColor: Colors.transparent,
+      transitionDuration: const Duration(milliseconds: 170),
+      pageBuilder: (dialogContext, _, _) => Stack(
+        children: [
+          Positioned(
+            left: left,
+            top: top,
+            width: menuWidth,
+            child: SafeArea(
+              child: GlassSurface(
+                radius: 18,
+                blur: app.settings.performanceMode ? 0 : 18,
+                child: Material(
+                  color: Colors.transparent,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _ServerMenuTile(
+                        icon: Icons.restart_alt_rounded,
+                        label: dialogContext.s('restartService'),
+                        enabled: app.connection.isConnected,
+                        action: _ServerPageAction.restart,
+                      ),
+                      _ServerMenuTile(
+                        icon: Icons.sort_rounded,
+                        label: dialogContext.s('sortByTestResults'),
+                        enabled: app.servers.isNotEmpty,
+                        action: _ServerPageAction.sort,
+                      ),
+                      _ServerMenuTile(
+                        icon: Icons.network_ping_rounded,
+                        label: dialogContext.s('testRealDelays'),
+                        enabled: app.servers.isNotEmpty && !app.isPinging,
+                        action: _ServerPageAction.realDelay,
+                      ),
+                      _ServerMenuTile(
+                        icon: Icons.cable_rounded,
+                        label: dialogContext.s('testTcpDelays'),
+                        enabled: app.servers.isNotEmpty && !app.isPinging,
+                        action: _ServerPageAction.tcpDelay,
+                      ),
+                      _ServerMenuTile(
+                        icon: Icons.sync_rounded,
+                        label: dialogContext.s('refresh'),
+                        enabled: !app.isRefreshing,
+                        action: _ServerPageAction.refresh,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+      transitionBuilder: (context, animation, _, child) => FadeTransition(
+        opacity: CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+        child: ScaleTransition(
+          scale: Tween<double>(begin: .94, end: 1).animate(
+            CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
+          ),
+          alignment: Alignment.topRight,
+          child: child,
+        ),
+      ),
+    );
+    if (!context.mounted || action == null) return;
+    switch (action) {
+      case _ServerPageAction.restart:
+        await _perform(context, controller.restartService);
+      case _ServerPageAction.sort:
+        await _perform(context, controller.sortServersByLatency);
+      case _ServerPageAction.realDelay:
+        await _perform(context, controller.pingAll);
+      case _ServerPageAction.tcpDelay:
+        await _perform(context, controller.tcpPingAll);
+      case _ServerPageAction.refresh:
+        await _perform(context, controller.refreshSubscription);
+    }
   }
 
   Future<void> _serverActions(
@@ -371,15 +465,14 @@ class _PressScaleState extends State<_PressScale> {
   }
 }
 
-class _ServersGlassHeader extends StatelessWidget {
+class _ServersGlassHeader extends StatefulWidget {
   const _ServersGlassHeader({
     required this.height,
     required this.serverCount,
     required this.isPinging,
     required this.isRefreshing,
     required this.reducedEffects,
-    required this.onPing,
-    required this.onRefresh,
+    required this.onMenu,
   });
 
   final double height;
@@ -387,8 +480,20 @@ class _ServersGlassHeader extends StatelessWidget {
   final bool isPinging;
   final bool isRefreshing;
   final bool reducedEffects;
-  final VoidCallback? onPing;
-  final VoidCallback? onRefresh;
+  final ValueChanged<Rect> onMenu;
+
+  @override
+  State<_ServersGlassHeader> createState() => _ServersGlassHeaderState();
+}
+
+class _ServersGlassHeaderState extends State<_ServersGlassHeader> {
+  final _menuKey = GlobalKey();
+
+  void _openMenu() {
+    final box = _menuKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null) return;
+    widget.onMenu(box.localToGlobal(Offset.zero) & box.size);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -398,7 +503,7 @@ class _ServersGlassHeader extends StatelessWidget {
     final content = DecoratedBox(
       decoration: BoxDecoration(
         color: scheme.surface.withValues(
-          alpha: reducedEffects
+          alpha: widget.reducedEffects
               ? .96
               : dark
               ? .70
@@ -410,14 +515,14 @@ class _ServersGlassHeader extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
       ),
       child: SizedBox(
-        height: height,
+        height: widget.height,
         child: Padding(
           padding: const EdgeInsetsDirectional.only(start: 14, end: 4),
           child: Row(
             children: [
               Expanded(
                 child: Text(
-                  '${context.s('servers')} ($serverCount)',
+                  '${context.s('servers')} (${widget.serverCount})',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.titleSmall?.copyWith(
@@ -425,30 +530,12 @@ class _ServersGlassHeader extends StatelessWidget {
                   ),
                 ),
               ),
-              TextButton.icon(
-                onPressed: onPing,
-                style: TextButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                ),
-                icon: Icon(
-                  isPinging ? Icons.close_rounded : Icons.network_ping_rounded,
-                  size: 19,
-                ),
-                label: Text(
-                  isPinging ? context.s('cancel') : context.s('testAll'),
-                ),
-              ),
               IconButton(
-                tooltip: context.s('refresh'),
-                onPressed: onRefresh,
+                key: _menuKey,
+                tooltip: context.s('serverPageActions'),
+                onPressed: _openMenu,
                 visualDensity: VisualDensity.compact,
-                icon: isRefreshing
-                    ? const SizedBox.square(
-                        dimension: 19,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.sync_rounded),
+                icon: const Icon(Icons.more_vert_rounded),
               ),
             ],
           ),
@@ -457,7 +544,7 @@ class _ServersGlassHeader extends StatelessWidget {
     );
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
-      child: reducedEffects
+      child: widget.reducedEffects
           ? content
           : BackdropFilter(
               filter: ImageFilter.blur(
@@ -468,6 +555,32 @@ class _ServersGlassHeader extends StatelessWidget {
             ),
     );
   }
+}
+
+enum _ServerPageAction { restart, sort, realDelay, tcpDelay, refresh }
+
+class _ServerMenuTile extends StatelessWidget {
+  const _ServerMenuTile({
+    required this.icon,
+    required this.label,
+    required this.enabled,
+    required this.action,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool enabled;
+  final _ServerPageAction action;
+
+  @override
+  Widget build(BuildContext context) => ListTile(
+    dense: true,
+    visualDensity: VisualDensity.compact,
+    leading: Icon(icon, size: 20),
+    title: Text(label),
+    enabled: enabled,
+    onTap: enabled ? () => Navigator.pop(context, action) : null,
+  );
 }
 
 class _SelectionIndicator extends StatelessWidget {

@@ -67,6 +67,11 @@ class _FakeAppController extends AppController {
   int logRefreshes = 0;
   int restartRequests = 0;
   int reorderRequests = 0;
+  int pingAllRequests = 0;
+  int tcpPingAllRequests = 0;
+  int refreshRequests = 0;
+  int sortRequests = 0;
+  int resetRequests = 0;
 
   @override
   Future<AppSnapshot> build() async => AppSnapshot(
@@ -148,6 +153,37 @@ class _FakeAppController extends AppController {
     _updatePing(id, status: 'testing');
     await Future<void>.delayed(Duration.zero);
     _updatePing(id, status: 'success', ping: 90 + pingRequests);
+  }
+
+  @override
+  Future<void> pingAll() async {
+    pingAllRequests++;
+  }
+
+  @override
+  Future<void> tcpPingAll() async {
+    tcpPingAllRequests++;
+  }
+
+  @override
+  Future<void> refreshSubscription() async {
+    refreshRequests++;
+  }
+
+  @override
+  Future<void> sortServersByLatency() async {
+    sortRequests++;
+  }
+
+  @override
+  Future<void> resetSettings() async {
+    resetRequests++;
+    final current = state.asData!.value;
+    state = AsyncData(
+      current.copyWith(
+        settings: const NativeSettings(performanceModePrompted: true),
+      ),
+    );
   }
 
   void _updatePing(String id, {required String status, int? ping}) {
@@ -422,14 +458,17 @@ void main() {
 
     expect(find.text('Servers (2)'), findsOneWidget);
     expect(find.byType(BackdropFilter), findsWidgets);
-    expect(
-      tester.getCenter(find.byIcon(Icons.sync_rounded)).dx,
-      greaterThan(tester.getCenter(find.text('Test all')).dx),
-    );
-    expect(
-      tester.getCenter(find.text('Test all')).dx,
-      greaterThan(tester.getCenter(find.text('Servers (2)')).dx),
-    );
+    expect(find.text('Test all'), findsNothing);
+    expect(find.byTooltip('Server page actions'), findsOneWidget);
+    await tester.tap(find.byTooltip('Server page actions'));
+    await tester.pumpAndSettle();
+    expect(find.text('Sort by test results'), findsOneWidget);
+    expect(find.text('Test real delays'), findsOneWidget);
+    expect(find.text('Test TCP delays (TCPing)'), findsOneWidget);
+    expect(find.text('Update now'), findsOneWidget);
+    await tester.tap(find.text('Test real delays'));
+    await tester.pumpAndSettle();
+    expect(controller.pingAllRequests, 1);
 
     await controller.updateSettings({'performanceMode': true});
     await tester.pumpAndSettle();
@@ -439,6 +478,38 @@ void main() {
     expect(find.text('Server information'), findsOneWidget);
     expect(find.text('Delete'), findsOneWidget);
     expect(find.byType(BackdropFilter), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('server actions menu dispatches TCPing and explicit sort once', (
+    tester,
+  ) async {
+    late _FakeAppController controller;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => controller = _FakeAppController(),
+          ),
+        ],
+        child: const NirangApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.dns_outlined));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Server page actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Test TCP delays (TCPing)'));
+    await tester.pumpAndSettle();
+    expect(controller.tcpPingAllRequests, 1);
+
+    await tester.tap(find.byTooltip('Server page actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Sort by test results'));
+    await tester.pumpAndSettle();
+    expect(controller.sortRequests, 1);
     expect(tester.takeException(), isNull);
   });
 
@@ -589,6 +660,78 @@ void main() {
     );
     expect(find.text('Fragment length (min-max)'), findsOneWidget);
     expect(find.text('Fragment interval (min-max ms)'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Mux controls expand, disable safely, and persist exact values', (
+    tester,
+  ) async {
+    late _FakeAppController controller;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => controller = _FakeAppController(),
+          ),
+        ],
+        child: const NirangApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.settings_outlined));
+    await tester.pumpAndSettle();
+    await _openSettingsSection(tester, 'Mux');
+
+    expect(
+      tester
+          .widget<ListTile>(
+            find.widgetWithText(ListTile, 'TCP connections / concurrency'),
+          )
+          .enabled,
+      isFalse,
+    );
+    await tester.tap(find.widgetWithText(SwitchListTile, 'Enable Mux'));
+    await tester.pumpAndSettle();
+    expect(controller.state.asData!.value.settings.muxEnabled, isTrue);
+    expect(
+      tester
+          .widget<ListTile>(
+            find.widgetWithText(ListTile, 'TCP connections / concurrency'),
+          )
+          .enabled,
+      isTrue,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('reset settings requires confirmation and keeps UI responsive', (
+    tester,
+  ) async {
+    late _FakeAppController controller;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => controller = _FakeAppController(themeMode: 'dark'),
+          ),
+        ],
+        child: const NirangApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.settings_outlined));
+    await tester.pumpAndSettle();
+    await _openSettingsSection(tester, 'Advanced');
+    await _tapVisibleSetting(tester, find.text('Reset all settings'));
+    expect(find.text('Reset all settings?'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(controller.resetRequests, 0);
+
+    await _tapVisibleSetting(tester, find.text('Reset all settings'));
+    await tester.tap(find.text('Reset').last);
+    await tester.pumpAndSettle();
+    expect(controller.resetRequests, 1);
     expect(tester.takeException(), isNull);
   });
 

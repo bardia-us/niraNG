@@ -16,6 +16,9 @@ class RestartPolicyTest {
         assertTrue(RestartPolicy.requiresRestart(setOf("observatoryEnabled")))
         assertTrue(RestartPolicy.requiresRestart(setOf("blockQuic")))
         assertTrue(RestartPolicy.requiresRestart(setOf("muxEnabled")))
+        assertTrue(RestartPolicy.requiresRestart(setOf("muxConcurrency")))
+        assertTrue(RestartPolicy.requiresRestart(setOf("muxXudpConcurrency")))
+        assertTrue(RestartPolicy.requiresRestart(setOf("muxQuicHandling")))
     }
 
     @Test

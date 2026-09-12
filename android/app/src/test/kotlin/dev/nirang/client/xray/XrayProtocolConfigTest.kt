@@ -71,6 +71,30 @@ class XrayProtocolConfigTest {
         )
     }
 
+    @Test
+    fun `Mux settings map to exact Xray outbound fields`() {
+        val mux = XrayConfigBuilder.buildMux(
+            server("vless", "id", emptyMap()),
+            requested = true,
+            concurrency = 32,
+            xudpConcurrency = 64,
+            xudpProxyUDP443 = "allow",
+        )
+        assertTrue(mux.getBoolean("enabled"))
+        assertEquals(32, mux.getInt("concurrency"))
+        assertEquals(64, mux.getInt("xudpConcurrency"))
+        assertEquals("allow", mux.getString("xudpProxyUDP443"))
+
+        for (mode in listOf("reject", "allow", "skip")) {
+            assertEquals(
+                mode,
+                XrayConfigBuilder.buildMux(
+                    server("vmess", "id", emptyMap()), true, 1, 1024, mode,
+                ).getString("xudpProxyUDP443"),
+            )
+        }
+    }
+
     private fun config(server: ServerRecord) = JSONObject(XrayConfigBuilder.buildSafeFallbackConfig(server))
     private fun hasUdp443Block(routing: JSONObject): Boolean {
         val rules = routing.getJSONArray("rules")

@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/platform/native_models.dart';
 import '../../core/platform/nirang_native.dart';
 import '../../core/registration/device_registration.dart';
+import '../../core/async_operation_guard.dart';
+import '../servers/server_sorting.dart';
 
 final appControllerProvider = AsyncNotifierProvider<AppController, AppSnapshot>(
   AppController.new,
@@ -25,6 +27,7 @@ class AppController extends AsyncNotifier<AppSnapshot> {
   int _settingsRevision = 0;
   Timer? _noticeTimer;
   int _noticeRevision = 0;
+  final _operationGuard = AsyncOperationGuard();
 
   @override
   Future<AppSnapshot> build() async {
@@ -48,7 +51,10 @@ class AppController extends AsyncNotifier<AppSnapshot> {
     if (current != null) state = AsyncData(update(current));
   }
 
-  Future<void> refreshSubscription() async {
+  Future<void> refreshSubscription() =>
+      _operationGuard.run('refreshSubscription', _refreshSubscription);
+
+  Future<void> _refreshSubscription() async {
     _showNotice('Updating subscription…', NoticeTone.processing);
     _set(
       (value) =>
@@ -105,6 +111,28 @@ class AppController extends AsyncNotifier<AppSnapshot> {
     }
   }
 
+  Future<void> sortServersByLatency() =>
+      _operationGuard.run('serverOrder', () async {
+        final current = _current;
+        if (current == null || current.servers.length < 2) return;
+        final sorted = sortServersByTestResults(current.servers);
+        if (sorted.indexed.every(
+          (entry) => entry.$2.id == current.servers[entry.$1].id,
+        )) {
+          return;
+        }
+        _set((value) => value.copyWith(servers: sorted));
+        try {
+          final servers = await NirangNative.reorderServers(
+            sorted.map((item) => item.id).toList(growable: false),
+          );
+          _set((value) => value.copyWith(servers: _servers(servers)));
+        } catch (_) {
+          _set((value) => value.copyWith(servers: current.servers));
+          rethrow;
+        }
+      });
+
   Future<void> deleteServer(String id) async {
     final data = await NirangNative.deleteServer(id);
     _set(
@@ -126,7 +154,9 @@ class AppController extends AsyncNotifier<AppSnapshot> {
     return _number(data['restored']);
   }
 
-  Future<void> connect() async {
+  Future<void> connect() => _operationGuard.run('connect', _connect);
+
+  Future<void> _connect() async {
     final selected = _current?.selectedServer;
     if (selected == null) {
       _showNotice(
@@ -172,13 +202,19 @@ class AppController extends AsyncNotifier<AppSnapshot> {
     }
   }
 
-  Future<void> disconnect() => NirangNative.disconnect();
-  Future<void> restartService() => NirangNative.restartService();
+  Future<void> disconnect() =>
+      _operationGuard.run('disconnect', NirangNative.disconnect);
+  Future<void> restartService() =>
+      _operationGuard.run('restartService', NirangNative.restartService);
 
   Future<String> requestQuickSettingsTile() =>
       NirangNative.requestQuickSettingsTile();
 
-  Future<void> pingServer(String id) async {
+  Future<void> pingServer(String id) => _current?.isPinging == true
+      ? Future<void>.value()
+      : _operationGuard.run('ping', () => _pingServer(id));
+
+  Future<void> _pingServer(String id) async {
     _set((value) => value.copyWith(isPinging: true));
     try {
       await NirangNative.pingServer(id);
@@ -188,7 +224,11 @@ class AppController extends AsyncNotifier<AppSnapshot> {
     }
   }
 
-  Future<void> pingAll() async {
+  Future<void> pingAll() => _current?.isPinging == true
+      ? Future<void>.value()
+      : _operationGuard.run('ping', _pingAll);
+
+  Future<void> _pingAll() async {
     _set((value) => value.copyWith(isPinging: true));
     try {
       await NirangNative.pingAll();
@@ -197,6 +237,18 @@ class AppController extends AsyncNotifier<AppSnapshot> {
       rethrow;
     }
   }
+
+  Future<void> tcpPingAll() => _current?.isPinging == true
+      ? Future<void>.value()
+      : _operationGuard.run('ping', () async {
+          _set((value) => value.copyWith(isPinging: true));
+          try {
+            await NirangNative.tcpPingAll();
+          } catch (_) {
+            _set((value) => value.copyWith(isPinging: false));
+            rethrow;
+          }
+        });
 
   Future<void> cancelPing() async {
     await NirangNative.cancelPing();
@@ -219,6 +271,12 @@ class AppController extends AsyncNotifier<AppSnapshot> {
       rethrow;
     }
   }
+
+  Future<void> resetSettings() =>
+      _operationGuard.run('resetSettings', () async {
+        final map = await NirangNative.resetSettings();
+        _set((value) => value.copyWith(settings: NativeSettings.fromMap(map)));
+      });
 
   Future<void> refreshLogs() {
     final running = _logsRefresh;

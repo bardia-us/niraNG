@@ -75,6 +75,7 @@ class NirangNative {
   static Future<void> pingServer(String id) =>
       _methods.invokeMethod('pingServer', {'id': id});
   static Future<void> pingAll() => _methods.invokeMethod('pingAll');
+  static Future<void> tcpPingAll() => _methods.invokeMethod('tcpPingAll');
   static Future<void> cancelPing() => _methods.invokeMethod('cancelPing');
 
   static Future<Map<dynamic, dynamic>> updateSettings(
@@ -84,6 +85,10 @@ class NirangNative {
         'updateSettings',
         values,
       )) ??
+      {};
+
+  static Future<Map<dynamic, dynamic>> resetSettings() async =>
+      (await _methods.invokeMethod<Map<dynamic, dynamic>>('resetSettings')) ??
       {};
 
   static Future<List<dynamic>> getLogs() async =>

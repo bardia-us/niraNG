@@ -238,11 +238,36 @@ object XrayConfigBuilder {
             }
         })
         put("streamSettings", buildStreamSettings(server, settings))
-        put("mux", buildMux(server, settings?.muxEnabled == true))
+        put("mux", buildMux(server, settings))
     }
 
-    internal fun buildMux(server: ServerRecord, requested: Boolean): JSONObject = JSONObject().apply {
-        put("enabled", requested && muxSupported(server))
+    internal fun buildMux(server: ServerRecord, settings: NativeSettings?): JSONObject = JSONObject().apply {
+        val enabled = settings?.muxEnabled == true && muxSupported(server)
+        put("enabled", enabled)
+        if (enabled) {
+            put("concurrency", settings.muxConcurrency)
+            put("xudpConcurrency", settings.muxXudpConcurrency)
+            put("xudpProxyUDP443", settings.muxQuicHandling)
+        }
+    }
+
+    internal fun buildMux(
+        server: ServerRecord,
+        requested: Boolean,
+        concurrency: Int = 8,
+        xudpConcurrency: Int = 16,
+        xudpProxyUDP443: String = "reject",
+    ): JSONObject = JSONObject().apply {
+        val enabled = requested && muxSupported(server)
+        put("enabled", enabled)
+        if (enabled) {
+            require(concurrency in 1..128) { "Mux TCP concurrency must be between 1 and 128" }
+            require(xudpConcurrency in 1..1024) { "Mux XUDP concurrency must be between 1 and 1024" }
+            require(xudpProxyUDP443 in setOf("reject", "allow", "skip")) { "Unsupported Mux QUIC handling" }
+            put("concurrency", concurrency)
+            put("xudpConcurrency", xudpConcurrency)
+            put("xudpProxyUDP443", xudpProxyUDP443)
+        }
     }
 
     private fun muxSupported(server: ServerRecord): Boolean {

@@ -36,6 +36,9 @@ class NativeSettings(context: Context) {
     val routeOnly: Boolean get() = safeBoolean("routeOnly", FRESH_INSTALL_DEFAULTS.routeOnly)
     val blockQuic: Boolean get() = safeBoolean("blockQuic", FRESH_INSTALL_DEFAULTS.blockQuic)
     val muxEnabled: Boolean get() = safeBoolean("muxEnabled", FRESH_INSTALL_DEFAULTS.muxEnabled)
+    val muxConcurrency: Int get() = safeInt("muxConcurrency", FRESH_INSTALL_DEFAULTS.muxConcurrency).takeIf { it in 1..128 } ?: FRESH_INSTALL_DEFAULTS.muxConcurrency
+    val muxXudpConcurrency: Int get() = safeInt("muxXudpConcurrency", FRESH_INSTALL_DEFAULTS.muxXudpConcurrency).takeIf { it in 1..1024 } ?: FRESH_INSTALL_DEFAULTS.muxXudpConcurrency
+    val muxQuicHandling: String get() = safeString("muxQuicHandling", FRESH_INSTALL_DEFAULTS.muxQuicHandling).takeIf(ALLOWED_MUX_QUIC_HANDLING::contains) ?: FRESH_INSTALL_DEFAULTS.muxQuicHandling
     val fragmentEnabled: Boolean get() = safeBoolean("fragmentEnabled", false)
     val fragmentPackets: String get() = safeString("fragmentPackets", "tlshello").takeIf(::validFragmentPackets) ?: "tlshello"
     val fragmentLength: String get() = safeString("fragmentLength", "50-100").takeIf { validRange(it, 1, 65_535) } ?: "50-100"
@@ -81,6 +84,9 @@ class NativeSettings(context: Context) {
         "routeOnly" to routeOnly,
         "blockQuic" to blockQuic,
         "muxEnabled" to muxEnabled,
+        "muxConcurrency" to muxConcurrency,
+        "muxXudpConcurrency" to muxXudpConcurrency,
+        "muxQuicHandling" to muxQuicHandling,
         "fragmentEnabled" to fragmentEnabled,
         "fragmentPackets" to fragmentPackets,
         "fragmentLength" to fragmentLength,
@@ -201,6 +207,22 @@ class NativeSettings(context: Context) {
             require(validHttpsUrl(it)) { "Public IP provider must be a valid HTTPS URL" }
             strings["ipCheckUrl"] = it
         }
+        val muxConcurrencyValue = (values["muxConcurrency"] as? Number)?.toInt()
+        if (values.containsKey("muxConcurrency")) {
+            require(muxConcurrencyValue != null && muxConcurrencyValue in 1..128) {
+                "Mux TCP concurrency must be between 1 and 128"
+            }
+        }
+        val muxXudpConcurrencyValue = (values["muxXudpConcurrency"] as? Number)?.toInt()
+        if (values.containsKey("muxXudpConcurrency")) {
+            require(muxXudpConcurrencyValue != null && muxXudpConcurrencyValue in 1..1024) {
+                "Mux XUDP concurrency must be between 1 and 1024"
+            }
+        }
+        values["muxQuicHandling"]?.toString()?.let {
+            require(it in ALLOWED_MUX_QUIC_HANDLING) { "Unsupported Mux QUIC handling" }
+            strings["muxQuicHandling"] = it
+        }
         values["perAppMode"]?.toString()?.let {
             require(it in ALLOWED_PER_APP_MODES) { "Unsupported per-app proxy mode" }
             strings["perAppMode"] = it
@@ -249,6 +271,8 @@ class NativeSettings(context: Context) {
         socksPort?.let { editor.putInt("localSocksPort", it) }
         pingConcurrency?.let { editor.putInt("realPingConcurrency", it) }
         fragmentMaxSplitValue?.let { editor.putInt("fragmentMaxSplit", it) }
+        muxConcurrencyValue?.let { editor.putInt("muxConcurrency", it) }
+        muxXudpConcurrencyValue?.let { editor.putInt("muxXudpConcurrency", it) }
         leastLoadSamplingValue?.let { editor.putInt("leastLoadSampling", it) }
         perAppPackagesValue?.let { editor.putStringSet("perAppPackages", it) }
         (autoUpdateValue as? Boolean)?.let { editor.putBoolean("autoUpdate", it) }
@@ -264,7 +288,16 @@ class NativeSettings(context: Context) {
             .putBoolean("routeOnly", false)
             .putBoolean("blockQuic", false)
             .putBoolean("muxEnabled", false)
+            .putInt("muxConcurrency", 8)
+            .putInt("muxXudpConcurrency", 16)
+            .putString("muxQuicHandling", "reject")
             .apply()
+    }
+
+    fun resetAll(): Map<String, Any?> {
+        check(prefs.edit().clear().commit()) { "Settings could not be reset" }
+        migrateInstallDefaults()
+        return toMap()
     }
 
     fun incrementOpenCount() {
@@ -300,6 +333,9 @@ class NativeSettings(context: Context) {
         if (!prefs.contains("routeOnly")) editor.putBoolean("routeOnly", defaults.routeOnly)
         if (!prefs.contains("blockQuic")) editor.putBoolean("blockQuic", defaults.blockQuic)
         if (!prefs.contains("muxEnabled")) editor.putBoolean("muxEnabled", defaults.muxEnabled)
+        if (!prefs.contains("muxConcurrency")) editor.putInt("muxConcurrency", defaults.muxConcurrency)
+        if (!prefs.contains("muxXudpConcurrency")) editor.putInt("muxXudpConcurrency", defaults.muxXudpConcurrency)
+        if (!prefs.contains("muxQuicHandling")) editor.putString("muxQuicHandling", defaults.muxQuicHandling)
         editor.putInt(DEFAULTS_SCHEMA_KEY, DEFAULTS_SCHEMA_VERSION).commit()
     }
 
@@ -321,7 +357,7 @@ class NativeSettings(context: Context) {
 
     companion object {
         private const val DEFAULTS_SCHEMA_KEY = "installDefaultsSchema"
-        private const val DEFAULTS_SCHEMA_VERSION = 4
+        private const val DEFAULTS_SCHEMA_VERSION = 5
         private val DEFAULTS_MIGRATION_LOCK = Any()
         private val FRESH_INSTALL_DEFAULTS = InstallDefaults.forExistingState(false)
         private const val DEFAULT_REMOTE_DNS = "https://dns.google/dns-query"
@@ -333,6 +369,7 @@ class NativeSettings(context: Context) {
         private val ALLOWED_DOMAIN_STRATEGIES = setOf("AsIs", "IPIfNonMatch", "IPOnDemand")
         private val ALLOWED_INTERVALS = setOf(6, 12, 24)
         private val ALLOWED_PING_CONCURRENCY = setOf(4, 8, 16, 32)
+        private val ALLOWED_MUX_QUIC_HANDLING = setOf("reject", "allow", "skip")
         private val ALLOWED_THEMES = setOf("system", "light", "dark")
         private val ALLOWED_LANGUAGES = setOf("en", "fa")
         private val ALLOWED_PER_APP_MODES = setOf("all", "selected", "exclude")

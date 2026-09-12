@@ -33,7 +33,7 @@ class PingManager(
         lifecycle.start(serverId)
         emit(serverId, null, "testing")
         val limiter = Semaphore(1)
-        synchronized(tasks) { tasks += executor.submit { test(serverId, currentGeneration, limiter, onComplete) } }
+        synchronized(tasks) { tasks += executor.submit { test(serverId, currentGeneration, limiter, false, onComplete) } }
     }
 
     fun testAll() {
@@ -47,7 +47,22 @@ class PingManager(
             repository.updatePing(serverId, null, "testing")
             lifecycle.start(serverId)
             emit(serverId, null, "testing")
-            synchronized(tasks) { tasks += executor.submit { test(serverId, currentGeneration, limiter, null) } }
+            synchronized(tasks) { tasks += executor.submit { test(serverId, currentGeneration, limiter, false, null) } }
+        }
+    }
+
+    fun testAllTcp() {
+        cancelTasks(emitEvent = false)
+        val currentGeneration = generation.get()
+        val ids = repository.visibleServerIds()
+        val limiter = Semaphore(NativeSettings(context).realPingConcurrency)
+        pending.set(ids.size)
+        if (ids.isEmpty()) NativeEvents.emit("pingCompleted", null)
+        ids.forEach { serverId ->
+            repository.updatePing(serverId, null, "testing")
+            lifecycle.start(serverId)
+            emit(serverId, null, "testing")
+            synchronized(tasks) { tasks += executor.submit { test(serverId, currentGeneration, limiter, true, null) } }
         }
     }
 
@@ -79,6 +94,7 @@ class PingManager(
         serverId: String,
         expectedGeneration: Int,
         limiter: Semaphore,
+        tcpOnly: Boolean,
         onComplete: (() -> Unit)?,
     ) {
         var acquired = false
@@ -94,9 +110,13 @@ class PingManager(
                 return
             }
             val delay = runCatching {
-                val config = XrayConfigBuilder.buildProbeConfig(server, NativeSettings(context))
                 val probe = probeExecutor.submit<Long> {
-                    XrayCore.measureOutboundDelay(config, TEST_URL)
+                    if (tcpOnly) {
+                        TcpLatencyProbe.measure(server.address, server.port)
+                    } else {
+                        val config = XrayConfigBuilder.buildProbeConfig(server, NativeSettings(context))
+                        XrayCore.measureOutboundDelay(config, TEST_URL)
+                    }
                 }
                 try {
                     probe.get(PING_TIMEOUT_SECONDS, TimeUnit.SECONDS)
@@ -109,7 +129,7 @@ class PingManager(
             repository.updatePing(serverId, delay.takeIf { it >= 0 }, status)
             emit(serverId, delay.takeIf { it >= 0 }, status)
             lifecycle.finish(serverId)
-            SafeLog.info(context, "Ping completed")
+            SafeLog.info(context, if (tcpOnly) "TCP delay completed" else "Real delay completed")
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()
         } finally {

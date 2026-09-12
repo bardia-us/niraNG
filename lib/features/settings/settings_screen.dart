@@ -233,16 +233,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 () => controller.updateSettings({'blockQuic': value}),
               ),
             ),
-            SwitchListTile(
-              secondary: const Icon(Icons.call_merge_rounded),
-              title: Text(context.s('mux')),
-              subtitle: Text(context.s('muxSummary')),
-              value: settings.muxEnabled,
-              onChanged: (value) => _perform(
-                context,
-                () => controller.updateSettings({'muxEnabled': value}),
-              ),
-            ),
             ListTile(
               leading: const Icon(Icons.speed_rounded),
               title: Text(context.s('realPingConcurrency')),
@@ -274,6 +264,90 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     : null,
               ),
               onTap: () => _editFragment(context, controller, settings),
+            ),
+          ],
+        ),
+        _SettingsExpansion(
+          title: context.s('mux'),
+          icon: Icons.call_merge_rounded,
+          children: [
+            SwitchListTile(
+              secondary: const Icon(Icons.call_merge_rounded),
+              title: Text(context.s('enableMux')),
+              subtitle: Text(context.s('muxSummary')),
+              value: settings.muxEnabled,
+              onChanged: (value) => _perform(
+                context,
+                () => controller.updateSettings({'muxEnabled': value}),
+              ),
+            ),
+            ListTile(
+              enabled: settings.muxEnabled,
+              leading: const Icon(Icons.account_tree_outlined),
+              title: Text(context.s('muxTcpConcurrency')),
+              subtitle: Text(
+                '${settings.muxConcurrency} · ${context.s('muxTcpConcurrencyHint')}',
+              ),
+              onTap: settings.muxEnabled
+                  ? () => _editSingleValue(
+                      context,
+                      title: context.s('muxTcpConcurrency'),
+                      initial: '${settings.muxConcurrency}',
+                      validator: (value) => _validateIntegerRange(
+                        context,
+                        value,
+                        minimum: 1,
+                        maximum: 128,
+                      ),
+                      onSave: (value) => controller.updateSettings({
+                        'muxConcurrency': int.parse(value),
+                      }),
+                    )
+                  : null,
+            ),
+            ListTile(
+              enabled: settings.muxEnabled,
+              leading: const Icon(Icons.hub_outlined),
+              title: Text(context.s('muxXudpConcurrency')),
+              subtitle: Text(
+                '${settings.muxXudpConcurrency} · ${context.s('muxXudpConcurrencyHint')}',
+              ),
+              onTap: settings.muxEnabled
+                  ? () => _editSingleValue(
+                      context,
+                      title: context.s('muxXudpConcurrency'),
+                      initial: '${settings.muxXudpConcurrency}',
+                      validator: (value) => _validateIntegerRange(
+                        context,
+                        value,
+                        minimum: 1,
+                        maximum: 1024,
+                      ),
+                      onSave: (value) => controller.updateSettings({
+                        'muxXudpConcurrency': int.parse(value),
+                      }),
+                    )
+                  : null,
+            ),
+            ListTile(
+              enabled: settings.muxEnabled,
+              leading: const Icon(Icons.speed_outlined),
+              title: Text(context.s('muxQuicHandling')),
+              subtitle: Text(context.s('muxQuic${settings.muxQuicHandling}')),
+              onTap: settings.muxEnabled
+                  ? () => _chooseValue(
+                      context,
+                      title: context.s('muxQuicHandling'),
+                      current: settings.muxQuicHandling,
+                      values: {
+                        'reject': context.s('muxQuicReject'),
+                        'allow': context.s('muxQuicAllow'),
+                        'skip': context.s('muxQuicSkip'),
+                      },
+                      onSelected: (value) =>
+                          controller.updateSettings({'muxQuicHandling': value}),
+                    )
+                  : null,
             ),
           ],
         ),
@@ -700,6 +774,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               subtitle: Text('niraNG ${app.appVersion}'),
               onTap: () => _showAbout(context, app.coreVersion, app.appVersion),
             ),
+            ListTile(
+              leading: Icon(
+                Icons.restart_alt_rounded,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              title: Text(
+                context.s('resetSettings'),
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+              subtitle: Text(context.s('resetSettingsSummary')),
+              onTap: () => _resetSettings(context, controller),
+            ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
               child: Text(
@@ -734,6 +820,32 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       },
       onSelected: (value) => controller.updateSettings({'routingMode': value}),
     );
+  }
+
+  Future<void> _resetSettings(
+    BuildContext context,
+    AppController controller,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => NirangAlertDialog(
+        title: Text(context.s('resetSettingsConfirm')),
+        content: Text(context.s('resetSettingsConfirmBody')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(context.s('cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(context.s('reset')),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && context.mounted) {
+      await _perform(context, controller.resetSettings);
+    }
   }
 
   Future<void> _checkForUpdates(
@@ -1469,6 +1581,18 @@ String? _validateHttps(BuildContext context, String value) {
   return uri != null && uri.scheme == 'https' && uri.host.isNotEmpty
       ? null
       : context.s('invalidHttps');
+}
+
+String? _validateIntegerRange(
+  BuildContext context,
+  String value, {
+  required int minimum,
+  required int maximum,
+}) {
+  final parsed = int.tryParse(value.trim());
+  return parsed != null && parsed >= minimum && parsed <= maximum
+      ? null
+      : '${context.s('enterValueBetween')} $minimum–$maximum.';
 }
 
 Future<void> _perform(
