@@ -14,11 +14,25 @@ import '../../core/widgets/glass_dialog.dart';
 import '../vpn/app_controller.dart';
 import 'server_information_screen.dart';
 
-class ServersScreen extends ConsumerWidget {
+class ServersScreen extends ConsumerStatefulWidget {
   const ServersScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ServersScreen> createState() => _ServersScreenState();
+}
+
+class _ServersScreenState extends ConsumerState<ServersScreen> {
+  Rect? _menuAnchor;
+
+  void _openMenu(Rect globalAnchor) {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null) return;
+    final origin = box.localToGlobal(Offset.zero);
+    setState(() => _menuAnchor = globalAnchor.shift(-origin));
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final view = ref.watch(
       appControllerProvider.select((value) {
         final app = value.asData?.value;
@@ -199,45 +213,49 @@ class ServersScreen extends ConsumerWidget {
               isPinging: app.isPinging,
               isRefreshing: app.isRefreshing,
               reducedEffects: view.performanceMode,
-              onMenu: (anchor) =>
-                  _serverPageActions(context, controller, app, anchor),
+              onMenu: _openMenu,
             ),
           ),
         ),
+        if (_menuAnchor case final anchor?)
+          Positioned.fill(
+            child: _buildServerPageActions(context, controller, app, anchor),
+          ),
       ],
     );
   }
 
-  Future<void> _serverPageActions(
+  Widget _buildServerPageActions(
     BuildContext context,
     AppController controller,
     AppSnapshot app,
     Rect anchor,
-  ) async {
+  ) {
     final size = MediaQuery.sizeOf(context);
     final menuWidth = (size.width - 16).clamp(220.0, 292.0).toDouble();
     final maxLeft = (size.width - menuWidth - 8).clamp(8.0, double.infinity);
     final maxTop = (size.height - 360).clamp(8.0, double.infinity);
     final left = (anchor.right - menuWidth + 8).clamp(8.0, maxLeft);
     final top = (anchor.bottom - 11).clamp(8.0, maxTop);
-    final overlay = Overlay.of(context);
-    final completed = Completer<_ServerPageAction?>();
-    late final OverlayEntry entry;
-    entry = OverlayEntry(
-      builder: (_) => _ServerPageActionsPopover(
-        left: left,
-        top: top,
-        width: menuWidth,
-        app: app,
-        onClosed: (action) {
-          entry.remove();
-          if (!completed.isCompleted) completed.complete(action);
-        },
-      ),
+    return _ServerPageActionsPopover(
+      left: left,
+      top: top,
+      width: menuWidth,
+      app: app,
+      onClosed: (action) {
+        if (mounted) setState(() => _menuAnchor = null);
+        if (action != null && context.mounted) {
+          unawaited(_performServerPageAction(context, controller, action));
+        }
+      },
     );
-    overlay.insert(entry);
-    final action = await completed.future;
-    if (!context.mounted || action == null) return;
+  }
+
+  Future<void> _performServerPageAction(
+    BuildContext context,
+    AppController controller,
+    _ServerPageAction action,
+  ) async {
     switch (action) {
       case _ServerPageAction.restart:
         await _perform(context, controller.restartService);

@@ -8,6 +8,7 @@ import 'package:nirang/core/widgets/country_flag_badge.dart';
 import 'package:nirang/core/widgets/glass_dialog.dart';
 import 'package:nirang/core/widgets/glass_surface.dart';
 import 'package:nirang/features/servers/server_sorting.dart';
+import 'package:nirang/features/servers/servers_screen.dart';
 import 'package:nirang/features/vpn/app_controller.dart';
 import 'package:nirang/main.dart';
 
@@ -472,6 +473,13 @@ void main() {
     await tester.pumpAndSettle();
     final lightMenu = tester.widget<GlassSurface>(
       find.byKey(const ValueKey('server-page-actions-surface')),
+    );
+    expect(
+      find.ancestor(
+        of: find.byKey(const ValueKey('server-page-actions-surface')),
+        matching: find.byType(ServersScreen),
+      ),
+      findsOneWidget,
     );
     expect(lightMenu.blur, 26);
     expect(lightMenu.lightBlurLimit, 28);
