@@ -219,7 +219,7 @@ class ServersScreen extends ConsumerWidget {
     final maxLeft = (size.width - menuWidth - 8).clamp(8.0, double.infinity);
     final maxTop = (size.height - 360).clamp(8.0, double.infinity);
     final left = (anchor.right - menuWidth).clamp(8.0, maxLeft);
-    final top = (anchor.bottom + 5).clamp(8.0, maxTop);
+    final top = (anchor.bottom - 3).clamp(8.0, maxTop);
     final action = await showGeneralDialog<_ServerPageAction>(
       context: context,
       barrierDismissible: true,
@@ -228,6 +228,13 @@ class ServersScreen extends ConsumerWidget {
       transitionDuration: const Duration(milliseconds: 170),
       pageBuilder: (dialogContext, _, _) => Stack(
         children: [
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: () => Navigator.pop(dialogContext),
+              onPanStart: (_) => Navigator.pop(dialogContext),
+            ),
+          ),
           Positioned(
             left: left,
             top: top,
@@ -235,7 +242,8 @@ class ServersScreen extends ConsumerWidget {
             child: SafeArea(
               child: GlassSurface(
                 radius: 18,
-                blur: app.settings.performanceMode ? 0 : 18,
+                blur: app.settings.performanceMode ? 0 : 8,
+                surfaceOpacity: app.settings.performanceMode ? .97 : .90,
                 child: Material(
                   color: Colors.transparent,
                   child: Column(
@@ -254,16 +262,16 @@ class ServersScreen extends ConsumerWidget {
                         action: _ServerPageAction.sort,
                       ),
                       _ServerMenuTile(
-                        icon: Icons.network_ping_rounded,
-                        label: dialogContext.s('testRealDelays'),
-                        enabled: app.servers.isNotEmpty && !app.isPinging,
-                        action: _ServerPageAction.realDelay,
-                      ),
-                      _ServerMenuTile(
                         icon: Icons.cable_rounded,
                         label: dialogContext.s('testTcpDelays'),
                         enabled: app.servers.isNotEmpty && !app.isPinging,
                         action: _ServerPageAction.tcpDelay,
+                      ),
+                      _ServerMenuTile(
+                        icon: Icons.network_ping_rounded,
+                        label: dialogContext.s('testRealDelays'),
+                        enabled: app.servers.isNotEmpty && !app.isPinging,
+                        action: _ServerPageAction.realDelay,
                       ),
                       _ServerMenuTile(
                         icon: Icons.sync_rounded,

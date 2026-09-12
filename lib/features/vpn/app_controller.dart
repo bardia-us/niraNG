@@ -122,15 +122,6 @@ class AppController extends AsyncNotifier<AppSnapshot> {
           return;
         }
         _set((value) => value.copyWith(servers: sorted));
-        try {
-          final servers = await NirangNative.reorderServers(
-            sorted.map((item) => item.id).toList(growable: false),
-          );
-          _set((value) => value.copyWith(servers: _servers(servers)));
-        } catch (_) {
-          _set((value) => value.copyWith(servers: current.servers));
-          rethrow;
-        }
       });
 
   Future<void> deleteServer(String id) async {

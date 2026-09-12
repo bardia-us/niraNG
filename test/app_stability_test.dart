@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nirang/core/platform/native_models.dart';
 import 'package:nirang/core/widgets/country_flag_badge.dart';
 import 'package:nirang/core/widgets/glass_dialog.dart';
+import 'package:nirang/features/servers/server_sorting.dart';
 import 'package:nirang/features/vpn/app_controller.dart';
 import 'package:nirang/main.dart';
 
@@ -168,11 +169,17 @@ class _FakeAppController extends AppController {
   @override
   Future<void> refreshSubscription() async {
     refreshRequests++;
+    final current = state.asData!.value;
+    state = AsyncData(current.copyWith(servers: servers));
   }
 
   @override
   Future<void> sortServersByLatency() async {
     sortRequests++;
+    final current = state.asData!.value;
+    state = AsyncData(
+      current.copyWith(servers: sortServersByTestResults(current.servers)),
+    );
   }
 
   @override
@@ -466,6 +473,14 @@ void main() {
     expect(find.text('Test real delays'), findsOneWidget);
     expect(find.text('Test TCP delays (TCPing)'), findsOneWidget);
     expect(find.text('Update now'), findsOneWidget);
+    expect(
+      tester.getCenter(find.text('Test TCP delays (TCPing)')).dy,
+      lessThan(tester.getCenter(find.text('Test real delays')).dy),
+    );
+    expect(
+      tester.getCenter(find.text('Test real delays')).dy,
+      lessThan(tester.getCenter(find.text('Update now')).dy),
+    );
     await tester.tap(find.text('Test real delays'));
     await tester.pumpAndSettle();
     expect(controller.pingAllRequests, 1);
@@ -510,6 +525,90 @@ void main() {
     await tester.tap(find.text('Sort by test results'));
     await tester.pumpAndSettle();
     expect(controller.sortRequests, 1);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('subscription refresh restores source order after latency sort', (
+    tester,
+  ) async {
+    const slow = ServerInfo(
+      id: 'slow',
+      name: 'Slow',
+      country: 'DE',
+      protocol: 'VLESS',
+      transport: 'TCP',
+      security: 'TLS',
+      port: 443,
+      selected: true,
+      status: 'success',
+      ping: 240,
+    );
+    const fast = ServerInfo(
+      id: 'fast',
+      name: 'Fast',
+      country: 'US',
+      protocol: 'VLESS',
+      transport: 'TCP',
+      security: 'TLS',
+      port: 443,
+      selected: false,
+      status: 'success',
+      ping: 70,
+    );
+    late _FakeAppController controller;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => controller = _FakeAppController(servers: const [slow, fast]),
+          ),
+        ],
+        child: const NirangApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.dns_outlined));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Server page actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Sort by test results'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.getCenter(find.text('Fast')).dy,
+      lessThan(tester.getCenter(find.text('Slow')).dy),
+    );
+
+    await tester.tap(find.byTooltip('Server page actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Update now'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.getCenter(find.text('Slow')).dy,
+      lessThan(tester.getCenter(find.text('Fast')).dy),
+    );
+    expect(controller.refreshRequests, 1);
+  });
+
+  testWidgets('server page actions dismiss on an outside drag', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(() => _FakeAppController()),
+        ],
+        child: const NirangApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.dns_outlined));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Server page actions'));
+    await tester.pumpAndSettle();
+    expect(find.text('Test real delays'), findsOneWidget);
+
+    await tester.dragFrom(const Offset(20, 430), const Offset(0, -80));
+    await tester.pumpAndSettle();
+    expect(find.text('Test real delays'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
