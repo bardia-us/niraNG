@@ -218,8 +218,9 @@ class ServersScreen extends ConsumerWidget {
     final menuWidth = (size.width - 16).clamp(220.0, 292.0).toDouble();
     final maxLeft = (size.width - menuWidth - 8).clamp(8.0, double.infinity);
     final maxTop = (size.height - 360).clamp(8.0, double.infinity);
-    final left = (anchor.right - menuWidth).clamp(8.0, maxLeft);
-    final top = (anchor.bottom - 3).clamp(8.0, maxTop);
+    final left = (anchor.right - menuWidth + 8).clamp(8.0, maxLeft);
+    final top = (anchor.bottom - 11).clamp(8.0, maxTop);
+    final dark = Theme.of(context).brightness == Brightness.dark;
     final action = await showGeneralDialog<_ServerPageAction>(
       context: context,
       barrierDismissible: true,
@@ -242,8 +243,10 @@ class ServersScreen extends ConsumerWidget {
             child: SafeArea(
               child: GlassSurface(
                 radius: 18,
-                blur: app.settings.performanceMode ? 0 : 8,
-                surfaceOpacity: app.settings.performanceMode ? .97 : .90,
+                blur: app.settings.performanceMode ? 0 : (dark ? 8 : 14),
+                surfaceOpacity: app.settings.performanceMode
+                    ? .98
+                    : (dark ? .90 : .82),
                 child: Material(
                   color: Colors.transparent,
                   child: Column(

@@ -119,17 +119,8 @@ class SubscriptionRepository(private val context: Context) {
         if (parseResult.servers.isEmpty()) {
             throw IOException("Subscription contains no usable servers; existing servers were preserved")
         }
-        val manualOrder = prefs.getBoolean(SERVER_ORDER_MANUAL, false)
-        val orderedServers = if (manualOrder) {
-            ServerOrderPolicy.afterRefresh(storedOrder(), snapshot.servers, parseResult.servers)
-        } else {
-            // The subscription remains authoritative when the user never dragged
-            // a card. This also migrates away from the 1.1.3 pre-release bug that
-            // persisted every refresh as though it were a manual order.
-            parseResult.servers
-        }
         val servers = SubscriptionSyncPolicy.resetLatency(
-            SubscriptionSyncPolicy.reconcile(orderedServers),
+            SubscriptionSyncPolicy.reconcile(parseResult.servers),
         )
         if (!parseResult.stats.complete) {
             SafeLog.warning(context, "Subscription contained skipped entries; usable remote profiles replaced the cache")
@@ -142,11 +133,12 @@ class SubscriptionRepository(private val context: Context) {
         )
         persist(updated)
         snapshot = updated
-        if (manualOrder) {
-            persistOrder(updated.servers.map(ServerRecord::id))
-        } else {
-            prefs.edit().remove(SERVER_ORDER).apply()
-        }
+        // A successful subscription refresh is authoritative: both temporary
+        // latency sorting and persisted drag order return to the source order.
+        prefs.edit()
+            .remove(SERVER_ORDER)
+            .remove(SERVER_ORDER_MANUAL)
+            .apply()
         // Delete is intentionally local and temporary. A successful full
         // sync restores every server still present in the subscription.
         prefs.edit().remove(HIDDEN_SERVER_IDS).apply()
