@@ -12,6 +12,7 @@ class GlassSurface extends ConsumerWidget {
     this.padding,
     this.radius = 16,
     this.blur = 11,
+    this.lightBlurLimit = 14,
     this.surfaceOpacity,
   });
 
@@ -19,6 +20,7 @@ class GlassSurface extends ConsumerWidget {
   final EdgeInsetsGeometry? padding;
   final double radius;
   final double blur;
+  final double lightBlurLimit;
   final double? surfaceOpacity;
 
   @override
@@ -67,8 +69,8 @@ class GlassSurface extends ConsumerWidget {
           ? content
           : BackdropFilter(
               filter: ImageFilter.blur(
-                sigmaX: dark ? blur : blur.clamp(0, 14),
-                sigmaY: dark ? blur : blur.clamp(0, 14),
+                sigmaX: dark ? blur : blur.clamp(0, lightBlurLimit),
+                sigmaY: dark ? blur : blur.clamp(0, lightBlurLimit),
               ),
               child: content,
             ),

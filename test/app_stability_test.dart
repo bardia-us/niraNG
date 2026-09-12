@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nirang/core/platform/native_models.dart';
 import 'package:nirang/core/widgets/country_flag_badge.dart';
 import 'package:nirang/core/widgets/glass_dialog.dart';
+import 'package:nirang/core/widgets/glass_surface.dart';
 import 'package:nirang/features/servers/server_sorting.dart';
 import 'package:nirang/features/vpn/app_controller.dart';
 import 'package:nirang/main.dart';
@@ -469,6 +470,12 @@ void main() {
     expect(find.byTooltip('Server page actions'), findsOneWidget);
     await tester.tap(find.byTooltip('Server page actions'));
     await tester.pumpAndSettle();
+    final lightMenu = tester.widget<GlassSurface>(
+      find.byKey(const ValueKey('server-page-actions-surface')),
+    );
+    expect(lightMenu.blur, 26);
+    expect(lightMenu.lightBlurLimit, 28);
+    expect(lightMenu.surfaceOpacity, .66);
     expect(find.text('Sort by test results'), findsOneWidget);
     expect(find.text('Test real delays'), findsOneWidget);
     expect(find.text('Test TCP delays (TCPing)'), findsOneWidget);
@@ -488,6 +495,16 @@ void main() {
     await controller.updateSettings({'performanceMode': true});
     await tester.pumpAndSettle();
     expect(find.byType(BackdropFilter), findsNothing);
+    await tester.tap(find.byTooltip('Server page actions'));
+    await tester.pumpAndSettle();
+    final performanceMenu = tester.widget<GlassSurface>(
+      find.byKey(const ValueKey('server-page-actions-surface')),
+    );
+    expect(performanceMenu.blur, 0);
+    expect(performanceMenu.surfaceOpacity, .98);
+    expect(find.byType(BackdropFilter), findsNothing);
+    await tester.dragFrom(const Offset(20, 430), const Offset(0, -80));
+    await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.more_vert_rounded).first);
     await tester.pumpAndSettle();
     expect(find.text('Server information'), findsOneWidget);

@@ -242,11 +242,13 @@ class ServersScreen extends ConsumerWidget {
             width: menuWidth,
             child: SafeArea(
               child: GlassSurface(
+                key: const ValueKey('server-page-actions-surface'),
                 radius: 18,
-                blur: app.settings.performanceMode ? 0 : (dark ? 8 : 14),
+                blur: app.settings.performanceMode ? 0 : (dark ? 8 : 26),
+                lightBlurLimit: 28,
                 surfaceOpacity: app.settings.performanceMode
                     ? .98
-                    : (dark ? .90 : .82),
+                    : (dark ? .90 : .66),
                 child: Material(
                   color: Colors.transparent,
                   child: Column(
