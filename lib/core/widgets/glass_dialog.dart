@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_theme.dart';
 import 'glass_surface.dart';
 
 class NirangAlertDialog extends StatelessWidget {
@@ -10,7 +11,7 @@ class NirangAlertDialog extends StatelessWidget {
     this.content,
     this.actions = const [],
     this.contentPadding = const EdgeInsets.fromLTRB(22, 14, 22, 8),
-    this.blur = 14,
+    this.blur,
     this.surfaceOpacity,
   });
 
@@ -19,7 +20,7 @@ class NirangAlertDialog extends StatelessWidget {
   final Widget? content;
   final List<Widget> actions;
   final EdgeInsetsGeometry contentPadding;
-  final double blur;
+  final double? blur;
   final double? surfaceOpacity;
 
   @override
@@ -35,6 +36,7 @@ class NirangAlertDialog extends StatelessWidget {
         radius: 22,
         blur: blur,
         surfaceOpacity: surfaceOpacity,
+        style: NirangGlassStyle.dialog,
         child: ConstrainedBox(
           constraints: BoxConstraints(maxWidth: 560, maxHeight: maxHeight),
           child: Column(

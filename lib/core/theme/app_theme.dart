@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 abstract final class AppPalette {
   static const primary = Color(0xFF625BD2);
@@ -82,8 +83,15 @@ abstract final class AppTheme {
       appBarTheme: AppBarTheme(
         centerTitle: false,
         scrolledUnderElevation: 0,
-        backgroundColor: scheme.surface.withValues(alpha: .78),
+        elevation: 0,
+        backgroundColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
+        systemOverlayStyle: SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+          statusBarBrightness: isDark ? Brightness.dark : Brightness.light,
+          systemStatusBarContrastEnforced: false,
+        ),
         titleTextStyle: TextStyle(
           color: scheme.onSurface,
           fontSize: 20,
@@ -127,18 +135,18 @@ abstract final class AppTheme {
         ),
       ),
       dialogTheme: DialogThemeData(
-        elevation: 2,
-        backgroundColor: scheme.surfaceContainerHigh.withValues(
-          alpha: isDark ? .91 : .93,
-        ),
+        elevation: 0,
+        barrierColor: scheme.scrim.withValues(alpha: isDark ? .24 : .06),
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       ),
       bottomSheetTheme: BottomSheetThemeData(
-        elevation: 2,
-        modalBackgroundColor: scheme.surfaceContainer.withValues(
-          alpha: isDark ? .94 : .96,
-        ),
-        modalBarrierColor: scheme.scrim.withValues(alpha: .28),
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        modalBackgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        modalBarrierColor: scheme.scrim.withValues(alpha: isDark ? .24 : .06),
         showDragHandle: true,
         clipBehavior: Clip.antiAlias,
         shape: const RoundedRectangleBorder(
@@ -147,6 +155,91 @@ abstract final class AppTheme {
       ),
     );
   }
+}
+
+enum NirangGlassStyle { surface, chrome, popover, dialog, bottomSheet }
+
+/// Shared glass values. Keeping them here prevents light surfaces from turning
+/// into opaque white panels while individual widgets drift to unrelated blur
+/// and tint values.
+abstract final class NirangGlassTokens {
+  // Light chrome keeps a low tint above the filtered backdrop so the effect is
+  // visible on pale Android surfaces instead of reading as an opaque card.
+  static const lightSurfaceAlpha = .56;
+  static const lightChromeAlpha = .58;
+  static const lightPopoverAlpha = .56;
+  static const lightDialogAlpha = .62;
+  static const lightBottomSheetAlpha = .58;
+  static const lightSurfaceBlur = 12.0;
+  static const lightChromeBlur = 12.0;
+  static const lightPopoverBlur = 14.0;
+  static const lightDialogBlur = 14.0;
+  static const lightBottomSheetBlur = 14.0;
+
+  // Dark values intentionally stay aligned with the existing, approved look.
+  static const darkSurfaceTopAlpha = .72;
+  static const darkSurfaceBottomAlpha = .50;
+  static const darkSurfaceBlur = 9.0;
+  static const darkPopoverAlpha = .90;
+  static const darkPopoverBlur = 7.0;
+  static const darkChromeAlpha = .82;
+  static const darkChromeBlur = 7.0;
+  static const darkDialogAlpha = .80;
+  static const darkDialogBlur = 10.0;
+  static const darkBottomSheetAlpha = .86;
+  static const darkBottomSheetBlur = 9.0;
+
+  static const reducedLightAlpha = 1.0;
+  static const reducedDarkAlpha = 1.0;
+  static const lightBorderAlpha = .46;
+  static const darkBorderAlpha = .48;
+  static const lightShadowAlpha = .07;
+  static const darkShadowAlpha = .18;
+
+  static double blur(ThemeData theme, NirangGlassStyle style) {
+    final dark = theme.brightness == Brightness.dark;
+    if (dark) {
+      return switch (style) {
+        NirangGlassStyle.surface => darkSurfaceBlur,
+        NirangGlassStyle.chrome => darkChromeBlur,
+        NirangGlassStyle.popover => darkPopoverBlur,
+        NirangGlassStyle.dialog => darkDialogBlur,
+        NirangGlassStyle.bottomSheet => darkBottomSheetBlur,
+      };
+    }
+    return switch (style) {
+      NirangGlassStyle.surface => lightSurfaceBlur,
+      NirangGlassStyle.chrome => lightChromeBlur,
+      NirangGlassStyle.popover => lightPopoverBlur,
+      NirangGlassStyle.dialog => lightDialogBlur,
+      NirangGlassStyle.bottomSheet => lightBottomSheetBlur,
+    };
+  }
+
+  static double alpha(ThemeData theme, NirangGlassStyle style) {
+    if (theme.brightness == Brightness.dark) {
+      return switch (style) {
+        NirangGlassStyle.surface => darkSurfaceTopAlpha,
+        NirangGlassStyle.chrome => darkChromeAlpha,
+        NirangGlassStyle.popover => darkPopoverAlpha,
+        NirangGlassStyle.dialog => darkDialogAlpha,
+        NirangGlassStyle.bottomSheet => darkBottomSheetAlpha,
+      };
+    }
+    return switch (style) {
+      NirangGlassStyle.surface => lightSurfaceAlpha,
+      NirangGlassStyle.chrome => lightChromeAlpha,
+      NirangGlassStyle.popover => lightPopoverAlpha,
+      NirangGlassStyle.dialog => lightDialogAlpha,
+      NirangGlassStyle.bottomSheet => lightBottomSheetAlpha,
+    };
+  }
+
+  static double borderAlpha(ThemeData theme) =>
+      theme.brightness == Brightness.dark ? darkBorderAlpha : lightBorderAlpha;
+
+  static double shadowAlpha(ThemeData theme) =>
+      theme.brightness == Brightness.dark ? darkShadowAlpha : lightShadowAlpha;
 }
 
 abstract final class NirangVisualEffects {
@@ -193,21 +286,5 @@ abstract final class NirangVisualEffects {
         stops: const [0, .48, 1],
       ),
     );
-  }
-
-  static double chromeBlur(ThemeData theme, double darkValue) =>
-      theme.brightness == Brightness.dark ? darkValue : 6;
-
-  static Color chromeColor(
-    ThemeData theme, {
-    required bool reducedEffects,
-    required double darkAlpha,
-  }) {
-    final alpha = reducedEffects
-        ? .96
-        : theme.brightness == Brightness.dark
-        ? darkAlpha
-        : .88;
-    return theme.colorScheme.surface.withValues(alpha: alpha);
   }
 }

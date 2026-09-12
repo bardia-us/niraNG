@@ -336,6 +336,43 @@ void main() {
     }
   });
 
+  test('glass recipes stay balanced and route chrome stays transparent', () {
+    expect(NirangGlassTokens.lightSurfaceAlpha, .56);
+    expect(NirangGlassTokens.lightChromeAlpha, .58);
+    expect(NirangGlassTokens.lightPopoverAlpha, .56);
+    expect(NirangGlassTokens.lightDialogAlpha, .62);
+    expect(NirangGlassTokens.lightBottomSheetAlpha, .58);
+    expect(
+      NirangGlassTokens.blur(AppTheme.light, NirangGlassStyle.popover),
+      14,
+    );
+    expect(
+      NirangGlassTokens.blur(AppTheme.light, NirangGlassStyle.bottomSheet),
+      14,
+    );
+    expect(NirangGlassTokens.blur(AppTheme.dark, NirangGlassStyle.popover), 7);
+    expect(NirangGlassTokens.darkPopoverAlpha, .90);
+    expect(NirangGlassTokens.darkChromeAlpha, .82);
+    expect(NirangGlassTokens.darkBottomSheetAlpha, .86);
+    expect(NirangGlassTokens.blur(AppTheme.dark, NirangGlassStyle.chrome), 7);
+    expect(NirangGlassTokens.reducedLightAlpha, 1);
+    expect(NirangGlassTokens.reducedDarkAlpha, 1);
+    expect(AppTheme.light.appBarTheme.backgroundColor, Colors.transparent);
+    expect(
+      AppTheme.light.bottomSheetTheme.modalBackgroundColor,
+      Colors.transparent,
+    );
+    expect(AppTheme.light.dialogTheme.backgroundColor, Colors.transparent);
+    expect(
+      AppTheme.light.appBarTheme.systemOverlayStyle?.statusBarIconBrightness,
+      Brightness.dark,
+    );
+    expect(
+      AppTheme.dark.appBarTheme.systemOverlayStyle?.statusBarIconBrightness,
+      Brightness.light,
+    );
+  });
+
   testWidgets('Persian localization is RTL and translated', (tester) async {
     await tester.pumpWidget(
       MaterialApp(

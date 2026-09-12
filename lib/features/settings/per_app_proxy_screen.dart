@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/platform/native_models.dart';
 import '../../core/platform/nirang_native.dart';
 import '../../core/localization/app_strings.dart';
+import '../../core/theme/app_theme.dart';
 import '../../core/widgets/glass_surface.dart';
 import '../vpn/app_controller.dart';
 import 'per_app_ordering.dart';
@@ -41,6 +42,13 @@ class _PerAppProxyScreenState extends ConsumerState<PerAppProxyScreen> {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
+        flexibleSpace: const GlassSurface(
+          radius: 0,
+          style: NirangGlassStyle.chrome,
+          showShadow: false,
+          showBorder: false,
+          child: SizedBox.expand(),
+        ),
         title: Text(context.s('perAppProxy')),
         actions: [
           TextButton(

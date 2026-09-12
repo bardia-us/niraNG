@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -212,7 +210,6 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
               serverCount: app.servers.length,
               isPinging: app.isPinging,
               isRefreshing: app.isRefreshing,
-              reducedEffects: view.performanceMode,
               onMenu: _openMenu,
             ),
           ),
@@ -235,8 +232,8 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
     final menuWidth = (size.width - 16).clamp(220.0, 292.0).toDouble();
     final maxLeft = (size.width - menuWidth - 8).clamp(8.0, double.infinity);
     final maxTop = (size.height - 360).clamp(8.0, double.infinity);
-    final left = (anchor.right - menuWidth + 8).clamp(8.0, maxLeft);
-    final top = (anchor.bottom - 11).clamp(8.0, maxTop);
+    final left = (anchor.right - menuWidth).clamp(8.0, maxLeft);
+    final top = (anchor.bottom + 5).clamp(8.0, maxTop);
     return _ServerPageActionsPopover(
       left: left,
       top: top,
@@ -277,14 +274,20 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
   ) async {
     final action = await showModalBottomSheet<String>(
       context: context,
+      useSafeArea: true,
       showDragHandle: false,
+      elevation: 0,
       backgroundColor: Colors.transparent,
-      barrierColor: Theme.of(context).colorScheme.scrim.withValues(alpha: .32),
-      builder: (sheetContext) => SafeArea(
-        minimum: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+      clipBehavior: Clip.none,
+      barrierColor: Theme.of(context).colorScheme.scrim.withValues(
+        alpha: Theme.of(context).brightness == Brightness.dark ? .24 : .06,
+      ),
+      builder: (sheetContext) => Padding(
+        padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
         child: GlassSurface(
+          key: const ValueKey('server-actions-bottom-sheet-surface'),
           radius: 22,
-          blur: 16,
+          style: NirangGlassStyle.bottomSheet,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(8, 8, 8, 10),
             child: Column(
@@ -436,7 +439,6 @@ class _ServersGlassHeader extends StatefulWidget {
     required this.serverCount,
     required this.isPinging,
     required this.isRefreshing,
-    required this.reducedEffects,
     required this.onMenu,
   });
 
@@ -444,7 +446,6 @@ class _ServersGlassHeader extends StatefulWidget {
   final int serverCount;
   final bool isPinging;
   final bool isRefreshing;
-  final bool reducedEffects;
   final ValueChanged<Rect> onMenu;
 
   @override
@@ -463,22 +464,9 @@ class _ServersGlassHeaderState extends State<_ServersGlassHeader> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final dark = theme.brightness == Brightness.dark;
-    final content = DecoratedBox(
-      decoration: BoxDecoration(
-        color: scheme.surface.withValues(
-          alpha: widget.reducedEffects
-              ? .96
-              : dark
-              ? .70
-              : .88,
-        ),
-        border: Border.all(
-          color: scheme.outlineVariant.withValues(alpha: dark ? .48 : .62),
-        ),
-        borderRadius: BorderRadius.circular(16),
-      ),
+    return GlassSurface(
+      radius: 16,
+      style: NirangGlassStyle.chrome,
       child: SizedBox(
         height: widget.height,
         child: Padding(
@@ -506,18 +494,6 @@ class _ServersGlassHeaderState extends State<_ServersGlassHeader> {
           ),
         ),
       ),
-    );
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
-      child: widget.reducedEffects
-          ? content
-          : BackdropFilter(
-              filter: ImageFilter.blur(
-                sigmaX: dark ? 10 : 6,
-                sigmaY: dark ? 10 : 6,
-              ),
-              child: content,
-            ),
     );
   }
 }
@@ -570,7 +546,6 @@ class _ServerPageActionsPopoverState extends State<_ServerPageActionsPopover>
 
   @override
   Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
     final curved = CurvedAnimation(
       parent: _animation,
       curve: Curves.easeOutCubic,
@@ -589,23 +564,17 @@ class _ServerPageActionsPopoverState extends State<_ServerPageActionsPopover>
           top: widget.top,
           width: widget.width,
           child: SafeArea(
-            child: FadeTransition(
-              opacity: curved,
-              child: ScaleTransition(
-                scale: Tween<double>(begin: .96, end: 1).animate(curved),
-                alignment: Alignment.topRight,
-                child: GlassSurface(
-                  key: const ValueKey('server-page-actions-surface'),
-                  radius: 18,
-                  blur: widget.app.settings.performanceMode
-                      ? 0
-                      : (dark ? 8 : 26),
-                  lightBlurLimit: 28,
-                  surfaceOpacity: widget.app.settings.performanceMode
-                      ? .98
-                      : (dark ? .90 : .66),
+            child: GlassSurface(
+              key: const ValueKey('server-page-actions-surface'),
+              radius: 18,
+              style: NirangGlassStyle.popover,
+              child: FadeTransition(
+                opacity: curved,
+                child: ScaleTransition(
+                  scale: Tween<double>(begin: .96, end: 1).animate(curved),
+                  alignment: Alignment.topRight,
                   child: Material(
-                    color: Colors.transparent,
+                    type: MaterialType.transparency,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [

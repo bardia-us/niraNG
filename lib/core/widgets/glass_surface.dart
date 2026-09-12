@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/vpn/app_controller.dart';
+import '../theme/app_theme.dart';
 
 class GlassSurface extends ConsumerWidget {
   const GlassSurface({
@@ -11,69 +12,119 @@ class GlassSurface extends ConsumerWidget {
     super.key,
     this.padding,
     this.radius = 16,
-    this.blur = 11,
-    this.lightBlurLimit = 14,
+    this.blur,
+    this.lightBlurLimit = 32,
     this.surfaceOpacity,
+    this.style = NirangGlassStyle.surface,
+    this.showShadow = true,
+    this.showBorder = true,
   });
 
   final Widget child;
   final EdgeInsetsGeometry? padding;
   final double radius;
-  final double blur;
+  final double? blur;
   final double lightBlurLimit;
   final double? surfaceOpacity;
+  final NirangGlassStyle style;
+  final bool showShadow;
+  final bool showBorder;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final scheme = Theme.of(context).colorScheme;
-    final dark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final dark = theme.brightness == Brightness.dark;
     final reducedEffects = ref.watch(performanceModeProvider);
-    final lightTop = scheme.surface.withValues(alpha: .84);
-    final lightBottom = Color.alphaBlend(
-      scheme.primaryContainer.withValues(alpha: .065),
+    final effectiveBlur = blur ?? NirangGlassTokens.blur(theme, style);
+    final tintStrength = switch (style) {
+      NirangGlassStyle.chrome => dark ? .025 : .030,
+      NirangGlassStyle.popover => dark ? .030 : .035,
+      NirangGlassStyle.dialog => dark ? .035 : .040,
+      NirangGlassStyle.bottomSheet => dark ? .035 : .040,
+      NirangGlassStyle.surface => dark ? .025 : .030,
+    };
+    final base = Color.alphaBlend(
+      scheme.primaryContainer.withValues(alpha: tintStrength),
       scheme.surface,
-    ).withValues(alpha: .80);
-    final overriddenSurface = surfaceOpacity == null
-        ? null
-        : Color.alphaBlend(
-            scheme.primaryContainer.withValues(alpha: dark ? .035 : .025),
-            scheme.surface,
-          ).withValues(alpha: surfaceOpacity!.clamp(0, 1));
+    );
+    final glassColor = base.withValues(
+      alpha: reducedEffects
+          ? (dark
+                ? NirangGlassTokens.reducedDarkAlpha
+                : NirangGlassTokens.reducedLightAlpha)
+          : surfaceOpacity?.clamp(0, 1) ??
+                NirangGlassTokens.alpha(theme, style),
+    );
+    final preserveDarkGradient =
+        dark &&
+        !reducedEffects &&
+        surfaceOpacity == null &&
+        style == NirangGlassStyle.surface;
     final content = DecoratedBox(
       decoration: BoxDecoration(
-        gradient: reducedEffects || overriddenSurface != null
-            ? null
-            : LinearGradient(
+        color: preserveDarkGradient ? null : glassColor,
+        gradient: preserveDarkGradient
+            ? LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  dark ? scheme.surface.withValues(alpha: .66) : lightTop,
-                  dark
-                      ? scheme.primaryContainer.withValues(alpha: .38)
-                      : lightBottom,
+                  scheme.surface.withValues(
+                    alpha: NirangGlassTokens.darkSurfaceTopAlpha,
+                  ),
+                  scheme.primaryContainer.withValues(
+                    alpha: NirangGlassTokens.darkSurfaceBottomAlpha,
+                  ),
                 ],
-              ),
-        color:
-            overriddenSurface ??
-            (reducedEffects
-                ? scheme.surfaceContainerLow.withValues(alpha: dark ? .94 : .97)
-                : null),
-        border: Border.all(color: scheme.outlineVariant.withValues(alpha: .48)),
+              )
+            : null,
+        border: showBorder
+            ? Border.all(
+                color: (dark ? scheme.outlineVariant : Colors.white).withValues(
+                  alpha: NirangGlassTokens.borderAlpha(theme),
+                ),
+              )
+            : null,
         borderRadius: BorderRadius.circular(radius),
       ),
       child: Padding(padding: padding ?? EdgeInsets.zero, child: child),
     );
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(radius),
-      child: reducedEffects
-          ? content
-          : BackdropFilter(
-              filter: ImageFilter.blur(
-                sigmaX: dark ? blur : blur.clamp(0, lightBlurLimit),
-                sigmaY: dark ? blur : blur.clamp(0, lightBlurLimit),
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(radius),
+        boxShadow: reducedEffects || !showShadow
+            ? null
+            : [
+                BoxShadow(
+                  color: scheme.shadow.withValues(
+                    alpha: NirangGlassTokens.shadowAlpha(theme),
+                  ),
+                  blurRadius: switch (style) {
+                    NirangGlassStyle.popover => 18,
+                    NirangGlassStyle.dialog => 20,
+                    NirangGlassStyle.bottomSheet => 18,
+                    _ => 16,
+                  },
+                  offset: const Offset(0, 6),
+                ),
+              ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(radius),
+        child: reducedEffects
+            ? content
+            : BackdropFilter(
+                filter: ImageFilter.blur(
+                  sigmaX: dark
+                      ? effectiveBlur
+                      : effectiveBlur.clamp(0, lightBlurLimit),
+                  sigmaY: dark
+                      ? effectiveBlur
+                      : effectiveBlur.clamp(0, lightBlurLimit),
+                ),
+                child: content,
               ),
-              child: content,
-            ),
+      ),
     );
   }
 }

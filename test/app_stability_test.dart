@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nirang/core/platform/native_models.dart';
+import 'package:nirang/core/theme/app_theme.dart';
 import 'package:nirang/core/widgets/country_flag_badge.dart';
 import 'package:nirang/core/widgets/glass_dialog.dart';
 import 'package:nirang/core/widgets/glass_surface.dart';
@@ -470,9 +471,65 @@ void main() {
     expect(find.text('Test all'), findsNothing);
     expect(find.byTooltip('Server page actions'), findsOneWidget);
     await tester.tap(find.byTooltip('Server page actions'));
+    await tester.pump();
+    final menuFinder = find.byKey(
+      const ValueKey('server-page-actions-surface'),
+    );
+
+    void expectStableGlassPipeline() {
+      final menu = tester.widget<GlassSurface>(menuFinder);
+      expect(menu.style, NirangGlassStyle.popover);
+      expect(menu.blur, isNull);
+      expect(menu.surfaceOpacity, isNull);
+      expect(
+        find.ancestor(of: menuFinder, matching: find.byType(FadeTransition)),
+        findsNothing,
+      );
+      expect(
+        find.ancestor(of: menuFinder, matching: find.byType(ScaleTransition)),
+        findsNothing,
+      );
+    }
+
+    expectStableGlassPipeline(); // Opening frame.
+    await tester.pump(const Duration(milliseconds: 85));
+    expectStableGlassPipeline(); // Mid-animation frame.
     await tester.pumpAndSettle();
-    final lightMenu = tester.widget<GlassSurface>(
-      find.byKey(const ValueKey('server-page-actions-surface')),
+    expectStableGlassPipeline(); // Fully settled frame.
+    final lightMenu = tester.widget<GlassSurface>(menuFinder);
+    expect(
+      find.ancestor(
+        of: find.byKey(const ValueKey('server-page-actions-surface')),
+        matching: find.byType(FadeTransition),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.ancestor(
+        of: find.byKey(const ValueKey('server-page-actions-surface')),
+        matching: find.byType(ScaleTransition),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('server-page-actions-surface')),
+        matching: find.byType(FadeTransition),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('server-page-actions-surface')),
+        matching: find.byType(ScaleTransition),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widgetList<GlassSurface>(find.byType(GlassSurface))
+          .any((surface) => surface.style == NirangGlassStyle.chrome),
+      isTrue,
     );
     expect(
       find.ancestor(
@@ -481,9 +538,13 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(lightMenu.blur, 26);
-    expect(lightMenu.lightBlurLimit, 28);
-    expect(lightMenu.surfaceOpacity, .66);
+    expect(lightMenu.style, NirangGlassStyle.popover);
+    expect(lightMenu.blur, isNull);
+    expect(lightMenu.surfaceOpacity, isNull);
+    expect(
+      NirangGlassTokens.blur(AppTheme.light, lightMenu.style),
+      NirangGlassTokens.lightPopoverBlur,
+    );
     expect(find.text('Sort by test results'), findsOneWidget);
     expect(find.text('Test real delays'), findsOneWidget);
     expect(find.text('Test TCP delays (TCPing)'), findsOneWidget);
@@ -500,6 +561,26 @@ void main() {
     await tester.pumpAndSettle();
     expect(controller.pingAllRequests, 1);
 
+    await tester.tap(find.byIcon(Icons.more_vert_rounded).first);
+    await tester.pumpAndSettle();
+    final bottomSheetFinder = find.byKey(
+      const ValueKey('server-actions-bottom-sheet-surface'),
+    );
+    expect(bottomSheetFinder, findsOneWidget);
+    expect(
+      tester.widget<GlassSurface>(bottomSheetFinder).style,
+      NirangGlassStyle.bottomSheet,
+    );
+    expect(
+      find.descendant(
+        of: bottomSheetFinder,
+        matching: find.byType(BackdropFilter),
+      ),
+      findsOneWidget,
+    );
+    await tester.tapAt(const Offset(8, 120));
+    await tester.pumpAndSettle();
+
     await controller.updateSettings({'performanceMode': true});
     await tester.pumpAndSettle();
     expect(find.byType(BackdropFilter), findsNothing);
@@ -508,8 +589,9 @@ void main() {
     final performanceMenu = tester.widget<GlassSurface>(
       find.byKey(const ValueKey('server-page-actions-surface')),
     );
-    expect(performanceMenu.blur, 0);
-    expect(performanceMenu.surfaceOpacity, .98);
+    expect(performanceMenu.style, NirangGlassStyle.popover);
+    expect(performanceMenu.blur, isNull);
+    expect(performanceMenu.surfaceOpacity, isNull);
     expect(find.byType(BackdropFilter), findsNothing);
     await tester.dragFrom(const Offset(20, 430), const Offset(0, -80));
     await tester.pumpAndSettle();
@@ -778,6 +860,9 @@ void main() {
 
     final dialog = find.byType(NirangAlertDialog);
     expect(dialog, findsOneWidget);
+    final fragmentDialog = tester.widget<NirangAlertDialog>(dialog);
+    expect(fragmentDialog.blur, isNull);
+    expect(fragmentDialog.surfaceOpacity, isNull);
     expect(
       find.descendant(of: dialog, matching: find.byType(SingleChildScrollView)),
       findsOneWidget,

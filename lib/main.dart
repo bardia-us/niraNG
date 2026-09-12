@@ -112,6 +112,7 @@ class NirangApp extends ConsumerWidget {
             statusBarColor: Colors.transparent,
             statusBarIconBrightness: dark ? Brightness.light : Brightness.dark,
             statusBarBrightness: dark ? Brightness.dark : Brightness.light,
+            systemStatusBarContrastEnforced: false,
             systemNavigationBarColor: theme.colorScheme.surface,
             systemNavigationBarDividerColor: theme.colorScheme.outlineVariant,
             systemNavigationBarIconBrightness: dark

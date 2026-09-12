@@ -1087,29 +1087,41 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-  void _showAbout(
+  Future<void> _showAbout(
     BuildContext context,
     String coreVersion,
     String appVersion,
-  ) => showAboutDialog(
+  ) => showDialog<void>(
     context: context,
-    applicationName: 'niraNG',
-    applicationVersion: appVersion,
-    applicationIcon: ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: Image.asset(
-        'assets/branding/nirang-logo-concept.png',
-        width: 54,
-        height: 54,
-        cacheWidth: 108,
-        cacheHeight: 108,
+    builder: (dialogContext) => NirangAlertDialog(
+      icon: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Image.asset(
+          'assets/branding/nirang-logo-concept.png',
+          width: 54,
+          height: 54,
+          cacheWidth: 108,
+          cacheHeight: 108,
+        ),
       ),
+      title: const Text('niraNG'),
+      content: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(appVersion),
+          const SizedBox(height: 8),
+          Text('${context.s('coreVersion')}: $coreVersion'),
+          Text('${context.s('packageName')}: dev.nirang.client'),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext),
+          child: Text(MaterialLocalizations.of(context).closeButtonLabel),
+        ),
+      ],
     ),
-    children: [
-      const SizedBox(height: 8),
-      Text('${context.s('coreVersion')}: $coreVersion'),
-      Text('${context.s('packageName')}: dev.nirang.client'),
-    ],
   );
 }
 
@@ -1241,8 +1253,6 @@ class _FragmentDialogState extends State<_FragmentDialog> {
 
   @override
   Widget build(BuildContext context) => NirangAlertDialog(
-    blur: 4,
-    surfaceOpacity: .96,
     title: Text(context.s('fragmentSettings')),
     content: Form(
       key: _formKey,

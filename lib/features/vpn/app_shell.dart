@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,6 +10,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/update_checker.dart';
 import '../../core/registration/device_registration.dart';
 import '../../core/widgets/glass_dialog.dart';
+import '../../core/widgets/glass_surface.dart';
 import '../../core/widgets/update_dialog.dart';
 import '../servers/servers_screen.dart';
 import '../settings/settings_screen.dart';
@@ -141,11 +141,7 @@ class _AppShellState extends ConsumerState<AppShell> {
     final theme = Theme.of(context);
     final reducedEffects = shellState.performanceMode;
     final navigationBar = NavigationBar(
-      backgroundColor: NirangVisualEffects.chromeColor(
-        theme,
-        reducedEffects: reducedEffects,
-        darkAlpha: .68,
-      ),
+      backgroundColor: Colors.transparent,
       selectedIndex: _index,
       onDestinationSelected: (value) {
         NirangDiagnostics.currentFeature = const [
@@ -181,22 +177,14 @@ class _AppShellState extends ConsumerState<AppShell> {
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
-          backgroundColor: NirangVisualEffects.chromeColor(
-            theme,
-            reducedEffects: reducedEffects,
-            darkAlpha: .58,
+          backgroundColor: Colors.transparent,
+          flexibleSpace: const GlassSurface(
+            radius: 0,
+            style: NirangGlassStyle.chrome,
+            showShadow: false,
+            showBorder: false,
+            child: SizedBox.expand(),
           ),
-          flexibleSpace: reducedEffects
-              ? null
-              : ClipRect(
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(
-                      sigmaX: NirangVisualEffects.chromeBlur(theme, 12),
-                      sigmaY: NirangVisualEffects.chromeBlur(theme, 12),
-                    ),
-                    child: const SizedBox.expand(),
-                  ),
-                ),
           title: Row(
             children: [
               ClipRRect(
@@ -220,17 +208,13 @@ class _AppShellState extends ConsumerState<AppShell> {
             const _TransientStatusBanner(),
           ],
         ),
-        bottomNavigationBar: reducedEffects
-            ? navigationBar
-            : ClipRect(
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(
-                    sigmaX: NirangVisualEffects.chromeBlur(theme, 14),
-                    sigmaY: NirangVisualEffects.chromeBlur(theme, 14),
-                  ),
-                  child: navigationBar,
-                ),
-              ),
+        bottomNavigationBar: GlassSurface(
+          radius: 0,
+          style: NirangGlassStyle.chrome,
+          showShadow: false,
+          showBorder: false,
+          child: navigationBar,
+        ),
       ),
     );
   }

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/formatters.dart';
 import '../../core/localization/app_strings.dart';
 import '../../core/widgets/glass_dialog.dart';
+import '../../core/widgets/glass_surface.dart';
 import '../../core/platform/native_models.dart';
 import '../../core/theme/app_theme.dart';
 import '../vpn/app_controller.dart';
@@ -58,6 +59,13 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
     });
     return Scaffold(
       appBar: AppBar(
+        flexibleSpace: const GlassSurface(
+          radius: 0,
+          style: NirangGlassStyle.chrome,
+          showShadow: false,
+          showBorder: false,
+          child: SizedBox.expand(),
+        ),
         title: Text(context.s('logs')),
         actions: [
           IconButton(
