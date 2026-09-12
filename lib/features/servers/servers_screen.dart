@@ -220,89 +220,23 @@ class ServersScreen extends ConsumerWidget {
     final maxTop = (size.height - 360).clamp(8.0, double.infinity);
     final left = (anchor.right - menuWidth + 8).clamp(8.0, maxLeft);
     final top = (anchor.bottom - 11).clamp(8.0, maxTop);
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final action = await showGeneralDialog<_ServerPageAction>(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
-      barrierColor: Colors.transparent,
-      transitionDuration: const Duration(milliseconds: 170),
-      pageBuilder: (dialogContext, _, _) => Stack(
-        children: [
-          Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onTap: () => Navigator.pop(dialogContext),
-              onPanStart: (_) => Navigator.pop(dialogContext),
-            ),
-          ),
-          Positioned(
-            left: left,
-            top: top,
-            width: menuWidth,
-            child: SafeArea(
-              child: GlassSurface(
-                key: const ValueKey('server-page-actions-surface'),
-                radius: 18,
-                blur: app.settings.performanceMode ? 0 : (dark ? 8 : 26),
-                lightBlurLimit: 28,
-                surfaceOpacity: app.settings.performanceMode
-                    ? .98
-                    : (dark ? .90 : .66),
-                child: Material(
-                  color: Colors.transparent,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _ServerMenuTile(
-                        icon: Icons.restart_alt_rounded,
-                        label: dialogContext.s('restartService'),
-                        enabled: app.connection.isConnected,
-                        action: _ServerPageAction.restart,
-                      ),
-                      _ServerMenuTile(
-                        icon: Icons.sort_rounded,
-                        label: dialogContext.s('sortByTestResults'),
-                        enabled: app.servers.isNotEmpty,
-                        action: _ServerPageAction.sort,
-                      ),
-                      _ServerMenuTile(
-                        icon: Icons.cable_rounded,
-                        label: dialogContext.s('testTcpDelays'),
-                        enabled: app.servers.isNotEmpty && !app.isPinging,
-                        action: _ServerPageAction.tcpDelay,
-                      ),
-                      _ServerMenuTile(
-                        icon: Icons.network_ping_rounded,
-                        label: dialogContext.s('testRealDelays'),
-                        enabled: app.servers.isNotEmpty && !app.isPinging,
-                        action: _ServerPageAction.realDelay,
-                      ),
-                      _ServerMenuTile(
-                        icon: Icons.sync_rounded,
-                        label: dialogContext.s('refresh'),
-                        enabled: !app.isRefreshing,
-                        action: _ServerPageAction.refresh,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-      transitionBuilder: (context, animation, _, child) => FadeTransition(
-        opacity: CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
-        child: ScaleTransition(
-          scale: Tween<double>(begin: .94, end: 1).animate(
-            CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
-          ),
-          alignment: Alignment.topRight,
-          child: child,
-        ),
+    final overlay = Overlay.of(context);
+    final completed = Completer<_ServerPageAction?>();
+    late final OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (_) => _ServerPageActionsPopover(
+        left: left,
+        top: top,
+        width: menuWidth,
+        app: app,
+        onClosed: (action) {
+          entry.remove();
+          if (!completed.isCompleted) completed.complete(action);
+        },
       ),
     );
+    overlay.insert(entry);
+    final action = await completed.future;
     if (!context.mounted || action == null) return;
     switch (action) {
       case _ServerPageAction.restart:
@@ -570,6 +504,140 @@ class _ServersGlassHeaderState extends State<_ServersGlassHeader> {
   }
 }
 
+class _ServerPageActionsPopover extends StatefulWidget {
+  const _ServerPageActionsPopover({
+    required this.left,
+    required this.top,
+    required this.width,
+    required this.app,
+    required this.onClosed,
+  });
+
+  final double left;
+  final double top;
+  final double width;
+  final AppSnapshot app;
+  final ValueChanged<_ServerPageAction?> onClosed;
+
+  @override
+  State<_ServerPageActionsPopover> createState() =>
+      _ServerPageActionsPopoverState();
+}
+
+class _ServerPageActionsPopoverState extends State<_ServerPageActionsPopover>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _animation = AnimationController(
+    vsync: this,
+    duration: Duration(
+      milliseconds: widget.app.settings.performanceMode ? 90 : 170,
+    ),
+    reverseDuration: Duration(
+      milliseconds: widget.app.settings.performanceMode ? 70 : 120,
+    ),
+  )..forward();
+  bool _closing = false;
+
+  Future<void> _close([_ServerPageAction? action]) async {
+    if (_closing) return;
+    _closing = true;
+    await _animation.reverse();
+    widget.onClosed(action);
+  }
+
+  @override
+  void dispose() {
+    _animation.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final curved = CurvedAnimation(
+      parent: _animation,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: Listener(
+            behavior: HitTestBehavior.opaque,
+            onPointerDown: (_) => _close(),
+          ),
+        ),
+        Positioned(
+          left: widget.left,
+          top: widget.top,
+          width: widget.width,
+          child: SafeArea(
+            child: FadeTransition(
+              opacity: curved,
+              child: ScaleTransition(
+                scale: Tween<double>(begin: .96, end: 1).animate(curved),
+                alignment: Alignment.topRight,
+                child: GlassSurface(
+                  key: const ValueKey('server-page-actions-surface'),
+                  radius: 18,
+                  blur: widget.app.settings.performanceMode
+                      ? 0
+                      : (dark ? 8 : 26),
+                  lightBlurLimit: 28,
+                  surfaceOpacity: widget.app.settings.performanceMode
+                      ? .98
+                      : (dark ? .90 : .66),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _ServerMenuTile(
+                          icon: Icons.restart_alt_rounded,
+                          label: context.s('restartService'),
+                          enabled: widget.app.connection.isConnected,
+                          onTap: () => _close(_ServerPageAction.restart),
+                        ),
+                        _ServerMenuTile(
+                          icon: Icons.sort_rounded,
+                          label: context.s('sortByTestResults'),
+                          enabled: widget.app.servers.isNotEmpty,
+                          onTap: () => _close(_ServerPageAction.sort),
+                        ),
+                        _ServerMenuTile(
+                          icon: Icons.cable_rounded,
+                          label: context.s('testTcpDelays'),
+                          enabled:
+                              widget.app.servers.isNotEmpty &&
+                              !widget.app.isPinging,
+                          onTap: () => _close(_ServerPageAction.tcpDelay),
+                        ),
+                        _ServerMenuTile(
+                          icon: Icons.network_ping_rounded,
+                          label: context.s('testRealDelays'),
+                          enabled:
+                              widget.app.servers.isNotEmpty &&
+                              !widget.app.isPinging,
+                          onTap: () => _close(_ServerPageAction.realDelay),
+                        ),
+                        _ServerMenuTile(
+                          icon: Icons.sync_rounded,
+                          label: context.s('refresh'),
+                          enabled: !widget.app.isRefreshing,
+                          onTap: () => _close(_ServerPageAction.refresh),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 enum _ServerPageAction { restart, sort, realDelay, tcpDelay, refresh }
 
 class _ServerMenuTile extends StatelessWidget {
@@ -577,13 +645,13 @@ class _ServerMenuTile extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.enabled,
-    required this.action,
+    required this.onTap,
   });
 
   final IconData icon;
   final String label;
   final bool enabled;
-  final _ServerPageAction action;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) => ListTile(
@@ -592,7 +660,7 @@ class _ServerMenuTile extends StatelessWidget {
     leading: Icon(icon, size: 20),
     title: Text(label),
     enabled: enabled,
-    onTap: enabled ? () => Navigator.pop(context, action) : null,
+    onTap: enabled ? onTap : null,
   );
 }
 
