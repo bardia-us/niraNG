@@ -135,9 +135,7 @@ abstract final class AppTheme {
       ),
       dialogTheme: DialogThemeData(
         elevation: 0,
-        barrierColor: isDark
-            ? Colors.transparent
-            : scheme.scrim.withValues(alpha: .07),
+        barrierColor: scheme.scrim.withValues(alpha: isDark ? .16 : .07),
         backgroundColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),

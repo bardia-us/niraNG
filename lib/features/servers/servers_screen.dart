@@ -10,6 +10,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/widgets/country_flag_badge.dart';
 import '../../core/widgets/glass_surface.dart';
 import '../../core/widgets/glass_dialog.dart';
+import '../../core/widgets/snapshot_glass.dart';
 import '../vpn/app_controller.dart';
 import 'server_information_screen.dart';
 
@@ -21,14 +22,145 @@ class ServersScreen extends ConsumerStatefulWidget {
 }
 
 class _ServersScreenState extends ConsumerState<ServersScreen> {
+  final GlobalKey _backdropKey = GlobalKey();
+  final GlobalKey _headerBackdropKey = GlobalKey();
   Rect? _menuAnchor;
   ServerInfo? _serverActionsTarget;
+  GlassSnapshot? _menuBackdrop;
+  GlassSnapshot? _headerBackdrop;
+  bool _headerCaptureScheduled = false;
+  int? _headerBackdropSignature;
+  int? _headerRequestedSignature;
+  int _headerScrollRevision = 0;
+  int _headerDataSignature = 0;
+  Timer? _headerScrollThrottle;
 
   void _openMenu(Rect globalAnchor) {
+    unawaited(_showMenu(globalAnchor));
+  }
+
+  Future<void> _showMenu(Rect globalAnchor) async {
     final box = context.findRenderObject() as RenderBox?;
     if (box == null) return;
     final origin = box.localToGlobal(Offset.zero);
+    await _captureBackdrop();
+    if (!mounted) return;
     setState(() => _menuAnchor = globalAnchor.shift(-origin));
+  }
+
+  Future<void> _captureBackdrop() async {
+    if (Theme.of(context).brightness != Brightness.dark ||
+        ref.read(performanceModeProvider)) {
+      _releaseBackdrop();
+      return;
+    }
+    try {
+      final snapshot = await GlassSnapshotRenderer.capture(
+        boundaryKey: _backdropKey,
+        background: Theme.of(context).scaffoldBackgroundColor,
+      );
+      if (snapshot == null) return;
+      if (!mounted) {
+        snapshot.dispose();
+        return;
+      }
+      final old = _menuBackdrop;
+      _menuBackdrop = snapshot;
+      old?.dispose();
+    } catch (_) {}
+  }
+
+  void _scheduleHeaderBackdrop({required int signature, bool force = false}) {
+    _headerRequestedSignature = signature;
+    if (!force && _headerBackdropSignature == signature) return;
+    if (_headerCaptureScheduled) return;
+    _headerCaptureScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted ||
+          Theme.of(context).brightness != Brightness.dark ||
+          ref.read(performanceModeProvider)) {
+        _headerCaptureScheduled = false;
+        return;
+      }
+      final requestedSignature = _headerRequestedSignature;
+      try {
+        final snapshot = await GlassSnapshotRenderer.capture(
+          boundaryKey: _headerBackdropKey,
+          background: Theme.of(context).scaffoldBackgroundColor,
+        );
+        if (snapshot == null) {
+          _headerCaptureScheduled = false;
+          return;
+        }
+        if (!mounted) {
+          snapshot.dispose();
+          return;
+        }
+        if (requestedSignature != _headerRequestedSignature) {
+          snapshot.dispose();
+          _headerCaptureScheduled = false;
+          final latest = _headerRequestedSignature;
+          if (latest != null) {
+            _scheduleHeaderBackdrop(signature: latest, force: true);
+          }
+          return;
+        }
+        final old = _headerBackdrop;
+        _headerCaptureScheduled = false;
+        setState(() {
+          _headerBackdrop = snapshot;
+          _headerBackdropSignature = requestedSignature;
+        });
+        old?.dispose();
+      } catch (_) {
+        _headerCaptureScheduled = false;
+      }
+    });
+  }
+
+  void _clearHeaderBackdrop() {
+    _headerRequestedSignature = null;
+    _headerBackdropSignature = null;
+    final old = _headerBackdrop;
+    _headerBackdrop = null;
+    old?.dispose();
+  }
+
+  void _releaseBackdrop() {
+    final old = _menuBackdrop;
+    _menuBackdrop = null;
+    old?.dispose();
+  }
+
+  bool _handleHeaderScroll(ScrollNotification notification) {
+    if (notification is ScrollEndNotification) {
+      _headerScrollThrottle?.cancel();
+      _headerScrollThrottle = null;
+      _refreshHeaderBackdrop();
+    } else if (notification is ScrollUpdateNotification &&
+        _headerScrollThrottle == null) {
+      _headerScrollThrottle = Timer(const Duration(milliseconds: 125), () {
+        _headerScrollThrottle = null;
+        if (mounted) _refreshHeaderBackdrop();
+      });
+    }
+    return false;
+  }
+
+  void _refreshHeaderBackdrop() {
+    _headerScrollRevision++;
+    _scheduleHeaderBackdrop(
+      signature: Object.hash(_headerDataSignature, _headerScrollRevision),
+      force: true,
+    );
+  }
+
+  @override
+  void dispose() {
+    _headerScrollThrottle?.cancel();
+    _releaseBackdrop();
+    _clearHeaderBackdrop();
+    super.dispose();
   }
 
   @override
@@ -56,204 +188,255 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
     );
     final controller = ref.read(appControllerProvider.notifier);
     const headerHeight = 64.0;
-    return LayoutBuilder(
-      builder: (context, constraints) => Stack(
-        children: [
-          Positioned.fill(
-            child: ColoredBox(
-              color: Theme.of(context).scaffoldBackgroundColor,
-              child: app.servers.isEmpty
-                  ? Padding(
-                      padding: const EdgeInsets.only(top: headerHeight + 10),
-                      child: _EmptyServers(app: app),
-                    )
-                  : ReorderableListView.builder(
-                      cacheExtent: 360,
-                      buildDefaultDragHandles: false,
-                      itemCount: app.servers.length,
-                      padding: const EdgeInsets.fromLTRB(
-                        8,
-                        headerHeight + 16,
-                        8,
-                        16,
-                      ),
-                      onReorder: (oldIndex, newIndex) {
-                        unawaited(
-                          _perform(
-                            context,
-                            () => controller.reorderServers(oldIndex, newIndex),
-                          ),
-                        );
-                      },
-                      proxyDecorator: (child, _, animation) =>
-                          view.performanceMode
-                          ? child
-                          : AnimatedBuilder(
-                              animation: animation,
-                              builder: (context, _) {
-                                final pressed = Curves.easeOutCubic.transform(
-                                  animation.value,
-                                );
-                                return Transform.translate(
-                                  offset: Offset(0, pressed * 2),
-                                  child: Transform.scale(
-                                    scale: 1 - (pressed * .015),
-                                    child: child,
+    final darkSnapshotEnabled =
+        Theme.of(context).brightness == Brightness.dark &&
+        !view.performanceMode;
+    _headerDataSignature = Object.hashAll([
+      Theme.of(context).brightness,
+      view.performanceMode,
+      view.isPinging,
+      view.isRefreshing,
+      MediaQuery.sizeOf(context),
+      MediaQuery.devicePixelRatioOf(context),
+      for (final server in app.servers)
+        Object.hash(
+          server.id,
+          server.name,
+          server.country,
+          server.protocol,
+          server.transport,
+          server.selected,
+          server.ping,
+          server.status,
+        ),
+    ]);
+    if (darkSnapshotEnabled) {
+      _scheduleHeaderBackdrop(
+        signature: Object.hash(_headerDataSignature, _headerScrollRevision),
+      );
+    } else if (_headerBackdrop != null) {
+      _clearHeaderBackdrop();
+    }
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: RepaintBoundary(
+            key: _backdropKey,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: RepaintBoundary(
+                    key: _headerBackdropKey,
+                    child: NotificationListener<ScrollNotification>(
+                      onNotification: _handleHeaderScroll,
+                      child: app.servers.isEmpty
+                          ? Padding(
+                              padding: const EdgeInsets.only(
+                                top: headerHeight + 10,
+                              ),
+                              child: _EmptyServers(app: app),
+                            )
+                          : ReorderableListView.builder(
+                              cacheExtent: 360,
+                              buildDefaultDragHandles: false,
+                              itemCount: app.servers.length,
+                              padding: const EdgeInsets.fromLTRB(
+                                8,
+                                headerHeight + 16,
+                                8,
+                                16,
+                              ),
+                              onReorder: (oldIndex, newIndex) {
+                                unawaited(
+                                  _perform(
+                                    context,
+                                    () => controller.reorderServers(
+                                      oldIndex,
+                                      newIndex,
+                                    ),
                                   ),
                                 );
                               },
-                            ),
-                      itemBuilder: (context, index) {
-                        final server = app.servers[index];
-                        return Padding(
-                          key: ValueKey(server.id),
-                          padding: const EdgeInsets.only(bottom: 5),
-                          child: RepaintBoundary(
-                            child: ReorderableDelayedDragStartListener(
-                              index: index,
-                              child: _PressScale(
-                                enabled: !view.performanceMode,
-                                child: AnimatedContainer(
-                                  duration: Duration(
-                                    milliseconds: view.performanceMode
-                                        ? 85
-                                        : 140,
-                                  ),
-                                  curve: Curves.easeOutCubic,
-                                  decoration: BoxDecoration(
-                                    color: server.selected
-                                        ? Theme.of(context)
-                                              .colorScheme
-                                              .primaryContainer
-                                              .withValues(alpha: .26)
-                                        : Theme.of(context)
-                                              .colorScheme
-                                              .surfaceContainerLow
-                                              .withValues(alpha: .42),
-                                    borderRadius: BorderRadius.circular(13),
-                                    border: Border.all(
-                                      color: server.selected
-                                          ? Theme.of(context)
-                                                .colorScheme
-                                                .primary
-                                                .withValues(alpha: .28)
-                                          : Theme.of(context)
-                                                .colorScheme
-                                                .outlineVariant
-                                                .withValues(alpha: .22),
+                              proxyDecorator: (child, _, animation) =>
+                                  view.performanceMode
+                                  ? child
+                                  : AnimatedBuilder(
+                                      animation: animation,
+                                      builder: (context, _) {
+                                        final pressed = Curves.easeOutCubic
+                                            .transform(animation.value);
+                                        return Transform.translate(
+                                          offset: Offset(0, pressed * 2),
+                                          child: Transform.scale(
+                                            scale: 1 - (pressed * .015),
+                                            child: child,
+                                          ),
+                                        );
+                                      },
                                     ),
-                                  ),
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(13),
-                                    child: Material(
-                                      type: MaterialType.transparency,
-                                      child: ListTile(
-                                        splashColor: Theme.of(context)
-                                            .colorScheme
-                                            .primary
-                                            .withValues(alpha: .10),
-                                        leading: _SelectionIndicator(
-                                          selected: server.selected,
-                                          reducedEffects: view.performanceMode,
-                                        ),
-                                        title: Row(
-                                          children: [
-                                            CountryFlagBadge(
-                                              countryCode: server.country,
-                                              width: 25,
-                                              height: 18,
+                              itemBuilder: (context, index) {
+                                final server = app.servers[index];
+                                return Padding(
+                                  key: ValueKey(server.id),
+                                  padding: const EdgeInsets.only(bottom: 5),
+                                  child: RepaintBoundary(
+                                    child: ReorderableDelayedDragStartListener(
+                                      index: index,
+                                      child: _PressScale(
+                                        enabled: !view.performanceMode,
+                                        child: AnimatedContainer(
+                                          duration: Duration(
+                                            milliseconds: view.performanceMode
+                                                ? 85
+                                                : 140,
+                                          ),
+                                          curve: Curves.easeOutCubic,
+                                          decoration: BoxDecoration(
+                                            color: server.selected
+                                                ? Theme.of(context)
+                                                      .colorScheme
+                                                      .primaryContainer
+                                                      .withValues(alpha: .26)
+                                                : Theme.of(context)
+                                                      .colorScheme
+                                                      .surfaceContainerLow
+                                                      .withValues(alpha: .42),
+                                            borderRadius: BorderRadius.circular(
+                                              13,
                                             ),
-                                            const SizedBox(width: 8),
-                                            Expanded(
-                                              child: Text(
-                                                displayServerName(server.name),
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
+                                            border: Border.all(
+                                              color: server.selected
+                                                  ? Theme.of(context)
+                                                        .colorScheme
+                                                        .primary
+                                                        .withValues(alpha: .28)
+                                                  : Theme.of(context)
+                                                        .colorScheme
+                                                        .outlineVariant
+                                                        .withValues(alpha: .22),
+                                            ),
+                                          ),
+                                          child: ClipRRect(
+                                            borderRadius: BorderRadius.circular(
+                                              13,
+                                            ),
+                                            child: Material(
+                                              type: MaterialType.transparency,
+                                              child: ListTile(
+                                                splashColor: Theme.of(context)
+                                                    .colorScheme
+                                                    .primary
+                                                    .withValues(alpha: .10),
+                                                leading: _SelectionIndicator(
+                                                  selected: server.selected,
+                                                  reducedEffects:
+                                                      view.performanceMode,
+                                                ),
+                                                title: Row(
+                                                  children: [
+                                                    CountryFlagBadge(
+                                                      countryCode:
+                                                          server.country,
+                                                      width: 25,
+                                                      height: 18,
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                    Expanded(
+                                                      child: Text(
+                                                        displayServerName(
+                                                          server.name,
+                                                        ),
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                subtitle: Text(
+                                                  '${server.protocol}  ${server.transport}',
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                                trailing: Row(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    _Latency(server: server),
+                                                    IconButton(
+                                                      tooltip: context.s(
+                                                        'serverActions',
+                                                      ),
+                                                      onPressed: () =>
+                                                          _serverActions(
+                                                            server,
+                                                          ),
+                                                      icon: const Icon(
+                                                        Icons.more_vert_rounded,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                onTap: () => _perform(
+                                                  context,
+                                                  () => controller.selectServer(
+                                                    server.id,
+                                                  ),
+                                                ),
                                               ),
                                             ),
-                                          ],
-                                        ),
-                                        subtitle: Text(
-                                          '${server.protocol}  ${server.transport}',
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                        trailing: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            _Latency(server: server),
-                                            IconButton(
-                                              tooltip: context.s(
-                                                'serverActions',
-                                              ),
-                                              onPressed: () =>
-                                                  _serverActions(server),
-                                              icon: const Icon(
-                                                Icons.more_vert_rounded,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        onTap: () => _perform(
-                                          context,
-                                          () => controller.selectServer(
-                                            server.id,
                                           ),
                                         ),
                                       ),
                                     ),
                                   ),
-                                ),
-                              ),
+                                );
+                              },
                             ),
-                          ),
-                        );
-                      },
                     ),
+                  ),
+                ),
+                Positioned(
+                  top: 6,
+                  left: 8,
+                  right: 8,
+                  child: _ServersGlassHeader(
+                    height: headerHeight,
+                    serverCount: app.servers.length,
+                    isPinging: app.isPinging,
+                    isRefreshing: app.isRefreshing,
+                    reducedEffects: view.performanceMode,
+                    backdropSnapshot: _headerBackdrop,
+                    onMenu: _openMenu,
+                  ),
+                ),
+              ],
             ),
           ),
-          Positioned(
-            top: 6,
-            left: 8,
-            right: 8,
-            child: _ServersGlassHeader(
-              height: headerHeight,
-              serverCount: app.servers.length,
-              isPinging: app.isPinging,
-              isRefreshing: app.isRefreshing,
-              reducedEffects: view.performanceMode,
-              onMenu: _openMenu,
+        ),
+        if (_menuAnchor case final anchor?)
+          Positioned.fill(
+            child: _buildServerPageActions(context, controller, app, anchor),
+          ),
+        if (_serverActionsTarget case final server?)
+          Positioned.fill(
+            child: _ServerActionsSheetOverlay(
+              server: server,
+              performanceMode: view.performanceMode,
+              backdropSnapshot: _menuBackdrop,
+              onClosed: (action) {
+                if (mounted) {
+                  setState(() => _serverActionsTarget = null);
+                  _releaseBackdrop();
+                }
+                if (action != null && context.mounted) {
+                  unawaited(_handleAction(context, controller, server, action));
+                }
+              },
             ),
           ),
-          if (_menuAnchor case final anchor?)
-            Positioned.fill(
-              child: _buildServerPageActions(
-                context,
-                controller,
-                app,
-                anchor,
-                constraints.maxHeight,
-              ),
-            ),
-          if (_serverActionsTarget case final server?)
-            Positioned.fill(
-              child: _ServerActionsSheetOverlay(
-                server: server,
-                performanceMode: view.performanceMode,
-                onClosed: (action) {
-                  if (mounted) {
-                    setState(() => _serverActionsTarget = null);
-                  }
-                  if (action != null && context.mounted) {
-                    unawaited(
-                      _handleAction(context, controller, server, action),
-                    );
-                  }
-                },
-              ),
-            ),
-        ],
-      ),
+      ],
     );
   }
 
@@ -262,29 +445,24 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
     AppController controller,
     AppSnapshot app,
     Rect anchor,
-    double viewportHeight,
   ) {
     final size = MediaQuery.sizeOf(context);
     final menuWidth = (size.width - 16).clamp(220.0, 292.0).toDouble();
     final maxLeft = (size.width - menuWidth - 8).clamp(8.0, double.infinity);
+    final maxTop = (size.height - 360).clamp(8.0, double.infinity);
     final left = (anchor.right - menuWidth + 8).clamp(8.0, maxLeft);
     final anchoredTop = anchor.bottom + 5;
-    const menuHeight = 288.0;
-    const bottomGap = 8.0;
-    final bottomAlignedTop = viewportHeight - menuHeight - bottomGap;
-    final desiredTop = anchoredTop > bottomAlignedTop
-        ? anchoredTop
-        : bottomAlignedTop;
-    final maxTop = (viewportHeight - menuHeight).clamp(8.0, double.infinity);
-    final top = desiredTop.clamp(8.0, maxTop);
+    final top = anchoredTop.clamp(8.0, maxTop);
     return _ServerPageActionsPopover(
       left: left,
       top: top,
       width: menuWidth,
       app: app,
+      backdropSnapshot: _menuBackdrop,
       onClosed: (action) {
         if (mounted) {
           setState(() => _menuAnchor = null);
+          _releaseBackdrop();
         }
         if (action != null && context.mounted) {
           unawaited(_performServerPageAction(context, controller, action));
@@ -314,6 +492,12 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
 
   void _serverActions(ServerInfo server) {
     if (_serverActionsTarget != null) return;
+    unawaited(_showServerActions(server));
+  }
+
+  Future<void> _showServerActions(ServerInfo server) async {
+    await _captureBackdrop();
+    if (!mounted) return;
     setState(() => _serverActionsTarget = server);
   }
 
@@ -367,11 +551,13 @@ class _ServerActionsSheetOverlay extends StatefulWidget {
   const _ServerActionsSheetOverlay({
     required this.server,
     required this.performanceMode,
+    required this.backdropSnapshot,
     required this.onClosed,
   });
 
   final ServerInfo server;
   final bool performanceMode;
+  final GlassSnapshot? backdropSnapshot;
   final ValueChanged<String?> onClosed;
 
   @override
@@ -403,6 +589,7 @@ class _ServerActionsSheetOverlayState extends State<_ServerActionsSheetOverlay>
 
   @override
   Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
     final motion = CurvedAnimation(
       parent: _animation,
       curve: Curves.easeOutCubic,
@@ -419,14 +606,29 @@ class _ServerActionsSheetOverlayState extends State<_ServerActionsSheetOverlay>
         Positioned(
           left: 8,
           right: 8,
-          bottom: 4,
+          bottom: kBottomNavigationBarHeight + 4,
           child: SafeArea(
             top: false,
             minimum: const EdgeInsets.only(bottom: 2),
             child: GlassSurface(
               key: const ValueKey('server-actions-bottom-sheet-surface'),
-              role: GlassSurfaceRole.sheet,
               radius: 22,
+              blur: widget.performanceMode ? 0 : (dark ? 30 : 12),
+              lightBlurLimit: 16,
+              darkBlurLimit: 32,
+              surfaceOpacity: widget.performanceMode
+                  ? .98
+                  : (dark ? SnapshotGlassTokens.darkSurfaceOpacity : .20),
+              liquidDepth: true,
+              continuousEdge: dark,
+              vibrantDark: true,
+              backdrop: dark && !widget.performanceMode
+                  ? widget.backdropSnapshot != null
+                        ? GlassSnapshotBackdrop(
+                            snapshot: widget.backdropSnapshot!,
+                          )
+                        : const SnapshotGlassFallback()
+                  : null,
               child: FadeTransition(
                 opacity: motion,
                 child: SlideTransition(
@@ -546,6 +748,7 @@ class _ServersGlassHeader extends StatefulWidget {
     required this.isPinging,
     required this.isRefreshing,
     required this.reducedEffects,
+    required this.backdropSnapshot,
     required this.onMenu,
   });
 
@@ -554,6 +757,7 @@ class _ServersGlassHeader extends StatefulWidget {
   final bool isPinging;
   final bool isRefreshing;
   final bool reducedEffects;
+  final GlassSnapshot? backdropSnapshot;
   final ValueChanged<Rect> onMenu;
 
   @override
@@ -572,10 +776,24 @@ class _ServersGlassHeaderState extends State<_ServersGlassHeader> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final dark = theme.brightness == Brightness.dark;
     return GlassSurface(
-      key: const ValueKey('servers-header-surface'),
-      role: GlassSurfaceRole.chrome,
       radius: 16,
+      blur: widget.reducedEffects ? 0 : (dark ? 14 : 12),
+      lightBlurLimit: 16,
+      darkBlurLimit: 18,
+      surfaceOpacity: widget.reducedEffects
+          ? .98
+          : (dark ? SnapshotGlassTokens.darkSurfaceOpacity : .16),
+      liquidDepth: true,
+      showShadow: false,
+      continuousEdge: dark,
+      vibrantDark: true,
+      backdrop: dark && !widget.reducedEffects
+          ? widget.backdropSnapshot != null
+                ? GlassSnapshotBackdrop(snapshot: widget.backdropSnapshot!)
+                : const SnapshotGlassFallback()
+          : null,
       child: SizedBox(
         height: widget.height,
         child: Padding(
@@ -613,6 +831,7 @@ class _ServerPageActionsPopover extends StatefulWidget {
     required this.top,
     required this.width,
     required this.app,
+    required this.backdropSnapshot,
     required this.onClosed,
   });
 
@@ -620,6 +839,7 @@ class _ServerPageActionsPopover extends StatefulWidget {
   final double top;
   final double width;
   final AppSnapshot app;
+  final GlassSnapshot? backdropSnapshot;
   final ValueChanged<_ServerPageAction?> onClosed;
 
   @override
@@ -655,6 +875,7 @@ class _ServerPageActionsPopoverState extends State<_ServerPageActionsPopover>
 
   @override
   Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
     final curved = CurvedAnimation(
       parent: _animation,
       curve: Curves.easeOutCubic,
@@ -675,8 +896,22 @@ class _ServerPageActionsPopoverState extends State<_ServerPageActionsPopover>
           child: SafeArea(
             child: GlassSurface(
               key: const ValueKey('server-page-actions-surface'),
-              role: GlassSurfaceRole.popover,
               radius: 18,
+              blur: widget.app.settings.performanceMode ? 0 : (dark ? 30 : 12),
+              lightBlurLimit: 16,
+              darkBlurLimit: 32,
+              surfaceOpacity: widget.app.settings.performanceMode
+                  ? .98
+                  : (dark ? SnapshotGlassTokens.darkSurfaceOpacity : .18),
+              liquidDepth: true,
+              vibrantDark: true,
+              backdrop: dark && !widget.app.settings.performanceMode
+                  ? widget.backdropSnapshot != null
+                        ? GlassSnapshotBackdrop(
+                            snapshot: widget.backdropSnapshot!,
+                          )
+                        : const SnapshotGlassFallback()
+                  : null,
               child: FadeTransition(
                 opacity: curved,
                 child: ScaleTransition(

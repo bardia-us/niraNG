@@ -265,6 +265,7 @@ class _AccessMessageCard extends StatelessWidget {
                 constraints: const BoxConstraints(maxWidth: 560),
                 child: GlassSurface(
                   radius: 24,
+                  blur: 14,
                   padding: const EdgeInsets.all(24),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -329,6 +330,7 @@ class RegistrationConsentScreen extends StatelessWidget {
                 constraints: const BoxConstraints(maxWidth: 620),
                 child: GlassSurface(
                   radius: 24,
+                  blur: 14,
                   padding: const EdgeInsets.all(24),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,

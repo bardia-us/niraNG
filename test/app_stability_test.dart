@@ -467,11 +467,6 @@ void main() {
 
     expect(find.text('Servers (2)'), findsOneWidget);
     expect(find.byType(BackdropFilter), findsWidgets);
-    final header = find.byKey(const ValueKey('servers-header-surface'));
-    expect(
-      find.descendant(of: header, matching: find.byType(BackdropFilter)),
-      findsOneWidget,
-    );
     expect(find.text('Test all'), findsNothing);
     expect(find.byTooltip('Server page actions'), findsOneWidget);
     await tester.tap(find.byTooltip('Server page actions'));
@@ -486,11 +481,9 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(lightMenu.role, GlassSurfaceRole.popover);
-    expect(
-      GlassRecipe.resolve(GlassSurfaceRole.popover, Brightness.light).blur,
-      12,
-    );
+    expect(lightMenu.blur, 12);
+    expect(lightMenu.lightBlurLimit, 16);
+    expect(lightMenu.surfaceOpacity, .18);
     expect(find.text('Sort by test results'), findsOneWidget);
     expect(find.text('Test real delays'), findsOneWidget);
     expect(find.text('Test TCP delays (TCPing)'), findsOneWidget);
@@ -513,10 +506,8 @@ void main() {
       const ValueKey('server-actions-bottom-sheet-surface'),
     );
     expect(bottomSheetFinder, findsOneWidget);
-    expect(
-      tester.widget<GlassSurface>(bottomSheetFinder).role,
-      GlassSurfaceRole.sheet,
-    );
+    expect(tester.widget<GlassSurface>(bottomSheetFinder).blur, 12);
+    expect(tester.widget<GlassSurface>(bottomSheetFinder).surfaceOpacity, .20);
     expect(
       find.descendant(
         of: bottomSheetFinder,
@@ -532,14 +523,11 @@ void main() {
     expect(find.byType(BackdropFilter), findsNothing);
     await tester.tap(find.byTooltip('Server page actions'));
     await tester.pumpAndSettle();
-    expect(
-      tester
-          .widget<GlassSurface>(
-            find.byKey(const ValueKey('server-page-actions-surface')),
-          )
-          .role,
-      GlassSurfaceRole.popover,
+    final performanceMenu = tester.widget<GlassSurface>(
+      find.byKey(const ValueKey('server-page-actions-surface')),
     );
+    expect(performanceMenu.blur, 0);
+    expect(performanceMenu.surfaceOpacity, .98);
     expect(find.byType(BackdropFilter), findsNothing);
     await tester.dragFrom(const Offset(20, 430), const Offset(0, -80));
     await tester.pumpAndSettle();
@@ -580,62 +568,6 @@ void main() {
     await tester.tap(find.text('Sort by test results'));
     await tester.pumpAndSettle();
     expect(controller.sortRequests, 1);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('dark server chrome and menus keep live backdrop blur', (
-    tester,
-  ) async {
-    final reference = GlassRecipe.resolve(
-      GlassSurfaceRole.sheet,
-      Brightness.dark,
-    );
-    for (final role in const [
-      GlassSurfaceRole.chrome,
-      GlassSurfaceRole.popover,
-      GlassSurfaceRole.dialog,
-    ]) {
-      final recipe = GlassRecipe.resolve(role, Brightness.dark);
-      expect(recipe.blur, reference.blur);
-      expect(recipe.opacity, reference.opacity);
-      expect(recipe.borderOpacity, reference.borderOpacity);
-    }
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          appControllerProvider.overrideWith(
-            () => _FakeAppController(themeMode: 'dark'),
-          ),
-        ],
-        child: const NirangApp(),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.byIcon(Icons.dns_outlined));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Servers (2)'), findsOneWidget);
-    expect(find.byType(BackdropFilter), findsWidgets);
-
-    await tester.tap(find.byTooltip('Server page actions'));
-    await tester.pumpAndSettle();
-    final topMenu = find.byKey(const ValueKey('server-page-actions-surface'));
-    expect(
-      find.descendant(of: topMenu, matching: find.byType(BackdropFilter)),
-      findsOneWidget,
-    );
-    await tester.tapAt(const Offset(8, 120));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.byTooltip('Server actions').first);
-    await tester.pumpAndSettle();
-    final configMenu = find.byKey(
-      const ValueKey('server-actions-bottom-sheet-surface'),
-    );
-    expect(
-      find.descendant(of: configMenu, matching: find.byType(BackdropFilter)),
-      findsOneWidget,
-    );
     expect(tester.takeException(), isNull);
   });
 
@@ -864,6 +796,9 @@ void main() {
 
     final dialog = find.byType(NirangAlertDialog);
     expect(dialog, findsOneWidget);
+    final fragmentDialog = tester.widget<NirangAlertDialog>(dialog);
+    expect(fragmentDialog.blur, isNull);
+    expect(fragmentDialog.surfaceOpacity, isNull);
     expect(
       find.descendant(of: dialog, matching: find.byType(SingleChildScrollView)),
       findsOneWidget,
@@ -934,13 +869,6 @@ void main() {
     await _openSettingsSection(tester, 'Advanced');
     await _tapVisibleSetting(tester, find.text('Reset all settings'));
     expect(find.text('Reset all settings?'), findsOneWidget);
-    expect(
-      find.descendant(
-        of: find.byType(NirangAlertDialog),
-        matching: find.byType(BackdropFilter),
-      ),
-      findsOneWidget,
-    );
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
     expect(controller.resetRequests, 0);
