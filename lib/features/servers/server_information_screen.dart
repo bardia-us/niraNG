@@ -2,9 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/localization/app_strings.dart';
 import '../../core/platform/native_models.dart';
-import '../../core/theme/app_theme.dart';
 import '../../core/widgets/country_flag_badge.dart';
-import '../../core/widgets/glass_surface.dart';
 
 class ServerInformationScreen extends StatelessWidget {
   const ServerInformationScreen({required this.server, super.key});
@@ -13,16 +11,7 @@ class ServerInformationScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      flexibleSpace: const GlassSurface(
-        radius: 0,
-        style: NirangGlassStyle.chrome,
-        showShadow: false,
-        showBorder: false,
-        child: SizedBox.expand(),
-      ),
-      title: Text(context.s('serverInformation')),
-    ),
+    appBar: AppBar(title: Text(context.s('serverInformation'))),
     body: ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
       children: [

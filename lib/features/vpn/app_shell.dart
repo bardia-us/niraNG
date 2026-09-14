@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -141,7 +142,11 @@ class _AppShellState extends ConsumerState<AppShell> {
     final theme = Theme.of(context);
     final reducedEffects = shellState.performanceMode;
     final navigationBar = NavigationBar(
-      backgroundColor: Colors.transparent,
+      backgroundColor: NirangVisualEffects.chromeColor(
+        theme,
+        reducedEffects: reducedEffects,
+        darkAlpha: .40,
+      ),
       selectedIndex: _index,
       onDestinationSelected: (value) {
         NirangDiagnostics.currentFeature = const [
@@ -177,14 +182,24 @@ class _AppShellState extends ConsumerState<AppShell> {
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
-          backgroundColor: Colors.transparent,
-          flexibleSpace: const GlassSurface(
-            radius: 0,
-            style: NirangGlassStyle.chrome,
-            showShadow: false,
-            showBorder: false,
-            child: SizedBox.expand(),
+          backgroundColor: NirangVisualEffects.chromeColor(
+            theme,
+            reducedEffects: reducedEffects,
+            darkAlpha: .34,
           ),
+          flexibleSpace: reducedEffects
+              ? null
+              : ClipRect(
+                  child: BackdropFilter(
+                    filter: theme.brightness == Brightness.dark
+                        ? GlassSurface.backdropFilter(dark: true, sigma: 20)
+                        : ImageFilter.blur(
+                            sigmaX: NirangVisualEffects.chromeBlur(theme, 12),
+                            sigmaY: NirangVisualEffects.chromeBlur(theme, 12),
+                          ),
+                    child: const SizedBox.expand(),
+                  ),
+                ),
           title: Row(
             children: [
               ClipRRect(
@@ -208,13 +223,19 @@ class _AppShellState extends ConsumerState<AppShell> {
             const _TransientStatusBanner(),
           ],
         ),
-        bottomNavigationBar: GlassSurface(
-          radius: 0,
-          style: NirangGlassStyle.chrome,
-          showShadow: false,
-          showBorder: false,
-          child: navigationBar,
-        ),
+        bottomNavigationBar: reducedEffects
+            ? navigationBar
+            : ClipRect(
+                child: BackdropFilter(
+                  filter: theme.brightness == Brightness.dark
+                      ? GlassSurface.backdropFilter(dark: true, sigma: 20)
+                      : ImageFilter.blur(
+                          sigmaX: NirangVisualEffects.chromeBlur(theme, 14),
+                          sigmaY: NirangVisualEffects.chromeBlur(theme, 14),
+                        ),
+                  child: navigationBar,
+                ),
+              ),
       ),
     );
   }
