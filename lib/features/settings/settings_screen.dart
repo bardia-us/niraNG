@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/formatters.dart';
 import '../../core/localization/app_strings.dart';
 import '../../core/widgets/glass_dialog.dart';
-import '../../core/widgets/snapshot_glass.dart';
 import '../../core/widgets/update_dialog.dart';
 import '../../core/platform/native_models.dart';
 import '../../core/platform/nirang_native.dart';
@@ -21,7 +20,6 @@ class SettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
-  final GlobalKey _backdropKey = GlobalKey();
   bool _checkingUpdates = false;
 
   @override
@@ -50,7 +48,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final settings = app.settings;
     final controller = ref.read(appControllerProvider.notifier);
     return RepaintBoundary(
-      key: _backdropKey,
       child: ListView(
         padding: const EdgeInsets.only(bottom: 24),
         children: [
@@ -1066,99 +1063,83 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     Map<String, String>? descriptions,
   }) async {
     var temporary = current;
-    GlassSnapshot? snapshot;
-    final useSnapshotGlass =
-        Theme.of(context).brightness == Brightness.dark &&
-        !ref.read(performanceModeProvider);
-    if (useSnapshotGlass) {
-      try {
-        snapshot = await GlassSnapshotRenderer.capture(
-          boundaryKey: _backdropKey,
-          background: Theme.of(context).scaffoldBackgroundColor,
-        );
-      } catch (_) {}
-    }
-    if (!context.mounted) {
-      snapshot?.dispose();
-      return null;
-    }
-    try {
-      return await showDialog<String>(
-        context: context,
-        builder: (dialogContext) => StatefulBuilder(
-          builder: (context, setDialogState) => NirangAlertDialog(
-            title: Text(title),
-            surfaceOpacity: useSnapshotGlass
-                ? SnapshotGlassTokens.darkSurfaceOpacity
-                : null,
-            backdrop: useSnapshotGlass
-                ? snapshot == null
-                      ? const SnapshotGlassFallback()
-                      : GlassSnapshotBackdrop(snapshot: snapshot)
-                : null,
-            contentPadding: const EdgeInsets.fromLTRB(8, 12, 8, 0),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final entry in values.entries)
-                  ListTile(
-                    leading: Icon(
-                      entry.key == temporary
-                          ? Icons.radio_button_checked_rounded
-                          : Icons.radio_button_unchecked_rounded,
-                      color: entry.key == temporary
-                          ? Theme.of(context).colorScheme.primary
-                          : Theme.of(context).colorScheme.outline,
-                    ),
-                    title: Text(entry.value),
-                    subtitle: descriptions?[entry.key] == null
-                        ? null
-                        : Text(descriptions![entry.key]!),
-                    onTap: () => setDialogState(() => temporary = entry.key),
+    return showDialog<String>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => NirangAlertDialog(
+          title: Text(title),
+          contentPadding: const EdgeInsets.fromLTRB(8, 12, 8, 0),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final entry in values.entries)
+                ListTile(
+                  leading: Icon(
+                    entry.key == temporary
+                        ? Icons.radio_button_checked_rounded
+                        : Icons.radio_button_unchecked_rounded,
+                    color: entry.key == temporary
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context).colorScheme.outline,
                   ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
-                child: Text(context.s('cancel')),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(dialogContext, temporary),
-                child: Text(context.s('apply')),
-              ),
+                  title: Text(entry.value),
+                  subtitle: descriptions?[entry.key] == null
+                      ? null
+                      : Text(descriptions![entry.key]!),
+                  onTap: () => setDialogState(() => temporary = entry.key),
+                ),
             ],
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: Text(context.s('cancel')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, temporary),
+              child: Text(context.s('apply')),
+            ),
+          ],
         ),
-      );
-    } finally {
-      snapshot?.dispose();
-    }
+      ),
+    );
   }
 
   void _showAbout(
     BuildContext context,
     String coreVersion,
     String appVersion,
-  ) => showAboutDialog(
+  ) => showDialog<void>(
     context: context,
-    applicationName: 'niraNG',
-    applicationVersion: appVersion,
-    applicationIcon: ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: Image.asset(
-        'assets/branding/nirang-logo-concept.png',
-        width: 54,
-        height: 54,
-        cacheWidth: 108,
-        cacheHeight: 108,
+    builder: (dialogContext) => NirangAlertDialog(
+      icon: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Image.asset(
+          'assets/branding/nirang-logo-concept.png',
+          width: 54,
+          height: 54,
+          cacheWidth: 108,
+          cacheHeight: 108,
+        ),
       ),
+      title: const Text('niraNG'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(appVersion),
+          const SizedBox(height: 8),
+          Text('${context.s('coreVersion')}: $coreVersion'),
+          Text('${context.s('packageName')}: dev.nirang.client'),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext),
+          child: Text(MaterialLocalizations.of(context).closeButtonLabel),
+        ),
+      ],
     ),
-    children: [
-      const SizedBox(height: 8),
-      Text('${context.s('coreVersion')}: $coreVersion'),
-      Text('${context.s('packageName')}: dev.nirang.client'),
-    ],
   );
 }
 

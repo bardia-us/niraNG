@@ -10,9 +10,6 @@ class NirangAlertDialog extends StatelessWidget {
     this.content,
     this.actions = const [],
     this.contentPadding = const EdgeInsets.fromLTRB(22, 14, 22, 8),
-    this.blur,
-    this.surfaceOpacity,
-    this.backdrop,
   });
 
   final Widget? icon;
@@ -20,14 +17,10 @@ class NirangAlertDialog extends StatelessWidget {
   final Widget? content;
   final List<Widget> actions;
   final EdgeInsetsGeometry contentPadding;
-  final double? blur;
-  final double? surfaceOpacity;
-  final Widget? backdrop;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final dark = theme.brightness == Brightness.dark;
     final maxHeight = MediaQuery.sizeOf(context).height * .78;
     return Dialog(
       elevation: 0,
@@ -35,15 +28,8 @@ class NirangAlertDialog extends StatelessWidget {
       surfaceTintColor: Colors.transparent,
       insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
       child: GlassSurface(
+        role: GlassSurfaceRole.dialog,
         radius: 22,
-        blur: blur ?? (dark ? 16 : 14),
-        lightBlurLimit: 16,
-        darkBlurLimit: 18,
-        surfaceOpacity: surfaceOpacity ?? (dark ? .20 : .24),
-        liquidDepth: true,
-        continuousEdge: dark,
-        vibrantDark: dark,
-        backdrop: backdrop,
         child: ConstrainedBox(
           constraints: BoxConstraints(maxWidth: 560, maxHeight: maxHeight),
           child: Column(
