@@ -1067,8 +1067,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }) async {
     var temporary = current;
     GlassSnapshot? snapshot;
-    if (Theme.of(context).brightness == Brightness.dark &&
-        !ref.read(performanceModeProvider)) {
+    final useSnapshotGlass =
+        Theme.of(context).brightness == Brightness.dark &&
+        !ref.read(performanceModeProvider);
+    if (useSnapshotGlass) {
       try {
         snapshot = await GlassSnapshotRenderer.capture(
           boundaryKey: _backdropKey,
@@ -1086,12 +1088,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         builder: (dialogContext) => StatefulBuilder(
           builder: (context, setDialogState) => NirangAlertDialog(
             title: Text(title),
-            surfaceOpacity: snapshot == null
-                ? null
-                : SnapshotGlassTokens.darkSurfaceOpacity,
-            backdrop: snapshot == null
-                ? null
-                : GlassSnapshotBackdrop(snapshot: snapshot),
+            surfaceOpacity: useSnapshotGlass
+                ? SnapshotGlassTokens.darkSurfaceOpacity
+                : null,
+            backdrop: useSnapshotGlass
+                ? snapshot == null
+                      ? const SnapshotGlassFallback()
+                      : GlassSnapshotBackdrop(snapshot: snapshot)
+                : null,
             contentPadding: const EdgeInsets.fromLTRB(8, 12, 8, 0),
             content: Column(
               mainAxisSize: MainAxisSize.min,

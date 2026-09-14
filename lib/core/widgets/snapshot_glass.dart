@@ -7,11 +7,54 @@ import 'package:flutter/rendering.dart';
 
 abstract final class SnapshotGlassTokens {
   static const pixelRatio = .5;
-  static const blurRadius = 4;
+  static const blurRadius = 5;
   static const blurPasses = 3;
   static const saturation = 1.32;
   static const brightness = 2.0;
   static const darkSurfaceOpacity = .18;
+}
+
+@immutable
+class SnapshotCropMapping {
+  const SnapshotCropMapping({required this.source, required this.destination});
+
+  final Rect source;
+  final Rect destination;
+}
+
+abstract final class SnapshotGlassGeometry {
+  static SnapshotCropMapping? mapCrop({
+    required Size imageSize,
+    required Size snapshotLogicalSize,
+    required Offset snapshotGlobalOrigin,
+    required Offset surfaceGlobalOrigin,
+    required Size surfaceSize,
+  }) {
+    if (imageSize.isEmpty ||
+        snapshotLogicalSize.isEmpty ||
+        surfaceSize.isEmpty) {
+      return null;
+    }
+    final scaleX = imageSize.width / snapshotLogicalSize.width;
+    final scaleY = imageSize.height / snapshotLogicalSize.height;
+    final relative = surfaceGlobalOrigin - snapshotGlobalOrigin;
+    final desiredSource = Rect.fromLTWH(
+      relative.dx * scaleX,
+      relative.dy * scaleY,
+      surfaceSize.width * scaleX,
+      surfaceSize.height * scaleY,
+    );
+    final imageBounds = Offset.zero & imageSize;
+    final clippedSource = desiredSource.intersect(imageBounds);
+    if (clippedSource.isEmpty) return null;
+    final destination = Rect.fromLTWH(
+      (clippedSource.left - desiredSource.left) / scaleX,
+      (clippedSource.top - desiredSource.top) / scaleY,
+      clippedSource.width / scaleX,
+      clippedSource.height / scaleY,
+    );
+    return SnapshotCropMapping(source: clippedSource, destination: destination);
+  }
 }
 
 class GlassSnapshot {
@@ -219,6 +262,32 @@ class GlassSnapshotBackdrop extends LeafRenderObjectWidget {
   }
 }
 
+class SnapshotGlassFallback extends StatelessWidget {
+  const SnapshotGlassFallback({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final top = Color.alphaBlend(
+      scheme.primary.withValues(alpha: .055),
+      scheme.surface,
+    );
+    final bottom = Color.alphaBlend(
+      Colors.black.withValues(alpha: .08),
+      scheme.surface,
+    );
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [top, scheme.surface, bottom],
+        ),
+      ),
+    );
+  }
+}
+
 class GlassSnapshotRenderBox extends RenderBox {
   GlassSnapshotRenderBox(this._snapshot);
 
@@ -238,28 +307,21 @@ class GlassSnapshotRenderBox extends RenderBox {
   @override
   void paint(PaintingContext context, Offset offset) {
     final globalOffset = localToGlobal(Offset.zero);
-    final scaleX = _snapshot.image.width / _snapshot.logicalSize.width;
-    final scaleY = _snapshot.image.height / _snapshot.logicalSize.height;
-    final relative = globalOffset - _snapshot.globalOrigin;
-    final sourceRect =
-        Rect.fromLTWH(
-          relative.dx * scaleX,
-          relative.dy * scaleY,
-          size.width * scaleX,
-          size.height * scaleY,
-        ).intersect(
-          Rect.fromLTWH(
-            0,
-            0,
-            _snapshot.image.width.toDouble(),
-            _snapshot.image.height.toDouble(),
-          ),
-        );
-    if (sourceRect.isEmpty) return;
+    final mapping = SnapshotGlassGeometry.mapCrop(
+      imageSize: Size(
+        _snapshot.image.width.toDouble(),
+        _snapshot.image.height.toDouble(),
+      ),
+      snapshotLogicalSize: _snapshot.logicalSize,
+      snapshotGlobalOrigin: _snapshot.globalOrigin,
+      surfaceGlobalOrigin: globalOffset,
+      surfaceSize: size,
+    );
+    if (mapping == null) return;
     context.canvas.drawImageRect(
       _snapshot.image,
-      sourceRect,
-      Offset.zero & size,
+      mapping.source,
+      mapping.destination,
       Paint()..filterQuality = FilterQuality.high,
     );
   }

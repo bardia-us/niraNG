@@ -30,6 +30,7 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
   GlassSnapshot? _headerBackdrop;
   bool _headerCaptureScheduled = false;
   int? _headerBackdropSignature;
+  int? _headerRequestedSignature;
   int _headerScrollRevision = 0;
   int _headerDataSignature = 0;
 
@@ -65,45 +66,59 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
       final old = _menuBackdrop;
       _menuBackdrop = snapshot;
       old?.dispose();
-    } catch (_) {
-      _releaseBackdrop();
-    }
+    } catch (_) {}
   }
 
   void _scheduleHeaderBackdrop({required int signature, bool force = false}) {
-    if (_headerCaptureScheduled ||
-        (!force && _headerBackdropSignature == signature)) {
-      return;
-    }
+    _headerRequestedSignature = signature;
+    if (!force && _headerBackdropSignature == signature) return;
+    if (_headerCaptureScheduled) return;
     _headerCaptureScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      _headerCaptureScheduled = false;
       if (!mounted ||
           Theme.of(context).brightness != Brightness.dark ||
           ref.read(performanceModeProvider)) {
+        _headerCaptureScheduled = false;
         return;
       }
+      final requestedSignature = _headerRequestedSignature;
       try {
         final snapshot = await GlassSnapshotRenderer.capture(
           boundaryKey: _headerBackdropKey,
           background: Theme.of(context).scaffoldBackgroundColor,
         );
-        if (snapshot == null) return;
+        if (snapshot == null) {
+          _headerCaptureScheduled = false;
+          return;
+        }
         if (!mounted) {
           snapshot.dispose();
           return;
         }
+        if (requestedSignature != _headerRequestedSignature) {
+          snapshot.dispose();
+          _headerCaptureScheduled = false;
+          final latest = _headerRequestedSignature;
+          if (latest != null) {
+            _scheduleHeaderBackdrop(signature: latest, force: true);
+          }
+          return;
+        }
         final old = _headerBackdrop;
+        _headerCaptureScheduled = false;
         setState(() {
           _headerBackdrop = snapshot;
-          _headerBackdropSignature = signature;
+          _headerBackdropSignature = requestedSignature;
         });
         old?.dispose();
-      } catch (_) {}
+      } catch (_) {
+        _headerCaptureScheduled = false;
+      }
     });
   }
 
   void _clearHeaderBackdrop() {
+    _headerRequestedSignature = null;
     _headerBackdropSignature = null;
     final old = _headerBackdrop;
     _headerBackdrop = null;
@@ -152,9 +167,23 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
         Theme.of(context).brightness == Brightness.dark &&
         !view.performanceMode;
     _headerDataSignature = Object.hashAll([
+      Theme.of(context).brightness,
       view.performanceMode,
-      for (final server in app.servers.take(8))
-        Object.hash(server.id, server.selected, server.ping, server.status),
+      view.isPinging,
+      view.isRefreshing,
+      MediaQuery.sizeOf(context),
+      MediaQuery.devicePixelRatioOf(context),
+      for (final server in app.servers)
+        Object.hash(
+          server.id,
+          server.name,
+          server.country,
+          server.protocol,
+          server.transport,
+          server.selected,
+          server.ping,
+          server.status,
+        ),
     ]);
     if (darkSnapshotEnabled) {
       _scheduleHeaderBackdrop(
@@ -407,7 +436,7 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
     final maxLeft = (size.width - menuWidth - 8).clamp(8.0, double.infinity);
     final maxTop = (size.height - 360).clamp(8.0, double.infinity);
     final left = (anchor.right - menuWidth + 8).clamp(8.0, maxLeft);
-    final anchoredTop = anchor.bottom + 9;
+    final anchoredTop = anchor.bottom + 5;
     final top = (anchoredTop < 74 ? 74.0 : anchoredTop).clamp(8.0, maxTop);
     return _ServerPageActionsPopover(
       left: left,
@@ -583,9 +612,7 @@ class _ServerActionsSheetOverlayState extends State<_ServerActionsSheetOverlay>
                         ? GlassSnapshotBackdrop(
                             snapshot: widget.backdropSnapshot!,
                           )
-                        : ColoredBox(
-                            color: Theme.of(context).colorScheme.surface,
-                          )
+                        : const SnapshotGlassFallback()
                   : null,
               child: FadeTransition(
                 opacity: motion,
@@ -750,7 +777,7 @@ class _ServersGlassHeaderState extends State<_ServersGlassHeader> {
       backdrop: dark && !widget.reducedEffects
           ? widget.backdropSnapshot != null
                 ? GlassSnapshotBackdrop(snapshot: widget.backdropSnapshot!)
-                : ColoredBox(color: theme.colorScheme.surface)
+                : const SnapshotGlassFallback()
           : null,
       child: SizedBox(
         height: widget.height,
@@ -868,9 +895,7 @@ class _ServerPageActionsPopoverState extends State<_ServerPageActionsPopover>
                         ? GlassSnapshotBackdrop(
                             snapshot: widget.backdropSnapshot!,
                           )
-                        : ColoredBox(
-                            color: Theme.of(context).colorScheme.surface,
-                          )
+                        : const SnapshotGlassFallback()
                   : null,
               child: FadeTransition(
                 opacity: curved,
