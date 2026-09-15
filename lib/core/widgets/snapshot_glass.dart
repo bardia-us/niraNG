@@ -5,13 +5,17 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
+final GlobalKey nirangGlassBackdropBoundaryKey = GlobalKey(
+  debugLabel: 'nirang-glass-backdrop-boundary',
+);
+
 abstract final class SnapshotGlassTokens {
   static const pixelRatio = .5;
   static const blurRadius = 5;
   static const blurPasses = 3;
   static const saturation = 1.32;
   static const brightness = 2.0;
-  static const darkSurfaceOpacity = .18;
+  static const darkSurfaceOpacity = .38;
 }
 
 @immutable
@@ -84,10 +88,20 @@ abstract final class GlassSnapshotRenderer {
     required GlobalKey boundaryKey,
     required Color background,
   }) async {
+    // A tap, scroll update, or theme change can mark the boundary dirty just
+    // before capture. Wait for that frame to paint so toImage never falls back
+    // merely because it raced the render pipeline.
+    await WidgetsBinding.instance.endOfFrame;
     final boundary = boundaryKey.currentContext?.findRenderObject();
     if (boundary is! RenderRepaintBoundary || boundary.size.isEmpty) {
       return null;
     }
+    var stillNeedsPaint = false;
+    assert(() {
+      stillNeedsPaint = boundary.debugNeedsPaint;
+      return true;
+    }());
+    if (stillNeedsPaint) return null;
     final origin = boundary.localToGlobal(Offset.zero);
     final source = await boundary.toImage(
       pixelRatio: SnapshotGlassTokens.pixelRatio,
@@ -210,10 +224,7 @@ abstract final class GlassSnapshotRenderer {
         horizontal[targetIndex + 2] = blue ~/ diameter;
         horizontal[targetIndex + 3] = alpha ~/ diameter;
         final removeX = SnapshotGlassGeometry.reflectIndex(x - radius, width);
-        final addX = SnapshotGlassGeometry.reflectIndex(
-          x + radius + 1,
-          width,
-        );
+        final addX = SnapshotGlassGeometry.reflectIndex(x + radius + 1, width);
         final removeIndex = (y * width + removeX) * 4;
         final addIndex = (y * width + addX) * 4;
         red += source[addIndex] - source[removeIndex];
@@ -242,10 +253,7 @@ abstract final class GlassSnapshotRenderer {
         output[targetIndex + 2] = blue ~/ diameter;
         output[targetIndex + 3] = alpha ~/ diameter;
         final removeY = SnapshotGlassGeometry.reflectIndex(y - radius, height);
-        final addY = SnapshotGlassGeometry.reflectIndex(
-          y + radius + 1,
-          height,
-        );
+        final addY = SnapshotGlassGeometry.reflectIndex(y + radius + 1, height);
         final removeIndex = (removeY * width + x) * 4;
         final addIndex = (addY * width + x) * 4;
         red += horizontal[addIndex] - horizontal[removeIndex];
@@ -273,32 +281,6 @@ class GlassSnapshotBackdrop extends LeafRenderObjectWidget {
     covariant GlassSnapshotRenderBox renderObject,
   ) {
     renderObject.snapshot = snapshot;
-  }
-}
-
-class SnapshotGlassFallback extends StatelessWidget {
-  const SnapshotGlassFallback({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final top = Color.alphaBlend(
-      scheme.primary.withValues(alpha: .055),
-      scheme.surface,
-    );
-    final bottom = Color.alphaBlend(
-      Colors.black.withValues(alpha: .08),
-      scheme.surface,
-    );
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [top, scheme.surface, bottom],
-        ),
-      ),
-    );
   }
 }
 

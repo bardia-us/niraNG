@@ -847,9 +847,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     BuildContext context,
     AppController controller,
   ) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => NirangAlertDialog(
+    final confirmed = await _showSettingsDialog<bool>(
+      context,
+      builder: (dialogContext, backdrop) => NirangAlertDialog(
+        surfaceOpacity: backdrop == null
+            ? null
+            : SnapshotGlassTokens.darkSurfaceOpacity,
+        backdrop: backdrop,
         title: Text(context.s('resetSettingsConfirm')),
         content: Text(context.s('resetSettingsConfirmBody')),
         actions: [
@@ -924,11 +928,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     AppController controller,
     NativeSettings settings,
   ) async {
-    final result = await showDialog<({String domains, String ips})>(
-      context: context,
-      builder: (_) => _CustomRulesDialog(
+    final result = await _showSettingsDialog<({String domains, String ips})>(
+      context,
+      builder: (_, backdrop) => _CustomRulesDialog(
         domains: settings.customDomains,
         ips: settings.customIps,
+        backdrop: backdrop,
       ),
     );
     if (context.mounted && result != null) {
@@ -947,9 +952,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     AppController controller,
     NativeSettings settings,
   ) async {
-    final result = await showDialog<Map<String, Object?>>(
-      context: context,
-      builder: (_) => _FragmentDialog(settings: settings),
+    final result = await _showSettingsDialog<Map<String, Object?>>(
+      context,
+      builder: (_, backdrop) =>
+          _FragmentDialog(settings: settings, backdrop: backdrop),
     );
     if (result != null && context.mounted) {
       await _perform(context, () => controller.updateSettings(result));
@@ -981,13 +987,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     TextInputType keyboardType = TextInputType.url,
     String? Function(String value)? validator,
   }) async {
-    return showDialog<String>(
-      context: context,
-      builder: (_) => _TextValueDialog(
+    return _showSettingsDialog<String>(
+      context,
+      builder: (_, backdrop) => _TextValueDialog(
         title: title,
         initial: initial,
         keyboardType: keyboardType,
         validator: validator,
+        backdrop: backdrop,
       ),
     );
   }
@@ -1066,100 +1073,103 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     Map<String, String>? descriptions,
   }) async {
     var temporary = current;
-    GlassSnapshot? snapshot;
-    final useSnapshotGlass =
-        Theme.of(context).brightness == Brightness.dark &&
-        !ref.read(performanceModeProvider);
-    if (useSnapshotGlass) {
-      try {
-        snapshot = await GlassSnapshotRenderer.capture(
-          boundaryKey: _backdropKey,
-          background: Theme.of(context).scaffoldBackgroundColor,
-        );
-      } catch (_) {}
-    }
-    if (!context.mounted) {
-      snapshot?.dispose();
-      return null;
-    }
-    try {
-      return await showDialog<String>(
-        context: context,
-        builder: (dialogContext) => StatefulBuilder(
-          builder: (context, setDialogState) => NirangAlertDialog(
-            title: Text(title),
-            surfaceOpacity: useSnapshotGlass
-                ? SnapshotGlassTokens.darkSurfaceOpacity
-                : null,
-            backdrop: useSnapshotGlass
-                ? snapshot == null
-                      ? const SnapshotGlassFallback()
-                      : GlassSnapshotBackdrop(snapshot: snapshot)
-                : null,
-            contentPadding: const EdgeInsets.fromLTRB(8, 12, 8, 0),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final entry in values.entries)
-                  ListTile(
-                    leading: Icon(
-                      entry.key == temporary
-                          ? Icons.radio_button_checked_rounded
-                          : Icons.radio_button_unchecked_rounded,
-                      color: entry.key == temporary
-                          ? Theme.of(context).colorScheme.primary
-                          : Theme.of(context).colorScheme.outline,
-                    ),
-                    title: Text(entry.value),
-                    subtitle: descriptions?[entry.key] == null
-                        ? null
-                        : Text(descriptions![entry.key]!),
-                    onTap: () => setDialogState(() => temporary = entry.key),
+    return _showSettingsDialog<String>(
+      context,
+      builder: (dialogContext, backdrop) => StatefulBuilder(
+        builder: (context, setDialogState) => NirangAlertDialog(
+          title: Text(title),
+          surfaceOpacity: backdrop == null
+              ? null
+              : SnapshotGlassTokens.darkSurfaceOpacity,
+          backdrop: backdrop,
+          contentPadding: const EdgeInsets.fromLTRB(8, 12, 8, 0),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final entry in values.entries)
+                ListTile(
+                  leading: Icon(
+                    entry.key == temporary
+                        ? Icons.radio_button_checked_rounded
+                        : Icons.radio_button_unchecked_rounded,
+                    color: entry.key == temporary
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context).colorScheme.outline,
                   ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
-                child: Text(context.s('cancel')),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(dialogContext, temporary),
-                child: Text(context.s('apply')),
-              ),
+                  title: Text(entry.value),
+                  subtitle: descriptions?[entry.key] == null
+                      ? null
+                      : Text(descriptions![entry.key]!),
+                  onTap: () => setDialogState(() => temporary = entry.key),
+                ),
             ],
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: Text(context.s('cancel')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, temporary),
+              child: Text(context.s('apply')),
+            ),
+          ],
         ),
-      );
-    } finally {
-      snapshot?.dispose();
-    }
+      ),
+    );
   }
 
-  void _showAbout(
+  Future<T?> _showSettingsDialog<T>(
+    BuildContext context, {
+    required Widget Function(BuildContext dialogContext, Widget? backdrop)
+    builder,
+  }) => showDialog<T>(
+    context: context,
+    builder: (dialogContext) => builder(dialogContext, null),
+  );
+
+  Future<void> _showAbout(
     BuildContext context,
     String coreVersion,
     String appVersion,
-  ) => showAboutDialog(
-    context: context,
-    applicationName: 'niraNG',
-    applicationVersion: appVersion,
-    applicationIcon: ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: Image.asset(
-        'assets/branding/nirang-logo-concept.png',
-        width: 54,
-        height: 54,
-        cacheWidth: 108,
-        cacheHeight: 108,
+  ) async {
+    await _showSettingsDialog<void>(
+      context,
+      builder: (dialogContext, backdrop) => NirangAlertDialog(
+        surfaceOpacity: backdrop == null
+            ? null
+            : SnapshotGlassTokens.darkSurfaceOpacity,
+        backdrop: backdrop,
+        icon: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: Image.asset(
+            'assets/branding/nirang-logo-concept.png',
+            width: 54,
+            height: 54,
+            cacheWidth: 108,
+            cacheHeight: 108,
+          ),
+        ),
+        title: const Text('niraNG'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(appVersion),
+            const SizedBox(height: 8),
+            Text('${context.s('coreVersion')}: $coreVersion'),
+            Text('${context.s('packageName')}: dev.nirang.client'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(MaterialLocalizations.of(context).closeButtonLabel),
+          ),
+        ],
       ),
-    ),
-    children: [
-      const SizedBox(height: 8),
-      Text('${context.s('coreVersion')}: $coreVersion'),
-      Text('${context.s('packageName')}: dev.nirang.client'),
-    ],
-  );
+    );
+  }
 }
 
 class _TextValueDialog extends StatefulWidget {
@@ -1167,12 +1177,14 @@ class _TextValueDialog extends StatefulWidget {
     required this.title,
     required this.initial,
     required this.keyboardType,
+    required this.backdrop,
     this.validator,
   });
 
   final String title;
   final String initial;
   final TextInputType keyboardType;
+  final Widget? backdrop;
   final String? Function(String value)? validator;
 
   @override
@@ -1197,6 +1209,10 @@ class _TextValueDialogState extends State<_TextValueDialog> {
 
   @override
   Widget build(BuildContext context) => NirangAlertDialog(
+    surfaceOpacity: widget.backdrop == null
+        ? null
+        : SnapshotGlassTokens.darkSurfaceOpacity,
+    backdrop: widget.backdrop,
     title: Text(widget.title),
     content: Form(
       key: _formKey,
@@ -1228,19 +1244,25 @@ class _TextValueDialogState extends State<_TextValueDialog> {
 }
 
 class _CustomRulesDialog extends StatefulWidget {
-  const _CustomRulesDialog({required this.domains, required this.ips});
+  const _CustomRulesDialog({
+    required this.domains,
+    required this.ips,
+    required this.backdrop,
+  });
 
   final String domains;
   final String ips;
+  final Widget? backdrop;
 
   @override
   State<_CustomRulesDialog> createState() => _CustomRulesDialogState();
 }
 
 class _FragmentDialog extends StatefulWidget {
-  const _FragmentDialog({required this.settings});
+  const _FragmentDialog({required this.settings, required this.backdrop});
 
   final NativeSettings settings;
+  final Widget? backdrop;
 
   @override
   State<_FragmentDialog> createState() => _FragmentDialogState();
@@ -1290,6 +1312,10 @@ class _FragmentDialogState extends State<_FragmentDialog> {
 
   @override
   Widget build(BuildContext context) => NirangAlertDialog(
+    surfaceOpacity: widget.backdrop == null
+        ? null
+        : SnapshotGlassTokens.darkSurfaceOpacity,
+    backdrop: widget.backdrop,
     title: Text(context.s('fragmentSettings')),
     content: Form(
       key: _formKey,
@@ -1422,6 +1448,10 @@ class _CustomRulesDialogState extends State<_CustomRulesDialog> {
 
   @override
   Widget build(BuildContext context) => NirangAlertDialog(
+    surfaceOpacity: widget.backdrop == null
+        ? null
+        : SnapshotGlassTokens.darkSurfaceOpacity,
+    backdrop: widget.backdrop,
     title: Text(context.s('custom')),
     content: Form(
       key: _formKey,
