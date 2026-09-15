@@ -483,7 +483,10 @@ void main() {
     );
     expect(lightMenu.blur, 12);
     expect(lightMenu.lightBlurLimit, 16);
-    expect(lightMenu.surfaceOpacity, .18);
+    expect(
+      lightMenu.surfaceOpacity,
+      GlassSurface.lightInteractiveOpacity,
+    );
     expect(find.text('Sort by test results'), findsOneWidget);
     expect(find.text('Test real delays'), findsOneWidget);
     expect(find.text('Test TCP delays (TCPing)'), findsOneWidget);
@@ -507,7 +510,10 @@ void main() {
     );
     expect(bottomSheetFinder, findsOneWidget);
     expect(tester.widget<GlassSurface>(bottomSheetFinder).blur, 12);
-    expect(tester.widget<GlassSurface>(bottomSheetFinder).surfaceOpacity, .20);
+    expect(
+      tester.widget<GlassSurface>(bottomSheetFinder).surfaceOpacity,
+      GlassSurface.lightInteractiveOpacity,
+    );
     expect(
       find.descendant(
         of: bottomSheetFinder,

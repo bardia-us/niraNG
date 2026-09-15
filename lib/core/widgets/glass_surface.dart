@@ -8,6 +8,7 @@ import '../../features/vpn/app_controller.dart';
 class GlassSurface extends ConsumerWidget {
   static const darkInteractiveBlur = 18.0;
   static const darkInteractiveOpacity = .24;
+  static const lightInteractiveOpacity = .11;
 
   const GlassSurface({
     required this.child,
@@ -145,17 +146,17 @@ class GlassSurface extends ConsumerWidget {
     final darkOpacity = surfaceOpacity?.clamp(0.0, 1.0) ?? .20;
     final content = DecoratedBox(
       decoration: BoxDecoration(
-        gradient: reducedEffects
+        gradient: reducedEffects || vibrantDark
             ? null
             : dark
-            ? vibrantDark
-                  ? null
-                  : darkGradient(scheme, opacity: darkOpacity)
+            ? darkGradient(scheme, opacity: darkOpacity)
             : lightGradient(scheme, opacity: lightOpacity),
         color: reducedEffects
             ? scheme.surfaceContainerLow
-            : dark && vibrantDark
-            ? scheme.surface.withValues(alpha: darkOpacity * .20)
+            : vibrantDark
+            ? scheme.surface.withValues(
+                alpha: dark ? darkOpacity : lightOpacity,
+              )
             : null,
         border: reducedEffects
             ? Border.all(color: scheme.outlineVariant.withValues(alpha: .42))
@@ -306,29 +307,10 @@ class _DarkLiquidFramePainter extends CustomPainter {
       frameRect,
       Radius.circular((radius - .65).clamp(0, radius)),
     );
-    if (continuousEdge) {
-      canvas.drawRRect(
-        frame,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1
-          ..color = edgeColor,
-      );
-    }
     final framePaint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = elevated ? 1.15 : .85
-      ..shader = const LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [
-          Color(0x59FFFFFF),
-          Color(0x1FFFFFFF),
-          Color(0x12000000),
-          Color(0x3D000000),
-        ],
-        stops: [0, .34, .68, 1],
-      ).createShader(frameRect);
+      ..strokeWidth = continuousEdge ? 1 : .85
+      ..color = edgeColor;
     canvas.drawRRect(frame, framePaint);
 
     if (!elevated) return;

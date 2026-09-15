@@ -446,7 +446,9 @@ class _ServerActionsSheetOverlayState extends State<_ServerActionsSheetOverlay>
               darkBlurLimit: GlassSurface.darkInteractiveBlur,
               surfaceOpacity: widget.performanceMode
                   ? .98
-                  : (dark ? GlassSurface.darkInteractiveOpacity : .20),
+                  : (dark
+                        ? GlassSurface.darkInteractiveOpacity
+                        : GlassSurface.lightInteractiveOpacity),
               liquidDepth: true,
               continuousEdge: dark,
               vibrantDark: true,
@@ -615,7 +617,9 @@ class _ServersGlassHeaderState extends State<_ServersGlassHeader> {
       darkBlurLimit: GlassSurface.darkInteractiveBlur,
       surfaceOpacity: widget.reducedEffects
           ? .98
-          : (dark ? GlassSurface.darkInteractiveOpacity : .16),
+          : (dark
+                ? GlassSurface.darkInteractiveOpacity
+                : GlassSurface.lightInteractiveOpacity),
       liquidDepth: true,
       showShadow: false,
       continuousEdge: dark,
@@ -728,8 +732,11 @@ class _ServerPageActionsPopoverState extends State<_ServerPageActionsPopover>
               darkBlurLimit: GlassSurface.darkInteractiveBlur,
               surfaceOpacity: widget.app.settings.performanceMode
                   ? .98
-                  : (dark ? GlassSurface.darkInteractiveOpacity : .18),
+                  : (dark
+                        ? GlassSurface.darkInteractiveOpacity
+                        : GlassSurface.lightInteractiveOpacity),
               liquidDepth: true,
+              continuousEdge: dark,
               vibrantDark: true,
               child: FadeTransition(
                 opacity: curved,

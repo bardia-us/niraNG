@@ -33,10 +33,12 @@ class NirangAlertDialog extends StatelessWidget {
         blur: dark ? GlassSurface.darkInteractiveBlur : 14,
         lightBlurLimit: 16,
         darkBlurLimit: GlassSurface.darkInteractiveBlur,
-        surfaceOpacity: dark ? GlassSurface.darkInteractiveOpacity : .24,
+        surfaceOpacity: dark
+            ? GlassSurface.darkInteractiveOpacity
+            : GlassSurface.lightInteractiveOpacity,
         liquidDepth: true,
         continuousEdge: dark,
-        vibrantDark: dark,
+        vibrantDark: true,
         child: ConstrainedBox(
           constraints: BoxConstraints(maxWidth: 560, maxHeight: maxHeight),
           child: Column(
