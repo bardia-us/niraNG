@@ -12,7 +12,6 @@ import '../../core/update_checker.dart';
 import '../../core/registration/device_registration.dart';
 import '../../core/widgets/glass_dialog.dart';
 import '../../core/widgets/glass_surface.dart';
-import '../../core/widgets/snapshot_glass.dart';
 import '../../core/widgets/update_dialog.dart';
 import '../servers/servers_screen.dart';
 import '../settings/settings_screen.dart';
@@ -218,14 +217,11 @@ class _AppShellState extends ConsumerState<AppShell> {
             ],
           ),
         ),
-        body: RepaintBoundary(
-          key: nirangGlassBackdropBoundaryKey,
-          child: Stack(
-            children: [
-              IndexedStack(index: _index, children: pages),
-              const _TransientStatusBanner(),
-            ],
-          ),
+        body: Stack(
+          children: [
+            IndexedStack(index: _index, children: pages),
+            const _TransientStatusBanner(),
+          ],
         ),
         bottomNavigationBar: reducedEffects
             ? navigationBar

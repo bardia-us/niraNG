@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/formatters.dart';
 import '../../core/localization/app_strings.dart';
 import '../../core/widgets/glass_dialog.dart';
-import '../../core/widgets/snapshot_glass.dart';
 import '../../core/widgets/update_dialog.dart';
 import '../../core/platform/native_models.dart';
 import '../../core/platform/nirang_native.dart';
@@ -849,11 +848,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   ) async {
     final confirmed = await _showSettingsDialog<bool>(
       context,
-      builder: (dialogContext, backdrop) => NirangAlertDialog(
-        surfaceOpacity: backdrop == null
-            ? null
-            : SnapshotGlassTokens.darkSurfaceOpacity,
-        backdrop: backdrop,
+      builder: (dialogContext) => NirangAlertDialog(
         title: Text(context.s('resetSettingsConfirm')),
         content: Text(context.s('resetSettingsConfirmBody')),
         actions: [
@@ -930,10 +925,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   ) async {
     final result = await _showSettingsDialog<({String domains, String ips})>(
       context,
-      builder: (_, backdrop) => _CustomRulesDialog(
+      builder: (_) => _CustomRulesDialog(
         domains: settings.customDomains,
         ips: settings.customIps,
-        backdrop: backdrop,
       ),
     );
     if (context.mounted && result != null) {
@@ -954,8 +948,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   ) async {
     final result = await _showSettingsDialog<Map<String, Object?>>(
       context,
-      builder: (_, backdrop) =>
-          _FragmentDialog(settings: settings, backdrop: backdrop),
+      builder: (_) => _FragmentDialog(settings: settings),
     );
     if (result != null && context.mounted) {
       await _perform(context, () => controller.updateSettings(result));
@@ -989,12 +982,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }) async {
     return _showSettingsDialog<String>(
       context,
-      builder: (_, backdrop) => _TextValueDialog(
+      builder: (_) => _TextValueDialog(
         title: title,
         initial: initial,
         keyboardType: keyboardType,
         validator: validator,
-        backdrop: backdrop,
       ),
     );
   }
@@ -1075,13 +1067,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     var temporary = current;
     return _showSettingsDialog<String>(
       context,
-      builder: (dialogContext, backdrop) => StatefulBuilder(
+      builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) => NirangAlertDialog(
           title: Text(title),
-          surfaceOpacity: backdrop == null
-              ? null
-              : SnapshotGlassTokens.darkSurfaceOpacity,
-          backdrop: backdrop,
           contentPadding: const EdgeInsets.fromLTRB(8, 12, 8, 0),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -1121,12 +1109,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Future<T?> _showSettingsDialog<T>(
     BuildContext context, {
-    required Widget Function(BuildContext dialogContext, Widget? backdrop)
-    builder,
-  }) => showDialog<T>(
-    context: context,
-    builder: (dialogContext) => builder(dialogContext, null),
-  );
+    required Widget Function(BuildContext dialogContext) builder,
+  }) => showDialog<T>(context: context, builder: builder);
 
   Future<void> _showAbout(
     BuildContext context,
@@ -1135,11 +1119,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   ) async {
     await _showSettingsDialog<void>(
       context,
-      builder: (dialogContext, backdrop) => NirangAlertDialog(
-        surfaceOpacity: backdrop == null
-            ? null
-            : SnapshotGlassTokens.darkSurfaceOpacity,
-        backdrop: backdrop,
+      builder: (dialogContext) => NirangAlertDialog(
         icon: ClipRRect(
           borderRadius: BorderRadius.circular(12),
           child: Image.asset(
@@ -1177,14 +1157,12 @@ class _TextValueDialog extends StatefulWidget {
     required this.title,
     required this.initial,
     required this.keyboardType,
-    required this.backdrop,
     this.validator,
   });
 
   final String title;
   final String initial;
   final TextInputType keyboardType;
-  final Widget? backdrop;
   final String? Function(String value)? validator;
 
   @override
@@ -1209,10 +1187,6 @@ class _TextValueDialogState extends State<_TextValueDialog> {
 
   @override
   Widget build(BuildContext context) => NirangAlertDialog(
-    surfaceOpacity: widget.backdrop == null
-        ? null
-        : SnapshotGlassTokens.darkSurfaceOpacity,
-    backdrop: widget.backdrop,
     title: Text(widget.title),
     content: Form(
       key: _formKey,
@@ -1244,25 +1218,19 @@ class _TextValueDialogState extends State<_TextValueDialog> {
 }
 
 class _CustomRulesDialog extends StatefulWidget {
-  const _CustomRulesDialog({
-    required this.domains,
-    required this.ips,
-    required this.backdrop,
-  });
+  const _CustomRulesDialog({required this.domains, required this.ips});
 
   final String domains;
   final String ips;
-  final Widget? backdrop;
 
   @override
   State<_CustomRulesDialog> createState() => _CustomRulesDialogState();
 }
 
 class _FragmentDialog extends StatefulWidget {
-  const _FragmentDialog({required this.settings, required this.backdrop});
+  const _FragmentDialog({required this.settings});
 
   final NativeSettings settings;
-  final Widget? backdrop;
 
   @override
   State<_FragmentDialog> createState() => _FragmentDialogState();
@@ -1312,10 +1280,6 @@ class _FragmentDialogState extends State<_FragmentDialog> {
 
   @override
   Widget build(BuildContext context) => NirangAlertDialog(
-    surfaceOpacity: widget.backdrop == null
-        ? null
-        : SnapshotGlassTokens.darkSurfaceOpacity,
-    backdrop: widget.backdrop,
     title: Text(context.s('fragmentSettings')),
     content: Form(
       key: _formKey,
@@ -1448,10 +1412,6 @@ class _CustomRulesDialogState extends State<_CustomRulesDialog> {
 
   @override
   Widget build(BuildContext context) => NirangAlertDialog(
-    surfaceOpacity: widget.backdrop == null
-        ? null
-        : SnapshotGlassTokens.darkSurfaceOpacity,
-    backdrop: widget.backdrop,
     title: Text(context.s('custom')),
     content: Form(
       key: _formKey,

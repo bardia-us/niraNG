@@ -10,7 +10,6 @@ import '../../core/theme/app_theme.dart';
 import '../../core/widgets/country_flag_badge.dart';
 import '../../core/widgets/glass_surface.dart';
 import '../../core/widgets/glass_dialog.dart';
-import '../../core/widgets/snapshot_glass.dart';
 import '../vpn/app_controller.dart';
 import 'server_information_screen.dart';
 
@@ -22,150 +21,17 @@ class ServersScreen extends ConsumerStatefulWidget {
 }
 
 class _ServersScreenState extends ConsumerState<ServersScreen> {
-  final GlobalKey _backdropKey = GlobalKey();
   Rect? _menuAnchor;
   ServerInfo? _serverActionsTarget;
-  GlassSnapshot? _menuBackdrop;
-  GlassSnapshot? _headerBackdrop;
-  bool _headerCaptureScheduled = false;
-  int? _headerBackdropSignature;
-  int? _headerRequestedSignature;
-  int _headerScrollRevision = 0;
-  int _headerDataSignature = 0;
-  Timer? _headerScrollThrottle;
 
   void _openMenu(Rect globalAnchor) {
-    unawaited(_showMenu(globalAnchor));
-  }
-
-  Future<void> _showMenu(Rect globalAnchor) async {
     final box = context.findRenderObject() as RenderBox?;
     if (box == null) return;
     final origin = box.localToGlobal(Offset.zero);
-    await _captureBackdrop();
-    if (!mounted) return;
     setState(() => _menuAnchor = globalAnchor.shift(-origin));
   }
 
-  Future<void> _captureBackdrop() async {
-    if (Theme.of(context).brightness != Brightness.dark ||
-        ref.read(performanceModeProvider)) {
-      _releaseBackdrop();
-      return;
-    }
-    try {
-      final snapshot = await GlassSnapshotRenderer.capture(
-        boundaryKey: _backdropKey,
-        background: Theme.of(context).scaffoldBackgroundColor,
-      );
-      if (snapshot == null) return;
-      if (!mounted) {
-        snapshot.dispose();
-        return;
-      }
-      final old = _menuBackdrop;
-      _menuBackdrop = snapshot;
-      old?.dispose();
-    } catch (error, stackTrace) {
-      debugPrint('Glass menu capture failed: $error');
-      debugPrintStack(stackTrace: stackTrace);
-    }
-  }
-
-  void _scheduleHeaderBackdrop({required int signature, bool force = false}) {
-    _headerRequestedSignature = signature;
-    if (!force && _headerBackdropSignature == signature) return;
-    if (_headerCaptureScheduled) return;
-    _headerCaptureScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted ||
-          Theme.of(context).brightness != Brightness.dark ||
-          ref.read(performanceModeProvider)) {
-        _headerCaptureScheduled = false;
-        return;
-      }
-      final requestedSignature = _headerRequestedSignature;
-      try {
-        final snapshot = await GlassSnapshotRenderer.capture(
-          boundaryKey: _backdropKey,
-          background: Theme.of(context).scaffoldBackgroundColor,
-        );
-        if (snapshot == null) {
-          _headerCaptureScheduled = false;
-          return;
-        }
-        if (!mounted) {
-          snapshot.dispose();
-          return;
-        }
-        if (requestedSignature != _headerRequestedSignature) {
-          snapshot.dispose();
-          _headerCaptureScheduled = false;
-          final latest = _headerRequestedSignature;
-          if (latest != null) {
-            _scheduleHeaderBackdrop(signature: latest, force: true);
-          }
-          return;
-        }
-        final old = _headerBackdrop;
-        _headerCaptureScheduled = false;
-        setState(() {
-          _headerBackdrop = snapshot;
-          _headerBackdropSignature = requestedSignature;
-        });
-        old?.dispose();
-      } catch (error, stackTrace) {
-        _headerCaptureScheduled = false;
-        debugPrint('Glass header capture failed: $error');
-        debugPrintStack(stackTrace: stackTrace);
-      }
-    });
-  }
-
-  void _clearHeaderBackdrop() {
-    _headerRequestedSignature = null;
-    _headerBackdropSignature = null;
-    final old = _headerBackdrop;
-    _headerBackdrop = null;
-    old?.dispose();
-  }
-
-  void _releaseBackdrop() {
-    final old = _menuBackdrop;
-    _menuBackdrop = null;
-    old?.dispose();
-  }
-
-  bool _handleHeaderScroll(ScrollNotification notification) {
-    if (notification is ScrollEndNotification) {
-      _headerScrollThrottle?.cancel();
-      _headerScrollThrottle = null;
-      _refreshHeaderBackdrop();
-    } else if (notification is ScrollUpdateNotification &&
-        _headerScrollThrottle == null) {
-      _headerScrollThrottle = Timer(const Duration(milliseconds: 125), () {
-        _headerScrollThrottle = null;
-        if (mounted) _refreshHeaderBackdrop();
-      });
-    }
-    return false;
-  }
-
-  void _refreshHeaderBackdrop() {
-    _headerScrollRevision++;
-    _scheduleHeaderBackdrop(
-      signature: Object.hash(_headerDataSignature, _headerScrollRevision),
-      force: true,
-    );
-  }
-
-  @override
-  void dispose() {
-    _headerScrollThrottle?.cancel();
-    _releaseBackdrop();
-    _clearHeaderBackdrop();
-    super.dispose();
-  }
+  bool _handleHeaderScroll(ScrollNotification notification) => false;
 
   @override
   Widget build(BuildContext context) {
@@ -192,40 +58,10 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
     );
     final controller = ref.read(appControllerProvider.notifier);
     const headerHeight = 64.0;
-    final darkSnapshotEnabled =
-        Theme.of(context).brightness == Brightness.dark &&
-        !view.performanceMode;
-    _headerDataSignature = Object.hashAll([
-      Theme.of(context).brightness,
-      view.performanceMode,
-      view.isPinging,
-      view.isRefreshing,
-      MediaQuery.sizeOf(context),
-      MediaQuery.devicePixelRatioOf(context),
-      for (final server in app.servers)
-        Object.hash(
-          server.id,
-          server.name,
-          server.country,
-          server.protocol,
-          server.transport,
-          server.selected,
-          server.ping,
-          server.status,
-        ),
-    ]);
-    if (darkSnapshotEnabled) {
-      _scheduleHeaderBackdrop(
-        signature: Object.hash(_headerDataSignature, _headerScrollRevision),
-      );
-    } else if (_headerBackdrop != null) {
-      _clearHeaderBackdrop();
-    }
     return Stack(
       children: [
         Positioned.fill(
           child: RepaintBoundary(
-            key: _backdropKey,
             child: Stack(
               children: [
                 Positioned.fill(
@@ -414,7 +250,6 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
             isPinging: app.isPinging,
             isRefreshing: app.isRefreshing,
             reducedEffects: view.performanceMode,
-            backdropSnapshot: _headerBackdrop,
             onMenu: _openMenu,
           ),
         ),
@@ -427,11 +262,9 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
             child: _ServerActionsSheetOverlay(
               server: server,
               performanceMode: view.performanceMode,
-              backdropSnapshot: _menuBackdrop,
               onClosed: (action) {
                 if (mounted) {
                   setState(() => _serverActionsTarget = null);
-                  _releaseBackdrop();
                 }
                 if (action != null && context.mounted) {
                   unawaited(_handleAction(context, controller, server, action));
@@ -461,11 +294,9 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
       top: top,
       width: menuWidth,
       app: app,
-      backdropSnapshot: _menuBackdrop,
       onClosed: (action) {
         if (mounted) {
           setState(() => _menuAnchor = null);
-          _releaseBackdrop();
         }
         if (action != null && context.mounted) {
           unawaited(_performServerPageAction(context, controller, action));
@@ -495,12 +326,6 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
 
   void _serverActions(ServerInfo server) {
     if (_serverActionsTarget != null) return;
-    unawaited(_showServerActions(server));
-  }
-
-  Future<void> _showServerActions(ServerInfo server) async {
-    await _captureBackdrop();
-    if (!mounted) return;
     setState(() => _serverActionsTarget = server);
   }
 
@@ -554,13 +379,11 @@ class _ServerActionsSheetOverlay extends StatefulWidget {
   const _ServerActionsSheetOverlay({
     required this.server,
     required this.performanceMode,
-    required this.backdropSnapshot,
     required this.onClosed,
   });
 
   final ServerInfo server;
   final bool performanceMode;
-  final GlassSnapshot? backdropSnapshot;
   final ValueChanged<String?> onClosed;
 
   @override
@@ -616,21 +439,17 @@ class _ServerActionsSheetOverlayState extends State<_ServerActionsSheetOverlay>
             child: GlassSurface(
               key: const ValueKey('server-actions-bottom-sheet-surface'),
               radius: 22,
-              blur: widget.performanceMode ? 0 : (dark ? 30 : 12),
+              blur: widget.performanceMode
+                  ? 0
+                  : (dark ? GlassSurface.darkInteractiveBlur : 12),
               lightBlurLimit: 16,
-              darkBlurLimit: 32,
+              darkBlurLimit: GlassSurface.darkInteractiveBlur,
               surfaceOpacity: widget.performanceMode
                   ? .98
-                  : (dark ? SnapshotGlassTokens.darkSurfaceOpacity : .20),
+                  : (dark ? GlassSurface.darkInteractiveOpacity : .20),
               liquidDepth: true,
               continuousEdge: dark,
               vibrantDark: true,
-              backdrop:
-                  dark &&
-                      !widget.performanceMode &&
-                      widget.backdropSnapshot != null
-                  ? GlassSnapshotBackdrop(snapshot: widget.backdropSnapshot!)
-                  : null,
               child: FadeTransition(
                 opacity: motion,
                 child: SlideTransition(
@@ -750,7 +569,6 @@ class _ServersGlassHeader extends StatefulWidget {
     required this.isPinging,
     required this.isRefreshing,
     required this.reducedEffects,
-    required this.backdropSnapshot,
     required this.onMenu,
   });
 
@@ -759,7 +577,6 @@ class _ServersGlassHeader extends StatefulWidget {
   final bool isPinging;
   final bool isRefreshing;
   final bool reducedEffects;
-  final GlassSnapshot? backdropSnapshot;
   final ValueChanged<Rect> onMenu;
 
   @override
@@ -791,20 +608,18 @@ class _ServersGlassHeaderState extends State<_ServersGlassHeader> {
     final dark = theme.brightness == Brightness.dark;
     return GlassSurface(
       radius: 16,
-      blur: widget.reducedEffects ? 0 : (dark ? 14 : 12),
+      blur: widget.reducedEffects
+          ? 0
+          : (dark ? GlassSurface.darkInteractiveBlur : 12),
       lightBlurLimit: 16,
-      darkBlurLimit: 18,
+      darkBlurLimit: GlassSurface.darkInteractiveBlur,
       surfaceOpacity: widget.reducedEffects
           ? .98
-          : (dark ? SnapshotGlassTokens.darkSurfaceOpacity : .16),
+          : (dark ? GlassSurface.darkInteractiveOpacity : .16),
       liquidDepth: true,
       showShadow: false,
       continuousEdge: dark,
       vibrantDark: true,
-      backdrop:
-          dark && !widget.reducedEffects && widget.backdropSnapshot != null
-          ? GlassSnapshotBackdrop(snapshot: widget.backdropSnapshot!)
-          : null,
       child: SizedBox(
         height: widget.height,
         child: Padding(
@@ -842,7 +657,6 @@ class _ServerPageActionsPopover extends StatefulWidget {
     required this.top,
     required this.width,
     required this.app,
-    required this.backdropSnapshot,
     required this.onClosed,
   });
 
@@ -850,7 +664,6 @@ class _ServerPageActionsPopover extends StatefulWidget {
   final double top;
   final double width;
   final AppSnapshot app;
-  final GlassSnapshot? backdropSnapshot;
   final ValueChanged<_ServerPageAction?> onClosed;
 
   @override
@@ -908,20 +721,16 @@ class _ServerPageActionsPopoverState extends State<_ServerPageActionsPopover>
             child: GlassSurface(
               key: const ValueKey('server-page-actions-surface'),
               radius: 18,
-              blur: widget.app.settings.performanceMode ? 0 : (dark ? 30 : 12),
+              blur: widget.app.settings.performanceMode
+                  ? 0
+                  : (dark ? GlassSurface.darkInteractiveBlur : 12),
               lightBlurLimit: 16,
-              darkBlurLimit: 32,
+              darkBlurLimit: GlassSurface.darkInteractiveBlur,
               surfaceOpacity: widget.app.settings.performanceMode
                   ? .98
-                  : (dark ? SnapshotGlassTokens.darkSurfaceOpacity : .18),
+                  : (dark ? GlassSurface.darkInteractiveOpacity : .18),
               liquidDepth: true,
               vibrantDark: true,
-              backdrop:
-                  dark &&
-                      !widget.app.settings.performanceMode &&
-                      widget.backdropSnapshot != null
-                  ? GlassSnapshotBackdrop(snapshot: widget.backdropSnapshot!)
-                  : null,
               child: FadeTransition(
                 opacity: curved,
                 child: ScaleTransition(

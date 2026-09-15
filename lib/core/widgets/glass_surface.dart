@@ -6,6 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../features/vpn/app_controller.dart';
 
 class GlassSurface extends ConsumerWidget {
+  static const darkInteractiveBlur = 18.0;
+  static const darkInteractiveOpacity = .38;
+
   const GlassSurface({
     required this.child,
     super.key,
@@ -19,7 +22,6 @@ class GlassSurface extends ConsumerWidget {
     this.continuousEdge = false,
     this.vibrantDark = false,
     this.showShadow = true,
-    this.backdrop,
   });
 
   final Widget child;
@@ -33,7 +35,6 @@ class GlassSurface extends ConsumerWidget {
   final bool continuousEdge;
   final bool vibrantDark;
   final bool showShadow;
-  final Widget? backdrop;
 
   // Matches the light vibrance pass used by Flutter's
   // CupertinoPopupSurface before its backdrop blur.
@@ -175,22 +176,9 @@ class GlassSurface extends ConsumerWidget {
       ),
       child: content,
     );
-    final capturedContent = backdrop == null
-        ? content
-        : Stack(
-            fit: StackFit.passthrough,
-            children: [
-              Positioned.fill(child: backdrop!),
-              content,
-            ],
-          );
     final clippedSurface = ClipRRect(
       borderRadius: BorderRadius.circular(radius),
-      child: reducedEffects
-          ? content
-          : backdrop == null
-          ? liveFilteredContent
-          : capturedContent,
+      child: reducedEffects ? content : liveFilteredContent,
     );
     if (reducedEffects) return clippedSurface;
 

@@ -796,9 +796,10 @@ void main() {
 
     final dialog = find.byType(NirangAlertDialog);
     expect(dialog, findsOneWidget);
-    final fragmentDialog = tester.widget<NirangAlertDialog>(dialog);
-    expect(fragmentDialog.blur, isNull);
-    expect(fragmentDialog.surfaceOpacity, isNull);
+    expect(
+      find.descendant(of: dialog, matching: find.byType(GlassSurface)),
+      findsNothing,
+    );
     expect(
       find.descendant(of: dialog, matching: find.byType(SingleChildScrollView)),
       findsOneWidget,
