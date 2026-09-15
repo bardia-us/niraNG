@@ -798,7 +798,7 @@ void main() {
     expect(dialog, findsOneWidget);
     expect(
       find.descendant(of: dialog, matching: find.byType(GlassSurface)),
-      findsNothing,
+      findsOneWidget,
     );
     expect(
       find.descendant(of: dialog, matching: find.byType(SingleChildScrollView)),

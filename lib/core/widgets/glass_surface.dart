@@ -7,7 +7,7 @@ import '../../features/vpn/app_controller.dart';
 
 class GlassSurface extends ConsumerWidget {
   static const darkInteractiveBlur = 18.0;
-  static const darkInteractiveOpacity = .38;
+  static const darkInteractiveOpacity = .24;
 
   const GlassSurface({
     required this.child,
@@ -124,23 +124,15 @@ class GlassSurface extends ConsumerWidget {
   static LinearGradient darkGradient(
     ColorScheme scheme, {
     required double opacity,
-    bool vibrant = false,
   }) => LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: vibrant
-        ? [
-            Colors.white.withValues(alpha: .048),
-            scheme.surface.withValues(alpha: opacity * .22),
-            scheme.primaryContainer.withValues(alpha: opacity * .15),
-            scheme.surface.withValues(alpha: opacity * .16),
-          ]
-        : [
-            Colors.white.withValues(alpha: .032),
-            scheme.surface.withValues(alpha: opacity * .38),
-            scheme.primaryContainer.withValues(alpha: opacity * .12),
-            Colors.black.withValues(alpha: opacity * .34),
-          ],
+    colors: [
+      Colors.white.withValues(alpha: .032),
+      scheme.surface.withValues(alpha: opacity * .38),
+      scheme.primaryContainer.withValues(alpha: opacity * .12),
+      Colors.black.withValues(alpha: opacity * .34),
+    ],
     stops: const [0, .28, .66, 1],
   );
 
@@ -156,9 +148,15 @@ class GlassSurface extends ConsumerWidget {
         gradient: reducedEffects
             ? null
             : dark
-            ? darkGradient(scheme, opacity: darkOpacity, vibrant: vibrantDark)
+            ? vibrantDark
+                  ? null
+                  : darkGradient(scheme, opacity: darkOpacity)
             : lightGradient(scheme, opacity: lightOpacity),
-        color: reducedEffects ? scheme.surfaceContainerLow : null,
+        color: reducedEffects
+            ? scheme.surfaceContainerLow
+            : dark && vibrantDark
+            ? scheme.surface.withValues(alpha: darkOpacity * .20)
+            : null,
         border: reducedEffects
             ? Border.all(color: scheme.outlineVariant.withValues(alpha: .42))
             : null,
