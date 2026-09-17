@@ -170,48 +170,50 @@ class _AppShellState extends ConsumerState<AppShell> {
         ),
       ],
     );
-    return DecoratedBox(
-      decoration: NirangVisualEffects.shellBackground(
-        theme,
-        reducedEffects: reducedEffects,
-      ),
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        appBar: AppBar(
+    return BackdropGroup(
+      child: DecoratedBox(
+        decoration: NirangVisualEffects.shellBackground(
+          theme,
+          reducedEffects: reducedEffects,
+        ),
+        child: Scaffold(
           backgroundColor: Colors.transparent,
-          surfaceTintColor: Colors.transparent,
-          flexibleSpace: const GlassSurface(
-            radius: 0,
-            showShadow: false,
-            child: SizedBox.expand(),
-          ),
-          title: Row(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(7),
-                child: Image.asset(
-                  'assets/branding/nirang-logo-concept.png',
-                  width: 30,
-                  height: 30,
-                  cacheWidth: 60,
-                  cacheHeight: 60,
+          appBar: AppBar(
+            backgroundColor: Colors.transparent,
+            surfaceTintColor: Colors.transparent,
+            flexibleSpace: const GlassSurface(
+              radius: 0,
+              showShadow: false,
+              child: SizedBox.expand(),
+            ),
+            title: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(7),
+                  child: Image.asset(
+                    'assets/branding/nirang-logo-concept.png',
+                    width: 30,
+                    height: 30,
+                    cacheWidth: 60,
+                    cacheHeight: 60,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              const Text('niraNG'),
+                const SizedBox(width: 10),
+                const Text('niraNG'),
+              ],
+            ),
+          ),
+          body: Stack(
+            children: [
+              IndexedStack(index: _index, children: pages),
+              const _TransientStatusBanner(),
             ],
           ),
-        ),
-        body: Stack(
-          children: [
-            IndexedStack(index: _index, children: pages),
-            const _TransientStatusBanner(),
-          ],
-        ),
-        bottomNavigationBar: GlassSurface(
-          radius: 0,
-          showShadow: false,
-          child: navigationBar,
+          bottomNavigationBar: GlassSurface(
+            radius: 0,
+            showShadow: false,
+            child: navigationBar,
+          ),
         ),
       ),
     );

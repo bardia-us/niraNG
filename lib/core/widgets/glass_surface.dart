@@ -94,11 +94,31 @@ class GlassSurface extends ConsumerWidget {
       );
     }
 
-    return LiquidGlass.withOwnLayer(
-      settings: settingsFor(theme.brightness, blur: blur),
-      glassContainsChild: false,
-      shape: LiquidRoundedRectangle(borderRadius: effectiveRadius),
-      child: content,
+    return Stack(
+      fit: StackFit.passthrough,
+      clipBehavior: Clip.none,
+      children: [
+        // The non-positioned foreground below establishes the surface's final
+        // size. The renderer receives exactly those finite bounds, matching
+        // the proven Glass Test Lab structure instead of relying on intrinsic
+        // geometry inside menus, dialogs, and scrolling lists.
+        Positioned.fill(
+          child: IgnorePointer(
+            child: LiquidGlassLayer(
+              settings: settingsFor(theme.brightness, blur: blur),
+              useBackdropGroup: true,
+              child: LiquidGlass(
+                glassContainsChild: false,
+                shape: LiquidRoundedRectangle(borderRadius: effectiveRadius),
+                child: const SizedBox.expand(),
+              ),
+            ),
+          ),
+        ),
+        // Paint controls once, above the glass, so they stay sharp and retain
+        // their original semantics and hit testing.
+        content,
+      ],
     );
   }
 }
