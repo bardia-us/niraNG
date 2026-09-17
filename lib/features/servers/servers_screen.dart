@@ -415,7 +415,6 @@ class _ServerActionsSheetOverlayState extends State<_ServerActionsSheetOverlay>
 
   @override
   Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
     final motion = CurvedAnimation(
       parent: _animation,
       curve: Curves.easeOutCubic,
@@ -439,19 +438,6 @@ class _ServerActionsSheetOverlayState extends State<_ServerActionsSheetOverlay>
             child: GlassSurface(
               key: const ValueKey('server-actions-bottom-sheet-surface'),
               radius: 22,
-              blur: widget.performanceMode
-                  ? 0
-                  : (dark ? GlassSurface.darkInteractiveBlur : 12),
-              lightBlurLimit: 16,
-              darkBlurLimit: GlassSurface.darkInteractiveBlur,
-              surfaceOpacity: widget.performanceMode
-                  ? .98
-                  : (dark
-                        ? GlassSurface.darkInteractiveOpacity
-                        : GlassSurface.lightInteractiveOpacity),
-              liquidDepth: true,
-              continuousEdge: dark,
-              vibrantDark: true,
               child: FadeTransition(
                 opacity: motion,
                 child: SlideTransition(
@@ -607,23 +593,9 @@ class _ServersGlassHeaderState extends State<_ServersGlassHeader> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final dark = theme.brightness == Brightness.dark;
     return GlassSurface(
       radius: 16,
-      blur: widget.reducedEffects
-          ? 0
-          : (dark ? GlassSurface.darkInteractiveBlur : 12),
-      lightBlurLimit: 16,
-      darkBlurLimit: GlassSurface.darkInteractiveBlur,
-      surfaceOpacity: widget.reducedEffects
-          ? .98
-          : (dark
-                ? GlassSurface.darkInteractiveOpacity
-                : GlassSurface.lightInteractiveOpacity),
-      liquidDepth: true,
       showShadow: false,
-      continuousEdge: dark,
-      vibrantDark: true,
       child: SizedBox(
         height: widget.height,
         child: Padding(
@@ -703,7 +675,6 @@ class _ServerPageActionsPopoverState extends State<_ServerPageActionsPopover>
 
   @override
   Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
     final curved = CurvedAnimation(
       parent: _animation,
       curve: Curves.easeOutCubic,
@@ -725,19 +696,7 @@ class _ServerPageActionsPopoverState extends State<_ServerPageActionsPopover>
             child: GlassSurface(
               key: const ValueKey('server-page-actions-surface'),
               radius: 18,
-              blur: widget.app.settings.performanceMode
-                  ? 0
-                  : (dark ? GlassSurface.darkInteractiveBlur : 12),
-              lightBlurLimit: 16,
-              darkBlurLimit: GlassSurface.darkInteractiveBlur,
-              surfaceOpacity: widget.app.settings.performanceMode
-                  ? .98
-                  : (dark
-                        ? GlassSurface.darkInteractiveOpacity
-                        : GlassSurface.lightInteractiveOpacity),
-              liquidDepth: true,
-              continuousEdge: dark,
-              vibrantDark: true,
+              blur: GlassSurface.liquidBlur,
               child: FadeTransition(
                 opacity: curved,
                 child: ScaleTransition(

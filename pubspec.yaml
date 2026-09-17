@@ -33,6 +33,8 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   flutter_riverpod: ^3.0.3
+  liquid_glass_renderer:
+    path: packages/liquid_glass_renderer
 
 dev_dependencies:
   flutter_test:

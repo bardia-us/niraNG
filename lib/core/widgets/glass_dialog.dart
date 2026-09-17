@@ -21,7 +21,6 @@ class NirangAlertDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final dark = theme.brightness == Brightness.dark;
     final maxHeight = MediaQuery.sizeOf(context).height * .78;
     return Dialog(
       elevation: 0,
@@ -30,15 +29,7 @@ class NirangAlertDialog extends StatelessWidget {
       insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
       child: GlassSurface(
         radius: 22,
-        blur: dark ? GlassSurface.darkInteractiveBlur : 14,
-        lightBlurLimit: 16,
-        darkBlurLimit: GlassSurface.darkInteractiveBlur,
-        surfaceOpacity: dark
-            ? GlassSurface.darkInteractiveOpacity
-            : GlassSurface.lightInteractiveOpacity,
-        liquidDepth: true,
-        continuousEdge: dark,
-        vibrantDark: true,
+        blur: GlassSurface.liquidBlur,
         child: ConstrainedBox(
           constraints: BoxConstraints(maxWidth: 560, maxHeight: maxHeight),
           child: Column(

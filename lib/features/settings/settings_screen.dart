@@ -1110,7 +1110,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Future<T?> _showSettingsDialog<T>(
     BuildContext context, {
     required Widget Function(BuildContext dialogContext) builder,
-  }) => showDialog<T>(context: context, builder: builder);
+  }) => showDialog<T>(
+    context: context,
+    barrierColor: Colors.transparent,
+    builder: builder,
+  );
 
   Future<void> _showAbout(
     BuildContext context,
@@ -1278,6 +1282,46 @@ class _FragmentDialogState extends State<_FragmentDialog> {
         : context.s('invalidFragmentRange');
   }
 
+  Future<void> _pickPackets() async {
+    final selected = await showDialog<String>(
+      context: context,
+      barrierColor: Colors.transparent,
+      builder: (dialogContext) => NirangAlertDialog(
+        title: Text(context.s('fragmentPackets')),
+        contentPadding: const EdgeInsets.fromLTRB(8, 12, 8, 0),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final value in const [
+              'tlshello',
+              '1-1',
+              '1-2',
+              '1-3',
+              '1-4',
+              '1-5',
+            ])
+              ListTile(
+                leading: Icon(
+                  value == _packets
+                      ? Icons.radio_button_checked_rounded
+                      : Icons.radio_button_unchecked_rounded,
+                ),
+                title: Text(value),
+                onTap: () => Navigator.pop(dialogContext, value),
+              ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(context.s('cancel')),
+          ),
+        ],
+      ),
+    );
+    if (selected != null && mounted) setState(() => _packets = selected);
+  }
+
   @override
   Widget build(BuildContext context) => NirangAlertDialog(
     title: Text(context.s('fragmentSettings')),
@@ -1295,15 +1339,18 @@ class _FragmentDialogState extends State<_FragmentDialog> {
           ),
           _FragmentFieldLabel(context.s('fragmentPackets')),
           const SizedBox(height: 6),
-          DropdownButtonFormField<String>(
-            initialValue: _packets,
-            decoration: const InputDecoration(),
-            items: const ['tlshello', '1-1', '1-2', '1-3', '1-4', '1-5']
-                .map(
-                  (value) => DropdownMenuItem(value: value, child: Text(value)),
-                )
-                .toList(growable: false),
-            onChanged: (value) => _packets = value ?? _packets,
+          InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: _pickPackets,
+            child: InputDecorator(
+              decoration: const InputDecoration(),
+              child: Row(
+                children: [
+                  Expanded(child: Text(_packets)),
+                  const Icon(Icons.expand_more_rounded),
+                ],
+              ),
+            ),
           ),
           const SizedBox(height: 14),
           _FragmentFieldLabel(context.s('fragmentLength')),

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liquid_glass_renderer/liquid_glass_renderer.dart';
 import 'package:nirang/core/platform/native_models.dart';
 import 'package:nirang/core/widgets/country_flag_badge.dart';
 import 'package:nirang/core/widgets/glass_dialog.dart';
@@ -466,7 +467,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Servers (2)'), findsOneWidget);
-    expect(find.byType(BackdropFilter), findsWidgets);
+    expect(find.byType(LiquidGlass), findsWidgets);
     expect(find.text('Test all'), findsNothing);
     expect(find.byTooltip('Server page actions'), findsOneWidget);
     await tester.tap(find.byTooltip('Server page actions'));
@@ -481,12 +482,9 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(lightMenu.blur, 12);
+    expect(lightMenu.blur, GlassSurface.liquidBlur);
     expect(lightMenu.lightBlurLimit, 16);
-    expect(
-      lightMenu.surfaceOpacity,
-      GlassSurface.lightInteractiveOpacity,
-    );
+    expect(lightMenu.surfaceOpacity, isNull);
     expect(find.text('Sort by test results'), findsOneWidget);
     expect(find.text('Test real delays'), findsOneWidget);
     expect(find.text('Test TCP delays (TCPing)'), findsOneWidget);
@@ -509,15 +507,18 @@ void main() {
       const ValueKey('server-actions-bottom-sheet-surface'),
     );
     expect(bottomSheetFinder, findsOneWidget);
-    expect(tester.widget<GlassSurface>(bottomSheetFinder).blur, 12);
+    expect(
+      tester.widget<GlassSurface>(bottomSheetFinder).blur,
+      GlassSurface.liquidBlur,
+    );
     expect(
       tester.widget<GlassSurface>(bottomSheetFinder).surfaceOpacity,
-      GlassSurface.lightInteractiveOpacity,
+      isNull,
     );
     expect(
       find.descendant(
         of: bottomSheetFinder,
-        matching: find.byType(BackdropFilter),
+        matching: find.byType(LiquidGlass),
       ),
       findsOneWidget,
     );
@@ -526,22 +527,22 @@ void main() {
 
     await controller.updateSettings({'performanceMode': true});
     await tester.pumpAndSettle();
-    expect(find.byType(BackdropFilter), findsNothing);
+    expect(find.byType(LiquidGlass), findsNothing);
     await tester.tap(find.byTooltip('Server page actions'));
     await tester.pumpAndSettle();
     final performanceMenu = tester.widget<GlassSurface>(
       find.byKey(const ValueKey('server-page-actions-surface')),
     );
-    expect(performanceMenu.blur, 0);
-    expect(performanceMenu.surfaceOpacity, .98);
-    expect(find.byType(BackdropFilter), findsNothing);
+    expect(performanceMenu.blur, GlassSurface.liquidBlur);
+    expect(performanceMenu.surfaceOpacity, isNull);
+    expect(find.byType(LiquidGlass), findsNothing);
     await tester.dragFrom(const Offset(20, 430), const Offset(0, -80));
     await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.more_vert_rounded).first);
     await tester.pumpAndSettle();
     expect(find.text('Server information'), findsOneWidget);
     expect(find.text('Delete'), findsOneWidget);
-    expect(find.byType(BackdropFilter), findsNothing);
+    expect(find.byType(LiquidGlass), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

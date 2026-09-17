@@ -1,12 +1,29 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:liquid_glass_renderer/liquid_glass_renderer.dart';
 
 import '../../features/vpn/app_controller.dart';
 
+/// The single glass renderer used by niraNG chrome, cards, menus and dialogs.
+///
+/// Visual hints from the previous BackdropFilter implementation remain in the
+/// constructor so existing call sites keep their layout and behavior. Normal
+/// mode deliberately uses one Liquid Glass recipe everywhere; Performance
+/// Mode replaces it with a fully opaque Material surface.
 class GlassSurface extends ConsumerWidget {
-  static const darkInteractiveBlur = 18.0;
+  static const liquidThickness = 17.0;
+  static const liquidBlur = 9.0;
+  static const liquidRefractiveIndex = 1.21;
+  static const liquidSaturation = 1.25;
+  static const liquidChromaticAberration = .002;
+
+  // Kept for source compatibility with existing call sites and tests. The
+  // Liquid Glass path intentionally has one visual recipe instead of separate
+  // page-specific strengths.
+  static const darkServersHeaderBlur = 22.0;
+  static const darkServersTopMenuBlur = 20.0;
+  static const darkServerActionsBlur = 14.0;
+  static const darkDialogBlur = 18.0;
   static const darkInteractiveOpacity = .24;
   static const lightInteractiveOpacity = .11;
 
@@ -15,7 +32,7 @@ class GlassSurface extends ConsumerWidget {
     super.key,
     this.padding,
     this.radius = 16,
-    this.blur = 12,
+    this.blur = liquidBlur,
     this.lightBlurLimit = 16,
     this.darkBlurLimit = 60,
     this.surfaceOpacity,
@@ -37,304 +54,51 @@ class GlassSurface extends ConsumerWidget {
   final bool vibrantDark;
   final bool showShadow;
 
-  // Matches the light vibrance pass used by Flutter's
-  // CupertinoPopupSurface before its backdrop blur.
-  static const _lightVibrance = ColorFilter.matrix(<double>[
-    1.74,
-    -0.40,
-    -0.17,
-    0,
-    0,
-    -0.26,
-    1.60,
-    -0.17,
-    0,
-    0,
-    -0.26,
-    -0.40,
-    1.83,
-    0,
-    0,
-    0,
-    0,
-    0,
-    1,
-    0,
-  ]);
-
-  // Flutter's CupertinoPopupSurface dark saturation recipe (iOS 17).
-  // It is composed with the blur in one backdrop pass so the original,
-  // unblurred pixels are never painted over the glass.
-  static const darkVibranceFilter = ColorFilter.matrix(<double>[
-    1.39,
-    -0.56,
-    -0.11,
-    0,
-    0.30,
-    -0.32,
-    1.14,
-    -0.11,
-    0,
-    0.30,
-    -0.32,
-    -0.56,
-    1.59,
-    0,
-    0.30,
-    0,
-    0,
-    0,
-    1,
-    0,
-  ]);
-
-  static ImageFilter backdropFilter({
-    required bool dark,
-    required double sigma,
-    bool vibrantDark = false,
+  static LiquidGlassSettings settingsFor(
+    Brightness brightness, {
+    double blur = liquidBlur,
   }) {
-    if (dark) {
-      final blur = ImageFilter.blur(sigmaX: sigma, sigmaY: sigma);
-      return vibrantDark
-          ? ImageFilter.compose(inner: darkVibranceFilter, outer: blur)
-          : blur;
-    }
-    final blur = ImageFilter.blur(
-      sigmaX: sigma,
-      sigmaY: sigma,
-      tileMode: TileMode.mirror,
+    final dark = brightness == Brightness.dark;
+    return LiquidGlassSettings(
+      thickness: liquidThickness,
+      blur: blur,
+      refractiveIndex: liquidRefractiveIndex,
+      saturation: liquidSaturation,
+      chromaticAberration: liquidChromaticAberration,
+      lightIntensity: dark ? .72 : .95,
+      ambientStrength: dark ? .20 : .34,
+      lightAngle: .7853981633974483,
+      glassColor: dark
+          ? Colors.white.withValues(alpha: .025)
+          : Colors.black.withValues(alpha: .015),
     );
-    return ImageFilter.compose(inner: _lightVibrance, outer: blur);
   }
-
-  static LinearGradient lightGradient(
-    ColorScheme scheme, {
-    required double opacity,
-  }) => LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [
-      scheme.surface.withValues(alpha: opacity * .40),
-      Colors.white.withValues(alpha: .045),
-      scheme.primary.withValues(alpha: .022),
-      scheme.surface.withValues(alpha: opacity * .26),
-    ],
-    stops: const [0, .30, .70, 1],
-  );
-
-  static LinearGradient darkGradient(
-    ColorScheme scheme, {
-    required double opacity,
-  }) => LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [
-      Colors.white.withValues(alpha: .032),
-      scheme.surface.withValues(alpha: opacity * .38),
-      scheme.primaryContainer.withValues(alpha: opacity * .12),
-      Colors.black.withValues(alpha: opacity * .34),
-    ],
-    stops: const [0, .28, .66, 1],
-  );
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final scheme = Theme.of(context).colorScheme;
-    final dark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
     final reducedEffects = ref.watch(performanceModeProvider);
-    final lightOpacity = surfaceOpacity?.clamp(0.0, 1.0) ?? .22;
-    final darkOpacity = surfaceOpacity?.clamp(0.0, 1.0) ?? .20;
-    final content = DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: reducedEffects || vibrantDark
-            ? null
-            : dark
-            ? darkGradient(scheme, opacity: darkOpacity)
-            : lightGradient(scheme, opacity: lightOpacity),
-        color: reducedEffects
-            ? scheme.surfaceContainerLow
-            : vibrantDark
-            ? scheme.surface.withValues(
-                alpha: dark ? darkOpacity : lightOpacity,
-              )
-            : null,
-        border: reducedEffects
-            ? Border.all(color: scheme.outlineVariant.withValues(alpha: .42))
-            : null,
-        borderRadius: BorderRadius.circular(radius),
-      ),
-      child: Padding(padding: padding ?? EdgeInsets.zero, child: child),
-    );
-    final liveFilteredContent = BackdropFilter(
-      filter: backdropFilter(
-        dark: dark,
-        vibrantDark: vibrantDark,
-        sigma: dark
-            ? blur.clamp(0, darkBlurLimit).toDouble()
-            : blur.clamp(0, lightBlurLimit).toDouble(),
-      ),
+    final content = Padding(padding: padding ?? EdgeInsets.zero, child: child);
+    final effectiveRadius = radius.clamp(0.0, double.infinity).toDouble();
+
+    if (reducedEffects) {
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(effectiveRadius),
+          border: Border.all(
+            color: theme.colorScheme.outlineVariant.withValues(alpha: .56),
+          ),
+        ),
+        child: content,
+      );
+    }
+
+    return LiquidGlass.withOwnLayer(
+      settings: settingsFor(theme.brightness, blur: blur),
+      glassContainsChild: false,
+      shape: LiquidRoundedRectangle(borderRadius: effectiveRadius),
       child: content,
     );
-    final clippedSurface = ClipRRect(
-      borderRadius: BorderRadius.circular(radius),
-      child: reducedEffects ? content : liveFilteredContent,
-    );
-    if (reducedEffects) return clippedSurface;
-
-    final edgeColor = Color.alphaBlend(
-      scheme.primary.withValues(alpha: .08),
-      scheme.outlineVariant.withValues(alpha: .38),
-    );
-    final surfaced = DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(radius),
-        boxShadow: !showShadow || (!dark && !liquidDepth)
-            ? null
-            : dark
-            ? [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: .28),
-                  blurRadius: 18,
-                  spreadRadius: -3,
-                  offset: const Offset(2, 7),
-                ),
-              ]
-            : [
-                BoxShadow(
-                  color: scheme.shadow.withValues(alpha: .12),
-                  blurRadius: 14,
-                  spreadRadius: -3,
-                  offset: const Offset(2, 5),
-                ),
-              ],
-      ),
-      child: Stack(
-        fit: StackFit.passthrough,
-        children: [
-          clippedSurface,
-          if (dark)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: CustomPaint(
-                  painter: _DarkLiquidFramePainter(
-                    radius: radius,
-                    elevated: liquidDepth,
-                    continuousEdge: continuousEdge,
-                    edgeColor: Color.alphaBlend(
-                      scheme.primary.withValues(alpha: .10),
-                      scheme.outlineVariant.withValues(alpha: .46),
-                    ),
-                  ),
-                ),
-              ),
-            )
-          else ...[
-            Positioned.fill(
-              child: IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(radius),
-                    border: Border.all(color: edgeColor, width: .8),
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              top: 0,
-              left: radius * .55,
-              right: radius * .55,
-              height: 1,
-              child: IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        Colors.transparent,
-                        Colors.white.withValues(alpha: .30),
-                        Colors.transparent,
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              top: radius * .55,
-              bottom: radius * .55,
-              left: 0,
-              width: 1,
-              child: IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.white.withValues(alpha: .24),
-                        Colors.transparent,
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-    return surfaced;
   }
-}
-
-class _DarkLiquidFramePainter extends CustomPainter {
-  const _DarkLiquidFramePainter({
-    required this.radius,
-    required this.elevated,
-    required this.continuousEdge,
-    required this.edgeColor,
-  });
-
-  final double radius;
-  final bool elevated;
-  final bool continuousEdge;
-  final Color edgeColor;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final rect = Offset.zero & size;
-    final frameRect = rect.deflate(.65);
-    final frame = RRect.fromRectAndRadius(
-      frameRect,
-      Radius.circular((radius - .65).clamp(0, radius)),
-    );
-    final framePaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = continuousEdge ? 1 : .85
-      ..color = edgeColor;
-    canvas.drawRRect(frame, framePaint);
-
-    if (!elevated) return;
-    final innerRect = rect.deflate(1.8);
-    final inner = RRect.fromRectAndRadius(
-      innerRect,
-      Radius.circular((radius - 1.8).clamp(0, radius)),
-    );
-    final innerPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = .55
-      ..shader = const LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [Color(0x24FFFFFF), Color(0x08000000), Color(0x26000000)],
-        stops: [0, .58, 1],
-      ).createShader(innerRect);
-    canvas.drawRRect(inner, innerPaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _DarkLiquidFramePainter oldDelegate) =>
-      radius != oldDelegate.radius ||
-      elevated != oldDelegate.elevated ||
-      continuousEdge != oldDelegate.continuousEdge ||
-      edgeColor != oldDelegate.edgeColor;
 }
