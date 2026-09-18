@@ -135,7 +135,10 @@ class NirangBridge(
             }
             "recordWhatsNewSeen" -> {
                 activity.getSharedPreferences("nirang_installation", Activity.MODE_PRIVATE)
-                    .edit().putInt("whatsNewSeenBuild", BuildConfig.VERSION_CODE).apply()
+                    .edit()
+                    .putInt("whatsNewSeenBuild", BuildConfig.BASE_VERSION_CODE)
+                    .putInt("whatsNewUpgradeFromBuild", 0)
+                    .apply()
                 result.success(true)
             }
             "recordFlutterError" -> {
@@ -202,9 +205,12 @@ class NirangBridge(
     }
 
     private fun deviceRegistrationStatus(result: MethodChannel.Result) {
-        val state = DeviceRegistrationManager.localAccessState(activity)
-        if (DeviceRegistrationManager.hasConsent(activity) && state != null) {
-            result.error(if (state == RemoteAccessState.BLOCKED) "blocked" else "outdated", "Device access policy requires attention", null)
+        // A cached administrator block remains authoritative. A cached
+        // outdated state must not short-circuit the network verification,
+        // otherwise lowering minimum_build on the backend can never unlock
+        // the current session via Retry.
+        if (DeviceRegistrationManager.hasConsent(activity) && DeviceRegistrationManager.isLocallyBlocked(activity)) {
+            result.error("blocked", "Device access policy requires attention", null)
         } else {
             result.success(DeviceRegistrationManager.hasConsent(activity))
         }
@@ -593,18 +599,38 @@ class NirangBridge(
 
     private fun bootstrap(): Map<String, Any?> {
         val snapshot = repository.snapshot()
+        val installation = activity.getSharedPreferences("nirang_installation", Activity.MODE_PRIVATE)
+        val appBuild = BuildConfig.BASE_VERSION_CODE
+        var lastLaunchedBuild = installation.getInt("lastLaunchedBuild", 0)
+        var upgradeFromBuild = installation.getInt("whatsNewUpgradeFromBuild", 0)
+        if (lastLaunchedBuild <= 0) {
+            // Migration and genuine fresh installs establish a baseline; they
+            // are not updates and must not show What's New.
+            lastLaunchedBuild = appBuild
+            upgradeFromBuild = 0
+            installation.edit()
+                .putInt("lastLaunchedBuild", appBuild)
+                .putInt("whatsNewSeenBuild", appBuild)
+                .putInt("whatsNewUpgradeFromBuild", 0)
+                .apply()
+        } else if (appBuild > lastLaunchedBuild) {
+            upgradeFromBuild = lastLaunchedBuild
+            installation.edit()
+                .putInt("lastLaunchedBuild", appBuild)
+                .putInt("whatsNewUpgradeFromBuild", upgradeFromBuild)
+                .apply()
+        }
         return mapOf(
             "servers" to repository.safeServers(),
             "usage" to snapshot.usage.toMap(),
             "lastUpdated" to snapshot.lastUpdatedEpochMillis,
             "connection" to ConnectionStore.snapshot(),
             "settings" to NativeSettings(activity).toMap(),
-            "coreVersion" to activity.getSharedPreferences("nirang_installation", Activity.MODE_PRIVATE)
-                .getString("coreVersion", "Bundled"),
+            "coreVersion" to installation.getString("coreVersion", "Bundled"),
             "appVersion" to BuildConfig.VERSION_NAME,
-            "appBuild" to BuildConfig.VERSION_CODE,
-            "whatsNewSeenBuild" to activity.getSharedPreferences("nirang_installation", Activity.MODE_PRIVATE)
-                .getInt("whatsNewSeenBuild", 0),
+            "appBuild" to appBuild,
+            "whatsNewSeenBuild" to installation.getInt("whatsNewSeenBuild", appBuild),
+            "whatsNewUpgradeFromBuild" to upgradeFromBuild,
             "subscriptionConfigured" to true,
             "telegramEligible" to NativeSettings(activity).telegramReminderEligible(),
             "deletedServerCount" to repository.deletedCount(),

@@ -7,6 +7,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/update_checker.dart';
 import '../../core/user_facing_error.dart';
 import '../../core/widgets/glass_surface.dart';
+import '../../core/widgets/update_dialog.dart';
 
 class NirangRegistrationBootstrap extends StatefulWidget {
   const NirangRegistrationBootstrap({
@@ -157,7 +158,7 @@ class _NirangRegistrationBootstrapState
       error is PlatformException && error.code == 'outdated';
 }
 
-class RequiredUpdateScreen extends StatelessWidget {
+class RequiredUpdateScreen extends StatefulWidget {
   const RequiredUpdateScreen({
     required this.onRetry,
     required this.onExit,
@@ -168,21 +169,71 @@ class RequiredUpdateScreen extends StatelessWidget {
   final VoidCallback onExit;
 
   @override
+  State<RequiredUpdateScreen> createState() => _RequiredUpdateScreenState();
+}
+
+class _RequiredUpdateScreenState extends State<RequiredUpdateScreen> {
+  bool _loading = false;
+  String? _error;
+
+  Future<void> _updateInsideApp() async {
+    if (_loading) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final latest = await const GitHubUpdateChecker().check('0.0.0');
+      if (!mounted) return;
+      await showUpdateOptionsDialog(
+        context,
+        ReleaseCheckResult(
+          latestVersion: latest.latestVersion,
+          releaseUrl: latest.releaseUrl,
+          updateAvailable: true,
+          assets: latest.assets,
+          mandatory: true,
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = userFacingError(error, persian: false).combined;
+      });
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) => _AccessMessageCard(
     icon: Icons.system_update_alt_rounded,
     title: 'Update required · آپدیت الزامی',
     message:
         'This version is no longer supported. Install the latest official release to continue.\n\n'
-        'این نسخه دیگر پشتیبانی نمی‌شود. برای ادامه آخرین نسخه رسمی را نصب کنید.',
+        'این نسخه دیگر پشتیبانی نمی‌شود. برای ادامه آخرین نسخه رسمی را نصب کنید.'
+        '${_error == null ? '' : '\n\n$_error'}',
     actions: [
-      TextButton(onPressed: onExit, child: const Text('Exit')),
-      OutlinedButton(onPressed: onRetry, child: const Text('Retry')),
+      TextButton(onPressed: widget.onExit, child: const Text('Exit')),
+      OutlinedButton(onPressed: widget.onRetry, child: const Text('Retry')),
+      OutlinedButton.icon(
+        onPressed: _loading
+            ? null
+            : () => NirangNative.openExternalUrl(
+                '$nirangRepositoryUrl/releases/latest',
+              ),
+        icon: const Icon(Icons.open_in_browser_rounded),
+        label: const Text('Download manually'),
+      ),
       FilledButton.icon(
-        onPressed: () => NirangNative.openExternalUrl(
-          '$nirangRepositoryUrl/releases/latest',
-        ),
-        icon: const Icon(Icons.download_rounded),
-        label: const Text('Update'),
+        onPressed: _loading ? null : _updateInsideApp,
+        icon: _loading
+            ? const SizedBox.square(
+                dimension: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.download_rounded),
+        label: const Text('Update now'),
       ),
     ],
   );

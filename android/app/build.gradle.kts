@@ -54,6 +54,10 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // Split APK outputs add ABI offsets to VERSION_CODE (for example
+        // 19 -> 1019/2019/4019). Remote policy and in-app migration logic must
+        // always use the publisher-controlled base build number instead.
+        buildConfigField("int", "BASE_VERSION_CODE", flutter.versionCode.toString())
         buildConfigField("String", "TELEGRAM_URL", telegramChannelUrl.asBuildConfigString())
         buildConfigField("String", "TELEGRAM_CONTACT", telegramContact.asBuildConfigString())
         buildConfigField("String", "API_SPKI_PINS", apiSpkiPins.asBuildConfigString())

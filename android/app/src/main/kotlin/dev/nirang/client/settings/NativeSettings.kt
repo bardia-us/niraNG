@@ -306,15 +306,14 @@ class NativeSettings(context: Context) {
 
     fun telegramReminderEligible(): Boolean {
         if (BuildConfig.TELEGRAM_URL.isBlank()) return false
-        if (safeBoolean("telegramNever", false)) return false
-        if (safeInt("openCount", 0) < 3) return false
-        val lastShown = safeLong("telegramLastShown", 0L)
-        return System.currentTimeMillis() - lastShown >= 7L * 24L * 60L * 60L * 1000L
+        return !safeBoolean("telegramNever", false)
     }
 
     fun recordTelegramDecision(decision: String) {
         val editor = prefs.edit().putLong("telegramLastShown", System.currentTimeMillis())
-        if (decision == "never") editor.putBoolean("telegramNever", true)
+        if (decision == "never" || decision == "joined") {
+            editor.putBoolean("telegramNever", true)
+        }
         editor.apply()
     }
 

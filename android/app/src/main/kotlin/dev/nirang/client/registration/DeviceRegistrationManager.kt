@@ -108,7 +108,7 @@ object DeviceRegistrationManager {
         val prefs = preferences(context)
         return when (prefs.getString(REMOTE_STATE, STATE_UNKNOWN)) {
             STATE_BLOCKED -> RemoteAccessState.BLOCKED
-            STATE_OUTDATED -> if (BuildConfig.VERSION_CODE < prefs.getInt(MINIMUM_BUILD, 0)) {
+            STATE_OUTDATED -> if (BuildConfig.BASE_VERSION_CODE < prefs.getInt(MINIMUM_BUILD, 0)) {
                 RemoteAccessState.OUTDATED
             } else {
                 prefs.edit().putString(REMOTE_STATE, STATE_UNKNOWN).apply()
@@ -156,7 +156,7 @@ object DeviceRegistrationManager {
         return buildPayload(
             installationId, deviceKey(context), deviceName, manufacturer, model,
             clean("Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})", "Android"),
-            BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE, firstSeen, now,
+            BuildConfig.VERSION_NAME, BuildConfig.BASE_VERSION_CODE, firstSeen, now,
         )
     }
 
@@ -247,7 +247,7 @@ object DeviceRegistrationManager {
             put("installation_id", validInstallationId(prefs.getString(INSTALLATION_ID, null)) ?: error("Installation ID is unavailable"))
             put("device_key", deviceKey(context))
             put("app_version", BuildConfig.VERSION_NAME)
-            put("app_build", BuildConfig.VERSION_CODE)
+            put("app_build", BuildConfig.BASE_VERSION_CODE)
             put("request_timestamp", System.currentTimeMillis() / 1_000L)
             put("request_nonce", requestNonce())
         }

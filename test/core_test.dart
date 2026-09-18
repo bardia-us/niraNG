@@ -11,11 +11,34 @@ import 'package:nirang/core/platform/native_models.dart';
 import 'package:nirang/core/theme/app_theme.dart';
 import 'package:nirang/core/update_checker.dart';
 import 'package:nirang/core/user_facing_error.dart';
+import 'package:nirang/core/widgets/release_notes_markdown.dart';
 import 'package:nirang/features/settings/per_app_ordering.dart';
 import 'package:nirang/features/servers/server_sorting.dart';
 import 'package:nirang/features/vpn/app_controller.dart';
+import 'package:nirang/features/vpn/app_shell.dart';
 
 void main() {
+  testWidgets(
+    'release notes render Markdown structure instead of raw markers',
+    (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: ReleaseNotesMarkdown(
+              data: '## Changes\n- Added **forced updates**.\n`1.1.8`',
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('Changes'), findsOneWidget);
+      expect(find.textContaining('##'), findsNothing);
+      expect(find.textContaining('**'), findsNothing);
+      expect(find.textContaining('forced updates'), findsOneWidget);
+      expect(find.textContaining('1.1.8'), findsOneWidget);
+    },
+  );
+
   test('formats persisted byte counters without speed units', () {
     expect(formatBytes(0), '0 B');
     expect(formatBytes(1024), '1.00 KB');
@@ -260,6 +283,28 @@ void main() {
     expect(notes.forLanguage('en'), contains('forced updates'));
     expect(notes.forLanguage('fa'), contains('آپدیت اجباری'));
     expect(notes.forLanguage('fa'), isNot(contains('forced updates')));
+  });
+
+  test('What’s New is shown only after a real build upgrade', () {
+    expect(
+      shouldShowWhatsNew(appBuild: 19, seenBuild: 19, upgradedFromBuild: 0),
+      isFalse,
+      reason: 'Fresh installs establish a baseline without an update dialog.',
+    );
+    expect(
+      shouldShowWhatsNew(appBuild: 19, seenBuild: 19, upgradedFromBuild: 0),
+      isFalse,
+      reason: 'Skipping a newer GitHub release is not an installed upgrade.',
+    );
+    expect(
+      shouldShowWhatsNew(appBuild: 20, seenBuild: 19, upgradedFromBuild: 19),
+      isTrue,
+    );
+    expect(
+      shouldShowWhatsNew(appBuild: 20, seenBuild: 20, upgradedFromBuild: 19),
+      isFalse,
+      reason: 'Acknowledged notes stay dismissed for the installed build.',
+    );
   });
 
   test('user-facing network errors never expose raw hosts or exceptions', () {

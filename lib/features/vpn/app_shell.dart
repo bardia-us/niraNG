@@ -12,6 +12,7 @@ import '../../core/registration/device_registration.dart';
 import '../../core/user_facing_error.dart';
 import '../../core/widgets/glass_dialog.dart';
 import '../../core/widgets/glass_surface.dart';
+import '../../core/widgets/release_notes_markdown.dart';
 import '../../core/widgets/update_dialog.dart';
 import '../servers/servers_screen.dart';
 import '../settings/settings_screen.dart';
@@ -252,46 +253,42 @@ class _AppShellState extends ConsumerState<AppShell> {
 
   Future<void> _showTelegramReminder() async {
     if (!mounted) return;
-    var never = false;
     final decision = await showNirangDialog<String>(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => NirangAlertDialog(
-          icon: const Icon(Icons.campaign_outlined),
-          title: Text(context.s('joinTelegramTitle')),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(context.s('joinTelegramBody')),
-              CheckboxListTile(
-                value: never,
-                contentPadding: EdgeInsets.zero,
-                controlAffinity: ListTileControlAffinity.leading,
-                onChanged: (value) =>
-                    setDialogState(() => never = value ?? false),
-                title: Text(context.s('dontShowAgain')),
-              ),
-            ],
+      barrierDismissible: false,
+      builder: (dialogContext) => NirangAlertDialog(
+        icon: const Icon(Icons.campaign_outlined),
+        title: Text(context.s('joinTelegramTitle')),
+        content: Text(context.s('joinTelegramBody')),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, 'join'),
+            child: Text(context.s('joinTelegram')),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, 'later'),
-              child: Text(context.s('later')),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, 'join'),
-              child: Text(context.s('joinTelegram')),
-            ),
-          ],
-        ),
+        ],
       ),
     );
     if (!mounted || decision == null) return;
     final controller = ref.read(appControllerProvider.notifier);
     if (decision == 'join') {
-      await controller.openTelegram();
+      try {
+        await controller.openTelegram();
+        await controller.recordTelegramDecision('joined');
+      } catch (error) {
+        if (!mounted) return;
+        _reminderQueued = false;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              userFacingError(
+                error,
+                persian: Localizations.localeOf(context).languageCode == 'fa',
+              ).combined,
+            ),
+          ),
+        );
+      }
     }
-    await controller.recordTelegramDecision(never ? 'never' : 'later');
   }
 
   Future<void> _checkForStartupUpdate(String currentVersion) async {
@@ -314,7 +311,13 @@ class _AppShellState extends ConsumerState<AppShell> {
 
   Future<void> _showWhatsNewIfNeeded(AppSnapshot app) async {
     try {
-      if (app.appBuild <= 0 || app.whatsNewSeenBuild >= app.appBuild) return;
+      if (!shouldShowWhatsNew(
+        appBuild: app.appBuild,
+        seenBuild: app.whatsNewSeenBuild,
+        upgradedFromBuild: app.whatsNewUpgradeFromBuild,
+      )) {
+        return;
+      }
       final notes = await const GitHubUpdateChecker().releaseNotes(
         app.appVersion,
       );
@@ -330,9 +333,9 @@ class _AppShellState extends ConsumerState<AppShell> {
           content: ConstrainedBox(
             constraints: const BoxConstraints(maxHeight: 420),
             child: SingleChildScrollView(
-              child: SelectableText(
-                body,
+              child: Directionality(
                 textDirection: persian ? TextDirection.rtl : TextDirection.ltr,
+                child: ReleaseNotesMarkdown(data: body),
               ),
             ),
           ),
@@ -360,6 +363,7 @@ class _AppShellState extends ConsumerState<AppShell> {
     if (_reminderQueued ||
         !app.settings.performanceModePrompted ||
         !app.telegramEligible ||
+        !app.connection.isConnected ||
         app.connection.isBusy ||
         app.isPinging) {
       return;
@@ -370,6 +374,16 @@ class _AppShellState extends ConsumerState<AppShell> {
     );
   }
 }
+
+bool shouldShowWhatsNew({
+  required int appBuild,
+  required int seenBuild,
+  required int upgradedFromBuild,
+}) =>
+    appBuild > 0 &&
+    upgradedFromBuild > 0 &&
+    upgradedFromBuild < appBuild &&
+    seenBuild < appBuild;
 
 class _TransientStatusBanner extends ConsumerWidget {
   const _TransientStatusBanner();

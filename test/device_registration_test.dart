@@ -116,7 +116,34 @@ void main() {
 
     expect(find.text('HOME_READY'), findsNothing);
     expect(find.textContaining('Update required'), findsOneWidget);
-    expect(find.text('Update'), findsOneWidget);
+    expect(find.text('Update now'), findsOneWidget);
+    expect(find.text('Download manually'), findsOneWidget);
+  });
+
+  testWidgets('Retry immediately unlocks after backend allows the build', (
+    tester,
+  ) async {
+    final coordinator = _FakeCoordinator()
+      ..accepted = true
+      ..outdated = true;
+    await tester.pumpWidget(
+      ProviderScope(
+        child: NirangRegistrationBootstrap(
+          coordinator: coordinator,
+          child: const MaterialApp(home: Text('HOME_READY')),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Update required'), findsOneWidget);
+
+    coordinator.outdated = false;
+    await tester.tap(find.text('Retry'));
+    await tester.pumpAndSettle();
+
+    expect(coordinator.verifications, 2);
+    expect(find.text('HOME_READY'), findsOneWidget);
+    expect(find.textContaining('Update required'), findsNothing);
   });
 
   testWidgets('temporary verification failure never creates a false lock', (

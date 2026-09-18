@@ -409,6 +409,7 @@ class AppController extends AsyncNotifier<AppSnapshot> {
     appVersion: '${map['appVersion'] ?? '1.1.1'}',
     appBuild: _number(map['appBuild']),
     whatsNewSeenBuild: _number(map['whatsNewSeenBuild']),
+    whatsNewUpgradeFromBuild: _number(map['whatsNewUpgradeFromBuild']),
     subscriptionConfigured: map['subscriptionConfigured'] == true,
     telegramEligible: map['telegramEligible'] == true,
     subscriptionError: map['subscriptionError']?.toString(),
