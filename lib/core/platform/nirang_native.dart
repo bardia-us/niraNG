@@ -28,6 +28,8 @@ class NirangNative {
       _methods.invokeMethod('verifyDeviceAccess');
   static Future<void> acceptDeviceRegistration() =>
       _methods.invokeMethod('acceptDeviceRegistration');
+  static Future<void> recordWhatsNewSeen() =>
+      _methods.invokeMethod('recordWhatsNewSeen');
   static Future<void> exitApplication() =>
       _methods.invokeMethod('exitApplication');
 

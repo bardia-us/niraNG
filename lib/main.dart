@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
+import 'package:liquid_glass_renderer/liquid_glass_renderer.dart';
 
 import 'core/localization/app_strings.dart';
 import 'core/diagnostics.dart';
@@ -16,7 +17,7 @@ import 'features/vpn/app_controller.dart';
 import 'features/vpn/app_shell.dart';
 import 'features/registration/registration_bootstrap.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   FlutterError.onError = (details) {
     FlutterError.dumpErrorToConsole(details);
@@ -43,6 +44,7 @@ void main() {
       ),
     ),
   );
+  await precacheLiquidGlassShaders();
   runApp(
     const ProviderScope(child: NirangRegistrationBootstrap(child: NirangApp())),
   );

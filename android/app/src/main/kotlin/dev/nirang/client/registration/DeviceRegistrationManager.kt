@@ -30,12 +30,14 @@ class RemoteAccessException(
     val apiReason: String,
     val accessState: RemoteAccessState,
     message: String,
+    val minimumVersion: String? = null,
+    val minimumBuild: Int? = null,
 ) : IOException(message)
 
 object DeviceRegistrationManager {
     private const val ENDPOINT = "https://neovip.ir/apiniraN/api.php"
     private const val CONSENT_VERSION = 2
-    private const val SCHEMA_VERSION = 6
+    private const val SCHEMA_VERSION = 7
     private const val CONNECT_TIMEOUT_MS = 6_000
     private const val READ_TIMEOUT_MS = 20_000
     private const val MAX_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -81,12 +83,17 @@ object DeviceRegistrationManager {
     }
 
     fun runIfAllowed(context: Context, onAllowed: () -> Unit, onDenied: (Throwable) -> Unit) {
-        if (isLocallyBlocked(context)) {
+        val localState = localAccessState(context)
+        if (localState != null) {
             onDenied(
                 RemoteAccessException(
-                    "blocked_by_administrator",
-                    RemoteAccessState.BLOCKED,
-                    "This device has been blocked by the administrator",
+                    if (localState == RemoteAccessState.BLOCKED) "blocked_by_administrator" else "update_required",
+                    localState,
+                    message = if (localState == RemoteAccessState.BLOCKED)
+                        "This device has been blocked by the administrator"
+                    else "niraNG must be updated",
+                    minimumVersion = preferences(context).getString(MINIMUM_VERSION, null),
+                    minimumBuild = preferences(context).getInt(MINIMUM_BUILD, 0),
                 ),
             )
         } else {
@@ -96,6 +103,20 @@ object DeviceRegistrationManager {
 
     fun isLocallyBlocked(context: Context): Boolean =
         preferences(context).getString(REMOTE_STATE, STATE_UNKNOWN) == STATE_BLOCKED
+
+    fun localAccessState(context: Context): RemoteAccessState? {
+        val prefs = preferences(context)
+        return when (prefs.getString(REMOTE_STATE, STATE_UNKNOWN)) {
+            STATE_BLOCKED -> RemoteAccessState.BLOCKED
+            STATE_OUTDATED -> if (BuildConfig.VERSION_CODE < prefs.getInt(MINIMUM_BUILD, 0)) {
+                RemoteAccessState.OUTDATED
+            } else {
+                prefs.edit().putString(REMOTE_STATE, STATE_UNKNOWN).apply()
+                null
+            }
+            else -> null
+        }
+    }
 
     @Throws(IOException::class)
     fun requireAllowed(context: Context) {
@@ -135,7 +156,7 @@ object DeviceRegistrationManager {
         return buildPayload(
             installationId, deviceKey(context), deviceName, manufacturer, model,
             clean("Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})", "Android"),
-            BuildConfig.VERSION_NAME, firstSeen, now,
+            BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE, firstSeen, now,
         )
     }
 
@@ -147,6 +168,7 @@ object DeviceRegistrationManager {
         model: String,
         osVersion: String,
         appVersion: String,
+        appBuild: Int,
         firstSeen: String,
         lastSeen: String,
         requestTimestamp: Long = System.currentTimeMillis() / 1_000L,
@@ -163,6 +185,7 @@ object DeviceRegistrationManager {
         put("os_version", osVersion)
         put("app_name", "niraNG")
         put("app_version", appVersion)
+        put("app_build", appBuild)
         put("first_seen", firstSeen)
         put("last_seen", lastSeen)
         put("request_timestamp", requestTimestamp)
@@ -189,14 +212,21 @@ object DeviceRegistrationManager {
         return deriveDeviceKey(androidId, context.packageName)
     }
 
-    private fun synchronize(context: Context, register: Boolean) = synchronized(accessLock) {
+    private fun synchronize(context: Context, register: Boolean): Unit = synchronized(accessLock) {
         val request = if (register) payload(context) else authorizedPayload(context, "status")
         val response = execute(context, request, if (register) null else accessToken(context), 8_192)
         val json = response.json
+        if (!register && response.status == 401 && json?.optString("reason") in setOf("token_expired", "invalid_device_credentials")) {
+            SecureTokenStore.clear(context)
+            synchronize(context, register = true)
+            return@synchronized
+        }
         if (response.status !in 200..299 || json?.optBoolean("allowed") != true) {
             handleDeniedResponse(context, response)
         }
         val editor = preferences(context).edit().putString(REMOTE_STATE, STATE_ALLOWED).putString(LAST_SEEN, timestamp())
+            .putString(MINIMUM_VERSION, json.optString("minimum_version"))
+            .putInt(MINIMUM_BUILD, json.optInt("minimum_build", 0))
         if (register) {
             val token = json.optString("access_token")
             require(token.matches(Regex("[A-Za-z0-9_-]{43}"))) { "Registration token is invalid" }
@@ -217,6 +247,7 @@ object DeviceRegistrationManager {
             put("installation_id", validInstallationId(prefs.getString(INSTALLATION_ID, null)) ?: error("Installation ID is unavailable"))
             put("device_key", deviceKey(context))
             put("app_version", BuildConfig.VERSION_NAME)
+            put("app_build", BuildConfig.VERSION_CODE)
             put("request_timestamp", System.currentTimeMillis() / 1_000L)
             put("request_nonce", requestNonce())
         }
@@ -258,20 +289,24 @@ object DeviceRegistrationManager {
         val reason = json?.optString("reason")?.takeIf(SAFE_API_ERROR::matches)
             ?: json?.optString("error")?.takeIf(SAFE_API_ERROR::matches) ?: "access_denied"
         val accessState = classifyAccessState(response.status, json)
+        val minimumVersion = json?.optString("minimum_version")?.takeIf(String::isNotBlank)
+        val minimumBuild = json?.optInt("minimum_build", 0)?.takeIf { it > 0 }
         val state = when (accessState) {
             RemoteAccessState.BLOCKED -> STATE_BLOCKED
             RemoteAccessState.OUTDATED -> STATE_OUTDATED
             RemoteAccessState.UNKNOWN -> STATE_UNKNOWN
         }
         val editor = preferences(context).edit().putString(REMOTE_STATE, state)
+        if (minimumVersion != null) editor.putString(MINIMUM_VERSION, minimumVersion)
+        if (minimumBuild != null) editor.putInt(MINIMUM_BUILD, minimumBuild)
         editor.apply()
         val message = when (state) {
             STATE_BLOCKED -> "This device has been blocked by the administrator"
-            STATE_OUTDATED -> "niraNG must be updated to ${json?.optString("minimum_version").orEmpty()}"
+            STATE_OUTDATED -> "niraNG must be updated"
             else -> "Device access could not be verified"
         }
         SafeLog.warning(context, "Remote access denied: HTTP ${response.status} reason=$reason")
-        throw RemoteAccessException(reason, accessState, message)
+        throw RemoteAccessException(reason, accessState, message, minimumVersion, minimumBuild)
     }
 
     internal fun classifyAccessState(status: Int, json: JSONObject?): RemoteAccessState = when {
@@ -312,6 +347,8 @@ object DeviceRegistrationManager {
     private const val FIRST_SEEN = "deviceRegistrationFirstSeen"
     private const val LAST_SEEN = "deviceRegistrationLastSeen"
     private const val REMOTE_STATE = "remoteAccessState"
+    private const val MINIMUM_VERSION = "minimumVersion"
+    private const val MINIMUM_BUILD = "minimumBuild"
     private const val STATE_ALLOWED = "allowed"
     private const val STATE_BLOCKED = "blocked"
     private const val STATE_OUTDATED = "outdated"

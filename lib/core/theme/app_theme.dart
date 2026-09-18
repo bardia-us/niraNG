@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 abstract final class AppPalette {
-  static const primary = Color(0xFF625BD2);
-  static const lightCanvas = Color(0xFFF8F8FC);
-  static const darkCanvas = Color(0xFF10111A);
+  static const primary = Color(0xFF6B57D6);
+  static const lightCanvas = Color(0xFFFAF8FC);
+  static const darkCanvas = Color(0xFF141019);
   static const lightSuccess = Color(0xFF287A62);
   static const darkSuccess = Color(0xFF6FC5AA);
   static const lightWarning = Color(0xFF9A6717);

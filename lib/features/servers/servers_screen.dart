@@ -7,6 +7,7 @@ import '../../core/localization/app_strings.dart';
 import '../../core/formatters.dart';
 import '../../core/platform/native_models.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/user_facing_error.dart';
 import '../../core/widgets/country_flag_badge.dart';
 import '../../core/widgets/glass_surface.dart';
 import '../../core/widgets/glass_dialog.dart';
@@ -397,8 +398,23 @@ class _ServerActionsSheetOverlayState extends State<_ServerActionsSheetOverlay>
     vsync: this,
     duration: Duration(milliseconds: widget.performanceMode ? 90 : 190),
     reverseDuration: Duration(milliseconds: widget.performanceMode ? 70 : 140),
-  )..forward();
+  );
   bool _closing = false;
+  bool _glassReady = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _primeGlass();
+  }
+
+  Future<void> _primeGlass() async {
+    await WidgetsBinding.instance.endOfFrame;
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted || _closing) return;
+    setState(() => _glassReady = true);
+    _animation.forward();
+  }
 
   Future<void> _close([String? action]) async {
     if (_closing) return;
@@ -437,14 +453,15 @@ class _ServerActionsSheetOverlayState extends State<_ServerActionsSheetOverlay>
             minimum: const EdgeInsets.only(bottom: 2),
             child: GlassSurface(
               key: const ValueKey('server-actions-bottom-sheet-surface'),
-              radius: 22,
-              child: FadeTransition(
-                opacity: motion,
-                child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0, .08),
-                    end: Offset.zero,
-                  ).animate(motion),
+              radius: 28,
+              visibility: _glassReady ? 1 : 0,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0, .025),
+                  end: Offset.zero,
+                ).animate(motion),
+                child: FadeTransition(
+                  opacity: motion,
                   child: Material(
                     color: Colors.transparent,
                     child: Padding(
@@ -594,7 +611,10 @@ class _ServersGlassHeaderState extends State<_ServersGlassHeader> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return GlassSurface(
-      radius: 16,
+      radius: 26,
+      darkBlur: GlassSurface.darkServersHeaderBlur,
+      saturation: 1.78,
+      tintOpacityScale: .35,
       showShadow: false,
       child: SizedBox(
         height: widget.height,
@@ -657,8 +677,23 @@ class _ServerPageActionsPopoverState extends State<_ServerPageActionsPopover>
     reverseDuration: Duration(
       milliseconds: widget.app.settings.performanceMode ? 70 : 120,
     ),
-  )..forward();
+  );
   bool _closing = false;
+  bool _glassReady = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _primeGlass();
+  }
+
+  Future<void> _primeGlass() async {
+    await WidgetsBinding.instance.endOfFrame;
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted || _closing) return;
+    setState(() => _glassReady = true);
+    _animation.forward();
+  }
 
   Future<void> _close([_ServerPageAction? action]) async {
     if (_closing) return;
@@ -695,13 +730,17 @@ class _ServerPageActionsPopoverState extends State<_ServerPageActionsPopover>
           child: SafeArea(
             child: GlassSurface(
               key: const ValueKey('server-page-actions-surface'),
-              radius: 18,
+              radius: 26,
               blur: GlassSurface.liquidBlur,
-              child: FadeTransition(
-                opacity: curved,
-                child: ScaleTransition(
-                  scale: Tween<double>(begin: .96, end: 1).animate(curved),
-                  alignment: Alignment.topRight,
+              darkBlur: GlassSurface.darkServersTopMenuBlur,
+              visibility: _glassReady ? 1 : 0,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0, -.018),
+                  end: Offset.zero,
+                ).animate(curved),
+                child: FadeTransition(
+                  opacity: curved,
                   child: Material(
                     color: Colors.transparent,
                     child: Column(
@@ -898,7 +937,14 @@ Future<void> _perform(
   } catch (error) {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${context.s('operationFailed')}: $error')),
+        SnackBar(
+          content: Text(
+            userFacingError(
+              error,
+              persian: Localizations.localeOf(context).languageCode == 'fa',
+            ).combined,
+          ),
+        ),
       );
     }
   }

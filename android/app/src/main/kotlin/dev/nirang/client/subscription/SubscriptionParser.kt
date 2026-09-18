@@ -141,7 +141,7 @@ object SubscriptionParser {
     }
 
     private fun server(name: String, protocol: String, address: String, port: Int, credential: String, transport: String, security: String, parameters: Map<String, String>) = ServerRecord(
-        id = stableId(protocol, address, port, credential, transport, security, parameters), name = name, country = inferCountry(name), protocol = protocol, address = address, port = port, credential = credential, transport = transport, security = security, parameters = parameters,
+        id = stableId(name, protocol, address, port, credential, transport, security, parameters), name = name, country = inferCountry(name), protocol = protocol, address = address, port = port, credential = credential, transport = transport, security = security, parameters = parameters,
     )
 
     private fun parseHostPort(value: String): Pair<String, Int> {
@@ -164,9 +164,9 @@ object SubscriptionParser {
     private fun decode(value: String) = URLDecoder.decode(value.replace("+", "%2B"), StandardCharsets.UTF_8.name())
     private fun normalizedHost(value: String) = runCatching { IDN.toASCII(value.trim().trim('[', ']')) }.getOrElse { value.trim().trim('[', ']') }.lowercase()
 
-    private fun stableId(protocol: String, address: String, port: Int, credential: String, transport: String, security: String, parameters: Map<String, String>): String {
+    private fun stableId(name: String, protocol: String, address: String, port: Int, credential: String, transport: String, security: String, parameters: Map<String, String>): String {
         val semantic = buildString {
-            listOf(protocol.lowercase(), normalizedHost(address), port.toString(), credential, transport.lowercase(), security.lowercase()).forEach { append(it.length).append(':').append(it).append('|') }
+            listOf(name.trim(), protocol.lowercase(), normalizedHost(address), port.toString(), credential, transport.lowercase(), security.lowercase()).forEach { append(it.length).append(':').append(it).append('|') }
             parameters.toSortedMap(String.CASE_INSENSITIVE_ORDER).forEach { (key, value) -> append(key.lowercase().length).append(':').append(key.lowercase()).append('=').append(value.length).append(':').append(value).append('|') }
         }
         return MessageDigest.getInstance("SHA-256").digest(semantic.toByteArray(StandardCharsets.UTF_8)).take(12).joinToString("") { "%02x".format(it) }

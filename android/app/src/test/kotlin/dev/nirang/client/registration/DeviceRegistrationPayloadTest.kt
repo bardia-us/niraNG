@@ -18,6 +18,7 @@ class DeviceRegistrationPayloadTest {
             model = "Galaxy S24 5G",
             osVersion = "Android 16 (SDK 36)",
             appVersion = "1.0.9",
+            appBuild = 20,
             firstSeen = "2026-08-28T12:00:00.000Z",
             lastSeen = "2026-08-28T13:00:00.000Z",
             requestTimestamp = 1_788_000_000L,
@@ -28,7 +29,8 @@ class DeviceRegistrationPayloadTest {
         assertEquals("niraNG", payload.getString("app_name"))
         assertEquals("Samsung", payload.getString("manufacturer"))
         assertEquals("Galaxy S24 5G", payload.getString("model"))
-        assertEquals(6, payload.getInt("schema_version"))
+        assertEquals(7, payload.getInt("schema_version"))
+        assertEquals(20, payload.getInt("app_build"))
         assertEquals("a".repeat(64), payload.getString("device_key"))
         assertTrue(payload.getLong("request_timestamp") > 0)
         assertTrue(payload.getString("request_nonce").matches(Regex("[A-Za-z0-9_-]{22}")))

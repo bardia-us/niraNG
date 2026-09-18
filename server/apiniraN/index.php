@@ -112,9 +112,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         } elseif (!empty($_SESSION['authenticated']) && $database instanceof PDO) {
             if ($action === 'minimum_versions') {
                 $androidMinimum = registry_valid_version($_POST['minimum_android_version'] ?? null);
+                $androidMinimumBuild = registry_valid_build($_POST['minimum_android_build'] ?? null);
                 $windowsMinimum = registry_valid_version($_POST['minimum_windows_version'] ?? null);
-                if ($androidMinimum === null || $windowsMinimum === null) {
-                    $error = 'Both minimum versions must use semantic version format.';
+                if ($androidMinimum === null || $androidMinimumBuild === null || $windowsMinimum === null) {
+                    $error = 'Versions must use semantic format and Android build must be a non-negative integer.';
                 } else {
                     $statement = $database->prepare(
                         'INSERT INTO admin_settings (setting_key, setting_value, updated_at) VALUES (:key, :value, :updated_at)
@@ -123,6 +124,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                     $database->beginTransaction();
                     try {
                         $statement->execute([':key' => 'minimum_android_version', ':value' => $androidMinimum, ':updated_at' => registry_now()]);
+                        $statement->execute([':key' => 'minimum_android_build', ':value' => (string)$androidMinimumBuild, ':updated_at' => registry_now()]);
                         $statement->execute([':key' => 'minimum_windows_version', ':value' => $windowsMinimum, ':updated_at' => registry_now()]);
                         $database->commit();
                         $message = 'Minimum controllable versions updated.';
@@ -162,6 +164,9 @@ $minimumAndroidVersion = $database instanceof PDO
 $minimumWindowsVersion = $database instanceof PDO
     ? registry_minimum_version($database, 'windows')
     : NIRANG_DEFAULT_MINIMUM_WINDOWS_VERSION;
+$minimumAndroidBuild = $database instanceof PDO
+    ? registry_minimum_android_build($database)
+    : NIRANG_DEFAULT_MINIMUM_ANDROID_BUILD;
 $rows = [];
 if ($authenticated) {
     $rows = $database->query(
@@ -189,22 +194,25 @@ catch (Throwable $exception) { $displayTimezone = new DateTimeZone('UTC'); }
 <div class="row"><input type="password" name="password" minlength="10" maxlength="1024" required placeholder="Password">
 <?php if ($setupRequired): ?><input type="password" name="password_confirmation" minlength="10" maxlength="1024" required placeholder="Confirm password"><?php endif; ?><button>Continue</button></div></form></section>
 <?php else: ?>
-<section class="card"><h2>Remote access policy</h2><form method="post" class="row"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="minimum_versions"><label>Android / niraNG minimum <input name="minimum_android_version" value="<?= e($minimumAndroidVersion) ?>" pattern="[0-9]+\.[0-9]+\.[0-9]+.*" required></label><label>Windows / niraN minimum <input name="minimum_windows_version" value="<?= e($minimumWindowsVersion) ?>" pattern="[0-9]+\.[0-9]+\.[0-9]+.*" required></label><button>Save</button></form>
-<p>Android below <?= e($minimumAndroidVersion) ?> and Windows below <?= e($minimumWindowsVersion) ?> are Outdated/Uncontrollable. Old clients with a direct embedded subscription endpoint cannot be honestly remote-blocked.</p></section>
+<section class="card"><h2>Remote access policy</h2><form method="post" class="row"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="minimum_versions"><label>Android display version <input name="minimum_android_version" value="<?= e($minimumAndroidVersion) ?>" pattern="[0-9]+\.[0-9]+\.[0-9]+.*" required></label><label>Android minimum build <input name="minimum_android_build" type="number" min="0" step="1" value="<?= $minimumAndroidBuild ?>" required></label><label>Windows / niraN minimum <input name="minimum_windows_version" value="<?= e($minimumWindowsVersion) ?>" pattern="[0-9]+\.[0-9]+\.[0-9]+.*" required></label><button>Save</button></form>
+<p>Android access is enforced by versionCode/build (minimum <?= $minimumAndroidBuild ?>); the display version is shown to users. Build 0 keeps legacy Android clients allowed. Windows remains semantic-version based.</p></section>
 <section class="card"><h2>Devices (<?= count($rows) ?>)</h2><table><thead><tr><th>Status</th><th>Device</th><th>Platform / Version</th><th>Device Key</th><th>Installation ID</th><th>First Seen</th><th>Last Seen</th><th>Action</th></tr></thead><tbody>
 <?php foreach ($rows as $row):
     $version = is_string($row['app_version']) ? $row['app_version'] : '0.0.0';
     $platform = $row['platform'] === 'android' ? 'android' : 'windows';
     $minimumVersion = $platform === 'android' ? $minimumAndroidVersion : $minimumWindowsVersion;
     $hasDeviceKey = is_string($row['device_key']) && preg_match('/^[0-9a-f]{64}$/', $row['device_key']) === 1;
-    $outdated = registry_is_outdated($version, $minimumVersion);
+    $appBuild = (int)($row['app_build'] ?? 0);
+    $outdated = $platform === 'android'
+        ? $appBuild < $minimumAndroidBuild
+        : registry_is_outdated($version, $minimumVersion);
     $controllable = $hasDeviceKey && !$outdated;
     $blocked = $hasDeviceKey && ($row['access_status'] ?? '') === 'blocked';
     $status = $blocked ? 'blocked' : ($outdated ? 'outdated' : (($row['access_status'] ?? '') === 'allowed' ? 'allowed' : 'unknown'));
 ?>
 <tr><td><span class="badge <?= e($status) ?>"><?= e(ucfirst($status)) ?></span><?php if ($blocked && $outdated): ?> <span class="badge outdated">Outdated</span><?php endif; ?><?php if ((int)$row['reinstalled_after_block'] === 1): ?><br><span class="badge reinstall">Reinstalled after block</span><?php endif; ?><?php if ($outdated): ?><br><small>Remote control unavailable.<br>User must update <?= $platform === 'android' ? 'niraNG' : 'niraN' ?> to <?= e($minimumVersion) ?> or newer.</small><?php endif; ?></td>
 <td><strong><?= e((string)($row['device_name'] ?: $row['device_model'] ?: 'Unknown device')) ?></strong><br><small><?= e(trim((string)$row['manufacturer'] . ' ' . (string)$row['model'])) ?></small></td>
-<td><?= e((string)$row['platform']) ?><br><?= e((string)$row['app_name'] . ' ' . $version) ?></td>
+<td><?= e((string)$row['platform']) ?><br><?= e((string)$row['app_name'] . ' ' . $version) ?><?php if ($platform === 'android'): ?><br><small>Build <?= $appBuild ?></small><?php endif; ?></td>
 <td class="mono"><?= e(registry_short_key(is_string($row['device_key']) ? $row['device_key'] : null)) ?><?php if ((int)$row['bypass_attempts'] > 0): ?><br><small>Attempts: <?= (int)$row['bypass_attempts'] ?></small><?php endif; ?></td>
 <td class="mono"><?= e((string)$row['installation_id']) ?></td><td><?= e(display_timestamp($row['first_seen'], $displayTimezone)) ?></td><td><?= e(display_timestamp($row['last_seen'], $displayTimezone)) ?></td>
 <td><?php if ($controllable || $blocked): ?><form method="post"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="device_key" value="<?= e((string)$row['device_key']) ?>"><input type="hidden" name="action" value="<?= $blocked ? 'unblock' : 'block' ?>"><button class="<?= $blocked ? 'secondary' : 'danger' ?>"><?= $blocked ? 'Unblock' : 'Block' ?></button></form><?php else: ?>—<?php endif; ?></td></tr>

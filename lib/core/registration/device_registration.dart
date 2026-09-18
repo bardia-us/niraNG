@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../platform/nirang_native.dart';
 
 final deviceAccessBlock = ValueNotifier<String?>(null);
+final deviceUpdateRequired = ValueNotifier<bool>(false);
 final deviceAccessVerified = ValueNotifier<int>(0);
 
 void markDeviceAccessBlocked([String? message]) {
@@ -18,6 +19,9 @@ void clearDeviceAccessBlocked() {
 void markDeviceAccessVerified() {
   deviceAccessVerified.value++;
 }
+
+void markDeviceUpdateRequired() => deviceUpdateRequired.value = true;
+void clearDeviceUpdateRequired() => deviceUpdateRequired.value = false;
 
 abstract interface class DeviceRegistrationCoordinator {
   Future<bool> initialize();

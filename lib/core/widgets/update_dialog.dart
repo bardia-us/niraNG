@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../localization/app_strings.dart';
 import '../platform/nirang_native.dart';
 import '../update_checker.dart';
+import '../user_facing_error.dart';
 import 'glass_dialog.dart';
 
 Future<void> showUpdateOptionsDialog(
@@ -20,7 +21,7 @@ Future<void> showUpdateOptionsDialog(
     ).showSnackBar(SnackBar(content: Text(context.s('updateApkUnavailable'))));
     return;
   }
-  final choice = await showDialog<String>(
+  final choice = await showNirangDialog<String>(
     context: context,
     barrierDismissible: !release.mandatory,
     builder: (dialogContext) => NirangAlertDialog(
@@ -51,7 +52,7 @@ Future<void> showUpdateOptionsDialog(
   if (choice == 'browser') {
     await NirangNative.openExternalUrl(asset.downloadUrl.toString());
   } else if (choice == 'install') {
-    await showDialog<void>(
+    await showNirangDialog<void>(
       context: context,
       barrierDismissible: true,
       builder: (_) => _UpdateDownloadDialog(
@@ -89,11 +90,18 @@ class _UpdateDownloadSettingsTileState
   Future<void> _action(Future<Map<dynamic, dynamic>> Function() action) async {
     try {
       _apply(await action());
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(context.s('operationFailed'))));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              userFacingError(
+                error,
+                persian: Localizations.localeOf(context).languageCode == 'fa',
+              ).combined,
+            ),
+          ),
+        );
       }
     }
   }
@@ -177,13 +185,19 @@ class _UpdateDownloadDialog extends StatefulWidget {
 
 class _UpdateDownloadDialogState extends State<_UpdateDownloadDialog> {
   StreamSubscription<Map<dynamic, dynamic>>? _subscription;
+  Timer? _statusPoll;
   _DownloadSnapshot _download = const _DownloadSnapshot(state: 'downloading');
   bool _installerOpened = false;
+  bool _polling = false;
 
   @override
   void initState() {
     super.initState();
     _subscription = NirangNative.updateDownloadEvents.listen(_apply);
+    _statusPoll = Timer.periodic(
+      const Duration(milliseconds: 750),
+      (_) => unawaited(_refreshSnapshot()),
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) => _start());
   }
 
@@ -207,14 +221,49 @@ class _UpdateDownloadDialogState extends State<_UpdateDownloadDialog> {
     if (!mounted) return;
     final next = _DownloadSnapshot.fromMap(event);
     setState(() => _download = next);
+    if (next.complete || next.failed) _statusPoll?.cancel();
     if (next.complete && !_installerOpened) {
-      _installerOpened = true;
-      unawaited(NirangNative.installDownloadedUpdate());
+      unawaited(_openInstaller());
+    }
+  }
+
+  Future<void> _refreshSnapshot() async {
+    if (_polling || !mounted) return;
+    _polling = true;
+    try {
+      _apply(await NirangNative.getUpdateDownload());
+    } catch (_) {
+      // The event stream remains the primary source. Polling only closes the
+      // small race where the terminal native event arrives between routes.
+    } finally {
+      _polling = false;
+    }
+  }
+
+  Future<void> _openInstaller() async {
+    if (_installerOpened || !mounted) return;
+    _installerOpened = true;
+    try {
+      await NirangNative.installDownloadedUpdate();
+    } catch (error) {
+      _installerOpened = false;
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            userFacingError(
+              error,
+              persian: Localizations.localeOf(context).languageCode == 'fa',
+            ).combined,
+          ),
+        ),
+      );
     }
   }
 
   @override
   void dispose() {
+    _statusPoll?.cancel();
     _subscription?.cancel();
     super.dispose();
   }
@@ -226,16 +275,22 @@ class _UpdateDownloadDialogState extends State<_UpdateDownloadDialog> {
         ? (d.received / d.total).clamp(0.0, 1.0)
         : null;
     return NirangAlertDialog(
-      icon: Icon(d.failed ? Icons.error_outline : Icons.download_rounded),
-      title: Text(
+      icon: Icon(
         d.failed
-            ? context.s('updateDownloadFailed')
-            : context.s('downloadingUpdate'),
+            ? Icons.error_outline
+            : d.complete
+            ? Icons.download_done_rounded
+            : d.state == 'verifying'
+            ? Icons.verified_outlined
+            : Icons.download_rounded,
       ),
+      title: Text(_statusText(context, d)),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          LinearProgressIndicator(value: progress),
+          LinearProgressIndicator(
+            value: d.state == 'verifying' ? null : progress,
+          ),
           const SizedBox(height: 10),
           Text('${_bytes(d.received)} / ${_bytes(d.total)}'),
           const SizedBox(height: 6),
@@ -256,6 +311,12 @@ class _UpdateDownloadDialogState extends State<_UpdateDownloadDialog> {
               if (context.mounted) Navigator.pop(context);
             },
             child: Text(context.s('downloadWithBrowser')),
+          ),
+        if (d.complete)
+          FilledButton.icon(
+            onPressed: _openInstaller,
+            icon: const Icon(Icons.install_mobile_rounded),
+            label: Text(context.s('install')),
           ),
       ],
     );

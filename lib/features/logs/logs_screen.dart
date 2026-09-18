@@ -6,6 +6,7 @@ import '../../core/localization/app_strings.dart';
 import '../../core/widgets/glass_dialog.dart';
 import '../../core/platform/native_models.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/user_facing_error.dart';
 import '../vpn/app_controller.dart';
 
 class LogsScreen extends ConsumerStatefulWidget {
@@ -116,7 +117,7 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
   }
 
   Future<void> _confirmClear(BuildContext context, WidgetRef ref) async {
-    final clear = await showDialog<bool>(
+    final clear = await showNirangDialog<bool>(
       context: context,
       builder: (context) => NirangAlertDialog(
         title: Text(context.s('clearLogs')),
@@ -139,7 +140,14 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
       } catch (error) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('${context.s('operationFailed')}: $error')),
+            SnackBar(
+              content: Text(
+                userFacingError(
+                  error,
+                  persian: Localizations.localeOf(context).languageCode == 'fa',
+                ).combined,
+              ),
+            ),
           );
         }
       }

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nirang/core/formatters.dart';
@@ -9,6 +10,7 @@ import 'package:nirang/core/localization/app_strings.dart';
 import 'package:nirang/core/platform/native_models.dart';
 import 'package:nirang/core/theme/app_theme.dart';
 import 'package:nirang/core/update_checker.dart';
+import 'package:nirang/core/user_facing_error.dart';
 import 'package:nirang/features/settings/per_app_ordering.dart';
 import 'package:nirang/features/servers/server_sorting.dart';
 import 'package:nirang/features/vpn/app_controller.dart';
@@ -242,6 +244,47 @@ void main() {
       greaterThan(0),
     );
     expect(SemanticVersion.parse('v1.0.4+5').toString(), '1.0.4');
+  });
+
+  test('bilingual release notes select the matching language section', () {
+    final notes = parseBilingualReleaseNotes('''
+## English
+- Added forced updates.
+- Fixed network errors.
+
+## فارسی
+- آپدیت اجباری اضافه شد.
+- خطاهای شبکه اصلاح شد.
+''');
+
+    expect(notes.forLanguage('en'), contains('forced updates'));
+    expect(notes.forLanguage('fa'), contains('آپدیت اجباری'));
+    expect(notes.forLanguage('fa'), isNot(contains('forced updates')));
+  });
+
+  test('user-facing network errors never expose raw hosts or exceptions', () {
+    final error = userFacingError(
+      PlatformException(
+        code: 'network',
+        message: 'SocketException: Failed host lookup: neovip.ir',
+      ),
+      persian: false,
+    );
+
+    expect(error.combined, contains('Network is unavailable'));
+    expect(error.combined, isNot(contains('neovip.ir')));
+    expect(error.combined, isNot(contains('SocketException')));
+  });
+
+  test('invalid subscription responses produce actionable Persian text', () {
+    final error = userFacingError(
+      const FormatException('raw parser stack'),
+      persian: true,
+    );
+
+    expect(error.combined, contains('Subscription'));
+    expect(error.combined, contains('لینک'));
+    expect(error.combined, isNot(contains('raw parser stack')));
   });
 
   test('GitHub release selects the APK matching Android ABI', () {

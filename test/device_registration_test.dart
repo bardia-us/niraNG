@@ -6,7 +6,10 @@ import 'package:nirang/core/registration/device_registration.dart';
 import 'package:nirang/features/registration/registration_bootstrap.dart';
 
 void main() {
-  tearDown(clearDeviceAccessBlocked);
+  tearDown(() {
+    clearDeviceAccessBlocked();
+    clearDeviceUpdateRequired();
+  });
 
   testWidgets('Home is not built until Android registration consent is saved', (
     tester,
@@ -94,6 +97,48 @@ void main() {
     expect(find.text('HOME_READY'), findsNothing);
     expect(find.text('Access blocked'), findsOneWidget);
   });
+
+  testWidgets('outdated startup requires an update before app entry', (
+    tester,
+  ) async {
+    final coordinator = _FakeCoordinator()
+      ..accepted = true
+      ..outdated = true;
+    await tester.pumpWidget(
+      ProviderScope(
+        child: NirangRegistrationBootstrap(
+          coordinator: coordinator,
+          child: const MaterialApp(home: Text('HOME_READY')),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('HOME_READY'), findsNothing);
+    expect(find.textContaining('Update required'), findsOneWidget);
+    expect(find.text('Update'), findsOneWidget);
+  });
+
+  testWidgets('temporary verification failure never creates a false lock', (
+    tester,
+  ) async {
+    final coordinator = _FakeCoordinator()
+      ..accepted = true
+      ..verificationUnavailable = true;
+    await tester.pumpWidget(
+      ProviderScope(
+        child: NirangRegistrationBootstrap(
+          coordinator: coordinator,
+          child: const MaterialApp(home: Text('HOME_READY')),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(coordinator.verifications, 1);
+    expect(find.text('HOME_READY'), findsOneWidget);
+    expect(find.textContaining('Update required'), findsNothing);
+  });
 }
 
 final class _FakeCoordinator implements DeviceRegistrationCoordinator {
@@ -101,6 +146,9 @@ final class _FakeCoordinator implements DeviceRegistrationCoordinator {
   int exits = 0;
   bool accepted = false;
   bool blocked = false;
+  bool outdated = false;
+  bool verificationUnavailable = false;
+  int verifications = 0;
 
   @override
   Future<bool> initialize() async {
@@ -115,11 +163,18 @@ final class _FakeCoordinator implements DeviceRegistrationCoordinator {
 
   @override
   Future<void> verifyAccess() async {
+    verifications++;
     if (blocked) {
       throw PlatformException(
         code: 'blocked',
         message: 'blocked_by_administrator',
       );
+    }
+    if (outdated) {
+      throw PlatformException(code: 'outdated', message: 'update_required');
+    }
+    if (verificationUnavailable) {
+      throw PlatformException(code: 'network', message: 'raw hostname');
     }
   }
 

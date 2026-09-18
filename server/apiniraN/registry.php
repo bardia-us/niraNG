@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 const NIRANG_DEFAULT_MINIMUM_ANDROID_VERSION = '1.1.1';
+const NIRANG_DEFAULT_MINIMUM_ANDROID_BUILD = 0;
 const NIRANG_DEFAULT_MINIMUM_WINDOWS_VERSION = '0.3.1';
 
 function registry_environment(string $name): ?string
@@ -46,6 +47,7 @@ function registry_database(): PDO
             os_version TEXT NOT NULL DEFAULT \'\',
             app_name TEXT NOT NULL DEFAULT \'niraN\',
             app_version TEXT NOT NULL,
+            app_build INTEGER NOT NULL DEFAULT 0,
             first_seen TEXT NOT NULL,
             last_seen TEXT NOT NULL,
             created_at TEXT NOT NULL,
@@ -67,6 +69,7 @@ function registry_database(): PDO
         'bypass_attempts' => "INTEGER NOT NULL DEFAULT 0",
         'last_access_status' => "TEXT NOT NULL DEFAULT 'unknown'",
         'schema_version' => "INTEGER NOT NULL DEFAULT 0",
+        'app_build' => "INTEGER NOT NULL DEFAULT 0",
     ]);
     registry_merge_duplicate_devices($pdo);
     $pdo->exec(
@@ -115,6 +118,7 @@ function registry_database(): PDO
         NIRANG_DEFAULT_MINIMUM_ANDROID_VERSION
     );
     registry_set_default($pdo, 'minimum_android_version', $legacyAndroidMinimum);
+    registry_set_default($pdo, 'minimum_android_build', (string)NIRANG_DEFAULT_MINIMUM_ANDROID_BUILD);
     registry_set_default($pdo, 'minimum_windows_version', NIRANG_DEFAULT_MINIMUM_WINDOWS_VERSION);
     return $pdo;
 }
@@ -220,6 +224,19 @@ function registry_minimum_version(PDO $pdo, string $platform): string
     throw new InvalidArgumentException('Unsupported platform');
 }
 
+function registry_minimum_android_build(PDO $pdo): int
+{
+    $value = registry_setting($pdo, 'minimum_android_build', (string)NIRANG_DEFAULT_MINIMUM_ANDROID_BUILD);
+    return preg_match('/^[0-9]{1,10}$/', $value) === 1 ? (int)$value : NIRANG_DEFAULT_MINIMUM_ANDROID_BUILD;
+}
+
+function registry_valid_build($value): ?int
+{
+    if (is_int($value)) return $value >= 0 ? $value : null;
+    if (is_string($value) && preg_match('/^[0-9]{1,10}$/', $value) === 1) return (int)$value;
+    return null;
+}
+
 function registry_valid_version($value): ?string
 {
     if (!is_string($value)) {
@@ -281,22 +298,39 @@ function registry_subscription_auth_headers(
     ];
 }
 
-function registry_access_payload(bool $allowed, bool $blocked, string $minimum, bool $updateRequired, string $reason): array
+function registry_access_payload(
+    bool $allowed,
+    bool $blocked,
+    string $minimum,
+    bool $updateRequired,
+    string $reason,
+    int $minimumBuild = 0
+): array
 {
     return [
         'ok' => $allowed,
         'allowed' => $allowed,
         'blocked' => $blocked,
         'minimum_version' => $minimum,
+        'minimum_build' => $minimumBuild,
         'update_required' => $updateRequired,
         'reason' => $reason,
     ];
 }
 
-function registry_access_state(string $version, string $minimum, string $keyStatus, bool $hasPriorInstallation): array
+function registry_access_state(
+    string $version,
+    string $minimum,
+    string $keyStatus,
+    bool $hasPriorInstallation,
+    ?int $appBuild = null,
+    int $minimumBuild = 0
+): array
 {
     $blocked = $keyStatus === 'blocked';
-    $outdated = registry_is_outdated($version, $minimum);
+    $outdated = $appBuild === null
+        ? registry_is_outdated($version, $minimum)
+        : $appBuild < $minimumBuild;
     return [
         'blocked' => $blocked,
         'outdated' => $outdated,

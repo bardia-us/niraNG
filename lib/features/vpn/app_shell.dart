@@ -9,6 +9,7 @@ import '../../core/platform/native_models.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/update_checker.dart';
 import '../../core/registration/device_registration.dart';
+import '../../core/user_facing_error.dart';
 import '../../core/widgets/glass_dialog.dart';
 import '../../core/widgets/glass_surface.dart';
 import '../../core/widgets/update_dialog.dart';
@@ -30,6 +31,8 @@ class _AppShellState extends ConsumerState<AppShell> {
   bool _performancePromptQueued = false;
   bool _startupUpdateCheckQueued = false;
   bool _startupUpdateCheckFinished = false;
+  bool _whatsNewQueued = false;
+  bool _whatsNewFinished = false;
   bool _autoConnectQueued = false;
 
   @override
@@ -75,7 +78,9 @@ class _AppShellState extends ConsumerState<AppShell> {
         (value) => (
           ready: value.asData != null,
           loading: value.isLoading,
-          error: value.hasError ? '${value.error}' : null,
+          error: value.hasError
+              ? userFacingError(value.error!, persian: false).combined
+              : null,
           performanceMode:
               value.asData?.value.settings.performanceMode ?? false,
         ),
@@ -101,7 +106,14 @@ class _AppShellState extends ConsumerState<AppShell> {
           );
           return;
         }
-        if (_startupUpdateCheckFinished) {
+        if (_startupUpdateCheckFinished && !_whatsNewQueued) {
+          _whatsNewQueued = true;
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => _showWhatsNewIfNeeded(app),
+          );
+          return;
+        }
+        if (_whatsNewFinished) {
           _queueTelegramReminder(app);
         }
       });
@@ -139,7 +151,6 @@ class _AppShellState extends ConsumerState<AppShell> {
 
     const pages = [HomeScreen(), ServersScreen(), SettingsScreen()];
     final theme = Theme.of(context);
-    final reducedEffects = shellState.performanceMode;
     final navigationBar = NavigationBar(
       backgroundColor: Colors.transparent,
       elevation: 0,
@@ -170,58 +181,50 @@ class _AppShellState extends ConsumerState<AppShell> {
         ),
       ],
     );
-    return BackdropGroup(
-      child: DecoratedBox(
-        decoration: NirangVisualEffects.shellBackground(
-          theme,
-          reducedEffects: reducedEffects,
+    return Scaffold(
+      backgroundColor: theme.scaffoldBackgroundColor,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        flexibleSpace: const GlassSurface(
+          radius: 0,
+          showShadow: false,
+          child: SizedBox.expand(),
         ),
-        child: Scaffold(
-          backgroundColor: Colors.transparent,
-          appBar: AppBar(
-            backgroundColor: Colors.transparent,
-            surfaceTintColor: Colors.transparent,
-            flexibleSpace: const GlassSurface(
-              radius: 0,
-              showShadow: false,
-              child: SizedBox.expand(),
+        title: Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(7),
+              child: Image.asset(
+                'assets/branding/nirang-logo-concept.png',
+                width: 30,
+                height: 30,
+                cacheWidth: 60,
+                cacheHeight: 60,
+              ),
             ),
-            title: Row(
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(7),
-                  child: Image.asset(
-                    'assets/branding/nirang-logo-concept.png',
-                    width: 30,
-                    height: 30,
-                    cacheWidth: 60,
-                    cacheHeight: 60,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                const Text('niraNG'),
-              ],
-            ),
-          ),
-          body: Stack(
-            children: [
-              IndexedStack(index: _index, children: pages),
-              const _TransientStatusBanner(),
-            ],
-          ),
-          bottomNavigationBar: GlassSurface(
-            radius: 0,
-            showShadow: false,
-            child: navigationBar,
-          ),
+            const SizedBox(width: 10),
+            const Text('niraNG'),
+          ],
         ),
+      ),
+      body: Stack(
+        children: [
+          IndexedStack(index: _index, children: pages),
+          const _TransientStatusBanner(),
+        ],
+      ),
+      bottomNavigationBar: GlassSurface(
+        radius: 0,
+        showShadow: false,
+        child: navigationBar,
       ),
     );
   }
 
   Future<void> _showPerformanceModePrompt() async {
     if (!mounted) return;
-    final enable = await showDialog<bool>(
+    final enable = await showNirangDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) => NirangAlertDialog(
@@ -250,7 +253,7 @@ class _AppShellState extends ConsumerState<AppShell> {
   Future<void> _showTelegramReminder() async {
     if (!mounted) return;
     var never = false;
-    final decision = await showDialog<String>(
+    final decision = await showNirangDialog<String>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) => NirangAlertDialog(
@@ -302,7 +305,54 @@ class _AppShellState extends ConsumerState<AppShell> {
     } finally {
       _startupUpdateCheckFinished = true;
       final app = ref.read(appControllerProvider).asData?.value;
-      if (mounted && app != null) _queueTelegramReminder(app);
+      if (mounted && app != null && !_whatsNewQueued) {
+        _whatsNewQueued = true;
+        unawaited(_showWhatsNewIfNeeded(app));
+      }
+    }
+  }
+
+  Future<void> _showWhatsNewIfNeeded(AppSnapshot app) async {
+    try {
+      if (app.appBuild <= 0 || app.whatsNewSeenBuild >= app.appBuild) return;
+      final notes = await const GitHubUpdateChecker().releaseNotes(
+        app.appVersion,
+      );
+      final body = notes.forLanguage(app.settings.language).trim();
+      if (!mounted || body.isEmpty) return;
+      final persian = app.settings.language == 'fa';
+      final accepted = await showNirangDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => NirangAlertDialog(
+          icon: const Icon(Icons.auto_awesome_rounded),
+          title: Text(persian ? 'چه چیزهایی جدید است؟' : "What's new"),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 420),
+            child: SingleChildScrollView(
+              child: SelectableText(
+                body,
+                textDirection: persian ? TextDirection.rtl : TextDirection.ltr,
+              ),
+            ),
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(persian ? 'باشه' : 'Got it'),
+            ),
+          ],
+        ),
+      );
+      if (accepted == true && mounted) {
+        await ref.read(appControllerProvider.notifier).recordWhatsNewSeen();
+      }
+    } catch (_) {
+      // Do not mark this build as seen when GitHub is temporarily unavailable.
+    } finally {
+      _whatsNewFinished = true;
+      final current = ref.read(appControllerProvider).asData?.value;
+      if (mounted && current != null) _queueTelegramReminder(current);
     }
   }
 

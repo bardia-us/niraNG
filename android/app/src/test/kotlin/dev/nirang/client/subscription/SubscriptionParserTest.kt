@@ -104,7 +104,7 @@ class SubscriptionParserTest {
     }
 
     @Test
-    fun `semantic identity ignores remark and query order but tracks config changes`() {
+    fun `identity preserves renamed connections and tracks config changes`() {
         val first = SubscriptionParser.parseDetailed(
             "vless://00000000-0000-4000-8000-000000000001@example.com:443?security=tls&type=ws&path=%2Fa#Old",
         ).servers.single()
@@ -115,8 +115,19 @@ class SubscriptionParserTest {
             "vless://00000000-0000-4000-8000-000000000001@example.com:443?path=%2Fb&type=ws&security=tls#New",
         ).servers.single()
 
-        assertEquals(first.id, renamed.id)
+        assertFalse(first.id == renamed.id)
         assertFalse(first.id == changed.id)
+    }
+
+    @Test
+    fun `same connection with different names is preserved while exact duplicate is removed`() {
+        val base = "vless://00000000-0000-4000-8000-000000000001@example.com:443?security=tls&type=ws&path=%2Fa"
+        val result = SubscriptionParser.parseDetailed(
+            listOf("$base#Amsterdam", "$base#Stockholm", "$base#Amsterdam").joinToString("\n"),
+        )
+
+        assertEquals(listOf("Amsterdam", "Stockholm"), result.servers.map { it.name })
+        assertEquals(1, result.stats.duplicates)
     }
 
     @Test

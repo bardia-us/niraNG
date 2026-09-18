@@ -4,6 +4,8 @@ import 'dart:io';
 const nirangRepositoryUrl = 'https://github.com/bardia-us/niraNG';
 const nirangLatestReleaseApi =
     'https://api.github.com/repos/bardia-us/niraNG/releases/latest';
+const nirangReleaseByTagApi =
+    'https://api.github.com/repos/bardia-us/niraNG/releases/tags/';
 
 class SemanticVersion implements Comparable<SemanticVersion> {
   const SemanticVersion(this.major, this.minor, this.patch);
@@ -95,9 +97,26 @@ class GitHubUpdateChecker {
   const GitHubUpdateChecker();
 
   Future<ReleaseCheckResult> check(String currentVersion) async {
+    final payload = await _fetch(
+      Uri.parse(nirangLatestReleaseApi),
+      currentVersion,
+    );
+    return parseGitHubRelease(payload, currentVersion);
+  }
+
+  Future<BilingualReleaseNotes> releaseNotes(String version) async {
+    final tag = version.startsWith('v') ? version : 'v$version';
+    final payload = await _fetch(
+      Uri.parse('$nirangReleaseByTagApi${Uri.encodeComponent(tag)}'),
+      version,
+    );
+    return parseBilingualReleaseNotes('${payload['body'] ?? ''}');
+  }
+
+  Future<Map<String, dynamic>> _fetch(Uri uri, String currentVersion) async {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
     try {
-      final request = await client.getUrl(Uri.parse(nirangLatestReleaseApi));
+      final request = await client.getUrl(uri);
       request.headers
         ..set(HttpHeaders.acceptHeader, 'application/vnd.github+json')
         ..set(
@@ -119,11 +138,51 @@ class GitHubUpdateChecker {
       if (payload is! Map<String, dynamic>) {
         throw const FormatException('Invalid GitHub response');
       }
-      return parseGitHubRelease(payload, currentVersion);
+      return payload;
     } finally {
       client.close(force: true);
     }
   }
+}
+
+class BilingualReleaseNotes {
+  const BilingualReleaseNotes({required this.english, required this.persian});
+
+  final String english;
+  final String persian;
+
+  String forLanguage(String language) => language == 'fa'
+      ? (persian.isNotEmpty ? persian : english)
+      : (english.isNotEmpty ? english : persian);
+}
+
+BilingualReleaseNotes parseBilingualReleaseNotes(String body) {
+  final sections = <String, StringBuffer>{
+    'en': StringBuffer(),
+    'fa': StringBuffer(),
+  };
+  String? current;
+  for (final line in body.replaceAll('\r\n', '\n').split('\n')) {
+    final heading = line.trim().toLowerCase().replaceAll(
+      RegExp(r'[#:*_\s]'),
+      '',
+    );
+    if ({'english', 'en', 'انگلیسی'}.contains(heading)) {
+      current = 'en';
+      continue;
+    }
+    if ({'فارسی', 'persian', 'fa', 'farsi'}.contains(heading)) {
+      current = 'fa';
+      continue;
+    }
+    if (current != null) sections[current]!.writeln(line);
+  }
+  final english = sections['en']!.toString().trim();
+  final persian = sections['fa']!.toString().trim();
+  if (english.isEmpty && persian.isEmpty) {
+    return BilingualReleaseNotes(english: body.trim(), persian: '');
+  }
+  return BilingualReleaseNotes(english: english, persian: persian);
 }
 
 ReleaseCheckResult parseGitHubRelease(

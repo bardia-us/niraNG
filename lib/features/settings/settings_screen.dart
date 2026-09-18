@@ -8,6 +8,7 @@ import '../../core/widgets/update_dialog.dart';
 import '../../core/platform/native_models.dart';
 import '../../core/platform/nirang_native.dart';
 import '../../core/update_checker.dart';
+import '../../core/user_facing_error.dart';
 import '../vpn/app_controller.dart';
 import 'per_app_proxy_screen.dart';
 import '../logs/logs_screen.dart';
@@ -883,11 +884,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         return;
       }
       await showUpdateOptionsDialog(context, release);
-    } catch (_) {
+    } catch (error) {
       if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(context.s('updateCheckFailed'))));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              userFacingError(
+                error,
+                persian: Localizations.localeOf(context).languageCode == 'fa',
+              ).combined,
+            ),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _checkingUpdates = false);
@@ -1110,7 +1118,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Future<T?> _showSettingsDialog<T>(
     BuildContext context, {
     required Widget Function(BuildContext dialogContext) builder,
-  }) => showDialog<T>(
+  }) => showNirangDialog<T>(
     context: context,
     barrierColor: Colors.transparent,
     builder: builder,
@@ -1283,7 +1291,7 @@ class _FragmentDialogState extends State<_FragmentDialog> {
   }
 
   Future<void> _pickPackets() async {
-    final selected = await showDialog<String>(
+    final selected = await showNirangDialog<String>(
       context: context,
       barrierColor: Colors.transparent,
       builder: (dialogContext) => NirangAlertDialog(
@@ -1688,7 +1696,14 @@ Future<void> _perform(
   } catch (error) {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${context.s('operationFailed')}: $error')),
+        SnackBar(
+          content: Text(
+            userFacingError(
+              error,
+              persian: Localizations.localeOf(context).languageCode == 'fa',
+            ).combined,
+          ),
+        ),
       );
     }
   }

@@ -436,6 +436,8 @@ class AppSnapshot {
     this.lastUpdated = 0,
     this.coreVersion = 'Unavailable',
     this.appVersion = '1.1.1',
+    this.appBuild = 0,
+    this.whatsNewSeenBuild = 0,
     this.subscriptionConfigured = false,
     this.telegramEligible = false,
     this.subscriptionError,
@@ -453,6 +455,8 @@ class AppSnapshot {
   final int lastUpdated;
   final String coreVersion;
   final String appVersion;
+  final int appBuild;
+  final int whatsNewSeenBuild;
   final bool subscriptionConfigured;
   final bool telegramEligible;
   final String? subscriptionError;
@@ -477,6 +481,8 @@ class AppSnapshot {
     int? lastUpdated,
     String? coreVersion,
     String? appVersion,
+    int? appBuild,
+    int? whatsNewSeenBuild,
     bool? subscriptionConfigured,
     bool? telegramEligible,
     String? subscriptionError,
@@ -495,6 +501,8 @@ class AppSnapshot {
     lastUpdated: lastUpdated ?? this.lastUpdated,
     coreVersion: coreVersion ?? this.coreVersion,
     appVersion: appVersion ?? this.appVersion,
+    appBuild: appBuild ?? this.appBuild,
+    whatsNewSeenBuild: whatsNewSeenBuild ?? this.whatsNewSeenBuild,
     subscriptionConfigured:
         subscriptionConfigured ?? this.subscriptionConfigured,
     telegramEligible: telegramEligible ?? this.telegramEligible,

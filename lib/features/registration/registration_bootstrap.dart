@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import '../../core/registration/device_registration.dart';
 import '../../core/platform/nirang_native.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/update_checker.dart';
+import '../../core/user_facing_error.dart';
 import '../../core/widgets/glass_surface.dart';
 
 class NirangRegistrationBootstrap extends StatefulWidget {
@@ -25,7 +27,6 @@ class _NirangRegistrationBootstrapState
     extends State<NirangRegistrationBootstrap> {
   late Future<bool> _initialization;
   bool _accepting = false;
-  bool _backgroundVerificationQueued = false;
   String? _error;
 
   @override
@@ -44,27 +45,34 @@ class _NirangRegistrationBootstrapState
         );
       }
       final error = snapshot.error;
-      if (_isBlocked(error)) markDeviceAccessBlocked(_platformMessage(error));
+      if (_isBlocked(error)) markDeviceAccessBlocked();
       if (snapshot.data == true) {
-        _queueBackgroundVerification();
-        return ValueListenableBuilder<String?>(
-          valueListenable: deviceAccessBlock,
-          child: widget.child,
-          builder: (context, blocked, child) => blocked == null
-              ? child!
-              : _registrationApp(
-                  BlockedAccessScreen(onRetry: _retry, onExit: _exit),
-                ),
+        return ValueListenableBuilder<bool>(
+          valueListenable: deviceUpdateRequired,
+          child: ValueListenableBuilder<String?>(
+            valueListenable: deviceAccessBlock,
+            child: widget.child,
+            builder: (context, blocked, child) => blocked == null
+                ? child!
+                : _registrationApp(
+                    BlockedAccessScreen(onRetry: _retry, onExit: _exit),
+                  ),
+          ),
+          builder: (context, updateRequired, child) => updateRequired
+              ? _registrationApp(
+                  RequiredUpdateScreen(onRetry: _retry, onExit: _exit),
+                )
+              : child!,
         );
       }
       if (error != null) {
         return _registrationApp(
           _isBlocked(error)
               ? BlockedAccessScreen(onRetry: _retry, onExit: _exit)
+              : _isOutdated(error)
+              ? RequiredUpdateScreen(onRetry: _retry, onExit: _exit)
               : AccessVerificationScreen(
-                  message:
-                      _platformMessage(error) ??
-                      'Access status could not be verified.',
+                  message: userFacingError(error, persian: false).combined,
                   onRetry: _retry,
                   onExit: _exit,
                 ),
@@ -83,36 +91,24 @@ class _NirangRegistrationBootstrapState
 
   Future<bool> _verifyAccess() async {
     final accepted = await widget.coordinator.initialize();
+    if (!accepted) return false;
+    try {
+      await widget.coordinator.verifyAccess();
+      clearDeviceUpdateRequired();
+      markDeviceAccessVerified();
+    } catch (error) {
+      if (_isOutdated(error)) markDeviceUpdateRequired();
+      if (_isBlocked(error) || _isOutdated(error)) rethrow;
+      // Transient network failures are fail-open. Only an explicit backend
+      // policy response may prevent entry to the app.
+    }
     return accepted;
   }
 
-  void _queueBackgroundVerification() {
-    if (_backgroundVerificationQueued) return;
-    _backgroundVerificationQueued = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      try {
-        await widget.coordinator.verifyAccess();
-        clearDeviceAccessBlocked();
-        markDeviceAccessVerified();
-      } catch (error) {
-        if (_isBlocked(error)) markDeviceAccessBlocked(_platformMessage(error));
-        // Offline/startup API failures never keep the local UI on a loading page.
-      }
-    });
-  }
-
   void _retry() {
-    _retryAccess();
-  }
-
-  Future<void> _retryAccess() async {
-    try {
-      await widget.coordinator.verifyAccess();
-      clearDeviceAccessBlocked();
-      markDeviceAccessVerified();
-    } catch (error) {
-      if (_isBlocked(error)) markDeviceAccessBlocked(_platformMessage(error));
-    }
+    setState(() {
+      _initialization = _verifyAccess();
+    });
   }
 
   Widget _registrationApp(Widget home) => MaterialApp(
@@ -134,24 +130,17 @@ class _NirangRegistrationBootstrapState
       await widget.coordinator.accept();
       if (!mounted) return;
       setState(() {
-        _backgroundVerificationQueued = false;
-        _initialization = Future<bool>.value(true);
+        _initialization = _verifyAccess();
       });
     } catch (error) {
       if (mounted) {
         if (_isBlocked(error)) {
-          markDeviceAccessBlocked(_platformMessage(error));
+          markDeviceAccessBlocked();
           setState(() => _initialization = Future<bool>.error(error));
           return;
         }
-        final nativeMessage = error is PlatformException
-            ? error.message?.trim()
-            : null;
         setState(() {
-          _error = nativeMessage?.isNotEmpty == true
-              ? nativeMessage
-              : 'Registration could not be completed. Please try again.\n'
-                    'ثبت دستگاه کامل نشد؛ دوباره تلاش کنید.';
+          _error = userFacingError(error, persian: false).combined;
         });
       }
     } finally {
@@ -162,13 +151,41 @@ class _NirangRegistrationBootstrapState
   Future<void> _exit() => widget.coordinator.exitApplication();
 
   static bool _isBlocked(Object? error) =>
-      error is PlatformException &&
-      (error.code == 'blocked' ||
-          error.message?.contains('blocked_by_administrator') == true ||
-          error.message?.toLowerCase().contains('blocked') == true);
+      error is PlatformException && error.code == 'blocked';
 
-  static String? _platformMessage(Object? error) =>
-      error is PlatformException ? error.message?.trim() : null;
+  static bool _isOutdated(Object? error) =>
+      error is PlatformException && error.code == 'outdated';
+}
+
+class RequiredUpdateScreen extends StatelessWidget {
+  const RequiredUpdateScreen({
+    required this.onRetry,
+    required this.onExit,
+    super.key,
+  });
+
+  final VoidCallback onRetry;
+  final VoidCallback onExit;
+
+  @override
+  Widget build(BuildContext context) => _AccessMessageCard(
+    icon: Icons.system_update_alt_rounded,
+    title: 'Update required · آپدیت الزامی',
+    message:
+        'This version is no longer supported. Install the latest official release to continue.\n\n'
+        'این نسخه دیگر پشتیبانی نمی‌شود. برای ادامه آخرین نسخه رسمی را نصب کنید.',
+    actions: [
+      TextButton(onPressed: onExit, child: const Text('Exit')),
+      OutlinedButton(onPressed: onRetry, child: const Text('Retry')),
+      FilledButton.icon(
+        onPressed: () => NirangNative.openExternalUrl(
+          '$nirangRepositoryUrl/releases/latest',
+        ),
+        icon: const Icon(Icons.download_rounded),
+        label: const Text('Update'),
+      ),
+    ],
+  );
 }
 
 class BlockedAccessScreen extends StatelessWidget {

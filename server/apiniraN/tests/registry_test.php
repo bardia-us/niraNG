@@ -24,6 +24,7 @@ putenv('NIRAN_REGISTRY_DB=' . $temporary);
 try {
     $pdo = registry_database();
     assert_same('1.1.1', registry_minimum_version($pdo, 'android'), 'default Android minimum version');
+    assert_same(0, registry_minimum_android_build($pdo), 'legacy Android clients remain allowed by default');
     assert_same('0.3.1', registry_minimum_version($pdo, 'windows'), 'default Windows minimum version');
     assert_same(true, registry_is_outdated('1.1.0+12', '1.1.1'), '1.1.0 must be outdated');
     assert_same(false, registry_is_outdated('1.1.1+13', '1.1.1'), '1.1.1 must be controllable');
@@ -59,12 +60,16 @@ try {
 
     $outdated = registry_access_state('1.1.0', '1.1.1', 'allowed', false);
     assert_same('outdated', $outdated['status'], 'legacy version is shown as uncontrollable');
+    $currentBuild = registry_access_state('1.1.0', '9.9.9', 'allowed', false, 20, 20);
+    assert_same('allowed', $currentBuild['status'], 'Android access uses build number instead of version text');
+    $oldBuild = registry_access_state('9.9.9', '1.1.1', 'allowed', false, 19, 20);
+    assert_same('outdated', $oldBuild['status'], 'Android build below minimum is outdated');
 
     $columns = [];
     foreach ($pdo->query('PRAGMA table_info(installations)') as $column) {
         $columns[] = $column['name'];
     }
-    foreach (['device_key', 'access_token_hash', 'access_token_expires_at', 'reinstalled_after_block', 'bypass_attempts', 'last_access_status', 'schema_version'] as $column) {
+    foreach (['device_key', 'access_token_hash', 'access_token_expires_at', 'reinstalled_after_block', 'bypass_attempts', 'last_access_status', 'schema_version', 'app_build'] as $column) {
         assert_same(true, in_array($column, $columns, true), 'migration column ' . $column);
     }
 

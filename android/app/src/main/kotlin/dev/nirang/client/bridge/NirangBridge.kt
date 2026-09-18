@@ -38,6 +38,10 @@ import io.flutter.plugin.common.MethodChannel
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.io.ByteArrayOutputStream
+import java.net.ConnectException
+import java.net.NoRouteToHostException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 
 class NirangBridge(
     private val activity: Activity,
@@ -129,6 +133,11 @@ class NirangBridge(
                 NativeSettings(activity).recordTelegramDecision(call.argument<String>("decision") ?: "later")
                 result.success(true)
             }
+            "recordWhatsNewSeen" -> {
+                activity.getSharedPreferences("nirang_installation", Activity.MODE_PRIVATE)
+                    .edit().putInt("whatsNewSeenBuild", BuildConfig.VERSION_CODE).apply()
+                result.success(true)
+            }
             "recordFlutterError" -> {
                 val message = call.argument<String>("message").orEmpty()
                 SafeLog.error(activity, "Flutter error: ${message.take(1_200)}")
@@ -187,14 +196,15 @@ class NirangBridge(
             }.onFailure { error ->
                 SafeLog.error(activity, "Startup initialization failed")
                 handleRemoteAccessFailure(error)
-                postToFlutter { result.error(remoteErrorCode(error, "startup"), safeError(error), null) }
+                postToFlutter { result.error(remoteErrorCode(error, "startup"), publicErrorMessage(error), remoteErrorDetails(error)) }
             }
         }
     }
 
     private fun deviceRegistrationStatus(result: MethodChannel.Result) {
-        if (DeviceRegistrationManager.hasConsent(activity) && DeviceRegistrationManager.isLocallyBlocked(activity)) {
-            result.error("blocked", "This device has been blocked by the administrator", null)
+        val state = DeviceRegistrationManager.localAccessState(activity)
+        if (DeviceRegistrationManager.hasConsent(activity) && state != null) {
+            result.error(if (state == RemoteAccessState.BLOCKED) "blocked" else "outdated", "Device access policy requires attention", null)
         } else {
             result.success(DeviceRegistrationManager.hasConsent(activity))
         }
@@ -216,7 +226,7 @@ class NirangBridge(
                 .onFailure { error ->
                     handleRemoteAccessFailure(error)
                     postToFlutter {
-                        result.error(remoteErrorCode(error, "registration"), safeError(error), null)
+                        result.error(remoteErrorCode(error, "registration"), publicErrorMessage(error), remoteErrorDetails(error))
                     }
                 }
         }
@@ -262,7 +272,7 @@ class NirangBridge(
                 .onFailure { error ->
                     handleRemoteAccessFailure(error)
                     postToFlutter {
-                        result.error(remoteErrorCode(error, "registration"), safeError(error), null)
+                        result.error(remoteErrorCode(error, "registration"), publicErrorMessage(error), remoteErrorDetails(error))
                     }
                 }
         }
@@ -287,7 +297,7 @@ class NirangBridge(
                 SafeLog.warning(activity, "Subscription update failed")
                 handleRemoteAccessFailure(error)
                 postToFlutter {
-                    result.error(remoteErrorCode(error, "subscription"), safeError(error), null)
+                    result.error(remoteErrorCode(error, "subscription"), publicErrorMessage(error), remoteErrorDetails(error))
                 }
             }
         }
@@ -433,17 +443,50 @@ class NirangBridge(
 
     private fun handleRemoteAccessFailure(error: Throwable) {
         val denied = error as? dev.nirang.client.registration.RemoteAccessException ?: return
-        if (denied.accessState != RemoteAccessState.BLOCKED) return
+        if (denied.accessState == RemoteAccessState.UNKNOWN) return
         NirangVpnService.stop(activity)
         NativeEvents.emit(
-            "accessBlocked",
-            mapOf("reason" to denied.apiReason, "message" to safeError(denied)),
+            if (denied.accessState == RemoteAccessState.BLOCKED) "accessBlocked" else "updateRequired",
+            mapOf(
+                "reason" to denied.apiReason,
+                "minimumVersion" to denied.minimumVersion,
+                "minimumBuild" to denied.minimumBuild,
+            ),
         )
     }
 
     private fun remoteErrorCode(error: Throwable, fallback: String): String {
         val denied = error as? dev.nirang.client.registration.RemoteAccessException
-        return if (denied?.accessState == RemoteAccessState.BLOCKED) "blocked" else fallback
+        return when (denied?.accessState) {
+            RemoteAccessState.BLOCKED -> "blocked"
+            RemoteAccessState.OUTDATED -> "outdated"
+            else -> classifyNetworkError(error, fallback)
+        }
+    }
+
+    private fun classifyNetworkError(error: Throwable, fallback: String): String = when (error) {
+        is SocketTimeoutException -> "timeout"
+        is UnknownHostException, is NoRouteToHostException, is ConnectException -> "host_unreachable"
+        is java.io.IOException -> if (fallback == "subscription") "subscription_network" else "network"
+        else -> fallback
+    }
+
+    private fun publicErrorMessage(error: Throwable): String = when (remoteErrorCode(error, "network")) {
+        "blocked" -> "Access is blocked"
+        "outdated" -> "An app update is required"
+        "timeout" -> "The request timed out"
+        "host_unreachable" -> "The service is unreachable"
+        "subscription_network" -> "The subscription could not be downloaded"
+        else -> "The request could not be completed"
+    }
+
+    private fun remoteErrorDetails(error: Throwable): Map<String, Any?>? {
+        val denied = error as? dev.nirang.client.registration.RemoteAccessException ?: return null
+        return mapOf(
+            "reason" to denied.apiReason,
+            "minimumVersion" to denied.minimumVersion,
+            "minimumBuild" to denied.minimumBuild,
+        )
     }
 
     private fun restartService(result: MethodChannel.Result) {
@@ -559,6 +602,9 @@ class NirangBridge(
             "coreVersion" to activity.getSharedPreferences("nirang_installation", Activity.MODE_PRIVATE)
                 .getString("coreVersion", "Bundled"),
             "appVersion" to BuildConfig.VERSION_NAME,
+            "appBuild" to BuildConfig.VERSION_CODE,
+            "whatsNewSeenBuild" to activity.getSharedPreferences("nirang_installation", Activity.MODE_PRIVATE)
+                .getInt("whatsNewSeenBuild", 0),
             "subscriptionConfigured" to true,
             "telegramEligible" to NativeSettings(activity).telegramReminderEligible(),
             "deletedServerCount" to repository.deletedCount(),

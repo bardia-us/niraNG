@@ -5,6 +5,7 @@ import '../../core/formatters.dart';
 import '../../core/localization/app_strings.dart';
 import '../../core/platform/native_models.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/user_facing_error.dart';
 import '../../core/widgets/country_flag_badge.dart';
 import '../../core/widgets/glass_surface.dart';
 import 'app_controller.dart';
@@ -492,7 +493,14 @@ Future<void> _perform(
   } catch (error) {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${context.s('operationFailed')}: $error')),
+        SnackBar(
+          content: Text(
+            userFacingError(
+              error,
+              persian: Localizations.localeOf(context).languageCode == 'fa',
+            ).combined,
+          ),
+        ),
       );
     }
   }

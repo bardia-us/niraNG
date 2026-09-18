@@ -7,6 +7,7 @@ import '../../core/platform/native_models.dart';
 import '../../core/platform/nirang_native.dart';
 import '../../core/registration/device_registration.dart';
 import '../../core/async_operation_guard.dart';
+import '../../core/user_facing_error.dart';
 import '../servers/server_sorting.dart';
 
 final appControllerProvider = AsyncNotifierProvider<AppController, AppSnapshot>(
@@ -34,7 +35,9 @@ class AppController extends AsyncNotifier<AppSnapshot> {
     _events = NirangNative.events.listen(
       _handleEvent,
       onError: (Object error, StackTrace stack) {
-        _set((value) => value.copyWith(subscriptionError: _errorText(error)));
+        _set(
+          (value) => value.copyWith(subscriptionError: _friendlyError(error)),
+        );
       },
     );
     ref.onDispose(() {
@@ -75,7 +78,10 @@ class AppController extends AsyncNotifier<AppSnapshot> {
       if (error is PlatformException && error.code == 'blocked') {
         markDeviceAccessBlocked(error.message);
       }
-      _set((value) => value.copyWith(subscriptionError: _errorText(error)));
+      if (error is PlatformException && error.code == 'outdated') {
+        markDeviceUpdateRequired();
+      }
+      _set((value) => value.copyWith(subscriptionError: _friendlyError(error)));
       _showNotice('Subscription update failed', NoticeTone.error);
       rethrow;
     } finally {
@@ -302,6 +308,11 @@ class AppController extends AsyncNotifier<AppSnapshot> {
     _set((value) => value.copyWith(telegramEligible: false));
   }
 
+  Future<void> recordWhatsNewSeen() async {
+    await NirangNative.recordWhatsNewSeen();
+    _set((value) => value.copyWith(whatsNewSeenBuild: value.appBuild));
+  }
+
   void _handleEvent(Map<dynamic, dynamic> event) {
     final type = '${event['type'] ?? ''}';
     final data = event['data'];
@@ -378,6 +389,9 @@ class AppController extends AsyncNotifier<AppSnapshot> {
         markDeviceAccessBlocked('${details['message'] ?? ''}');
       case 'accessAllowed':
         clearDeviceAccessBlocked();
+        clearDeviceUpdateRequired();
+      case 'updateRequired':
+        markDeviceUpdateRequired();
       case 'pingCompleted':
       case 'pingCancelled':
         _set((value) => value.copyWith(isPinging: false));
@@ -393,6 +407,8 @@ class AppController extends AsyncNotifier<AppSnapshot> {
     lastUpdated: _number(map['lastUpdated']),
     coreVersion: '${map['coreVersion'] ?? 'Unavailable'}',
     appVersion: '${map['appVersion'] ?? '1.1.1'}',
+    appBuild: _number(map['appBuild']),
+    whatsNewSeenBuild: _number(map['whatsNewSeenBuild']),
     subscriptionConfigured: map['subscriptionConfigured'] == true,
     telegramEligible: map['telegramEligible'] == true,
     subscriptionError: map['subscriptionError']?.toString(),
@@ -414,6 +430,11 @@ class AppController extends AsyncNotifier<AppSnapshot> {
 
   String _message(String english, String persian) =>
       _current?.settings.language == 'fa' ? persian : english;
+
+  String _friendlyError(Object error) => userFacingError(
+    error,
+    persian: _current?.settings.language == 'fa',
+  ).combined;
 }
 
 bool isSubscriptionNoticeName(String name) {
@@ -448,9 +469,3 @@ List<LogEntry> _logs(List<dynamic> value) {
   }
   return List.unmodifiable(result);
 }
-
-String _errorText(Object error) => error
-    .toString()
-    .replaceFirst(RegExp(r'^PlatformException\([^,]+,\s*'), '')
-    .split(',')
-    .first;
