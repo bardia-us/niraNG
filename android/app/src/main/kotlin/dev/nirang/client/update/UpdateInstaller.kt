@@ -38,6 +38,7 @@ object UpdateInstaller {
     private val executor = Executors.newSingleThreadExecutor()
     private val downloading = AtomicBoolean(false)
     private val generation = AtomicLong(0)
+    private val activeReceived = AtomicLong(0)
     @Volatile private var activeConnection: HttpsURLConnection? = null
 
     fun initialize(context: Context) {
@@ -51,8 +52,13 @@ object UpdateInstaller {
         val partial = partFile(context)
         val complete = apkFile(context)
         val total = p.getLong("total", 0L)
-        val received = when { complete.isFile -> complete.length(); partial.isFile -> partial.length(); else -> 0L }
+        val persistedReceived = when { complete.isFile -> complete.length(); partial.isFile -> partial.length(); else -> 0L }
         var state = p.getString("state", "idle").orEmpty()
+        val received = if (state == "downloading" && downloading.get()) {
+            maxOf(persistedReceived, activeReceived.get())
+        } else {
+            persistedReceived
+        }
         if (state in setOf("downloading", "verifying") && !downloading.get()) {
             state = if (state == "downloading" && received in 1 until total) "paused" else "failed"
         }
@@ -78,6 +84,7 @@ object UpdateInstaller {
             generation.incrementAndGet()
             activeConnection?.disconnect()
             clearFiles(context)
+            activeReceived.set(0)
             p.edit().clear().commit()
         }
         p.edit().putString("url", url).putLong("total", size).putString("sha256", sha256.orEmpty())
@@ -85,6 +92,7 @@ object UpdateInstaller {
         if (!downloading.get() || !same) {
             val token = generation.incrementAndGet()
             downloading.set(true)
+            activeReceived.set(partFile(context).takeIf(File::isFile)?.length() ?: 0L)
             executor.execute { download(context.applicationContext, token) }
         }
         return snapshot(context).toMutableMap().apply { put("state", "downloading") }.also(::publish)
@@ -94,6 +102,7 @@ object UpdateInstaller {
         generation.incrementAndGet()
         activeConnection?.disconnect()
         downloading.set(false)
+        activeReceived.set(partFile(context).takeIf(File::isFile)?.length() ?: 0L)
         prefs(context).edit().putString("state", "paused").apply()
         return snapshot(context).also(::publish)
     }
@@ -114,6 +123,7 @@ object UpdateInstaller {
         generation.incrementAndGet()
         activeConnection?.disconnect()
         downloading.set(false)
+        activeReceived.set(0)
         clearFiles(context)
         prefs(context).edit().clear().commit()
         return snapshot(context).also(::publish)
@@ -140,6 +150,7 @@ object UpdateInstaller {
             apkFile(context).delete()
             var offset = partial.takeIf(File::isFile)?.length() ?: 0L
             if (offset !in 0 until expected) { partial.delete(); offset = 0 }
+            activeReceived.set(offset)
             var current = URI(url).also(::requireOfficialInitialUrl).toURL()
             var redirects = 0
             while (true) {
@@ -160,6 +171,7 @@ object UpdateInstaller {
                     val append = offset > 0 && status == HttpURLConnection.HTTP_PARTIAL &&
                         connection.getHeaderField("Content-Range")?.startsWith("bytes $offset-") == true
                     if (!append) { offset = 0; partial.delete() }
+                    activeReceived.set(offset)
                     val declared = connection.contentLengthLong
                     if (declared > MAX_APK_BYTES || (declared > 0 && offset + declared > MAX_APK_BYTES)) throw IOException("Update is too large")
                     copyResponse(connection, partial, expected, offset, append, token)
@@ -179,6 +191,7 @@ object UpdateInstaller {
             verifySigningCertificate(context, partial)
             val signatureVerifiedAt = SystemClock.elapsedRealtime()
             if (!partial.renameTo(apkFile(context))) throw IOException("Downloaded update could not be finalized")
+            activeReceived.set(expected)
             p.edit().putString("state", "complete").apply()
             SafeLog.info(
                 context,
@@ -209,6 +222,7 @@ object UpdateInstaller {
                     val count = input.read(buffer)
                     if (count < 0) break
                     received += count
+                    activeReceived.set(received)
                     if (received > expected || received > MAX_APK_BYTES) throw IOException("Update is too large")
                     output.write(buffer, 0, count)
                     val now = System.currentTimeMillis()

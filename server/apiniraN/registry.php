@@ -251,6 +251,25 @@ function registry_is_outdated(string $version, string $minimum): bool
     return version_compare(preg_replace('/[-+].*$/', '', $version), preg_replace('/[-+].*$/', '', $minimum), '<');
 }
 
+/** Registry presentation policy is independent from Android forced-update builds. */
+function registry_display_status(
+    string $version,
+    string $minimumDisplayVersion,
+    string $keyStatus,
+    bool $hasDeviceKey
+): array {
+    $blocked = $hasDeviceKey && $keyStatus === 'blocked';
+    $outdated = registry_is_outdated($version, $minimumDisplayVersion);
+    return [
+        'blocked' => $blocked,
+        'outdated' => $outdated,
+        'latest' => !$outdated,
+        'status' => $blocked
+            ? 'blocked'
+            : ($outdated ? 'outdated' : ($hasDeviceKey && $keyStatus === 'allowed' ? 'allowed' : 'unknown')),
+    ];
+}
+
 function registry_short_key(?string $key): string
 {
     return is_string($key) && strlen($key) === 64 ? substr($key, 0, 8) . '…' . substr($key, -6) : '—';

@@ -74,7 +74,7 @@ class UpdateDownloadSettingsTile extends StatefulWidget {
 class _UpdateDownloadSettingsTileState
     extends State<UpdateDownloadSettingsTile> {
   StreamSubscription<Map<dynamic, dynamic>>? _subscription;
-  _DownloadSnapshot _download = const _DownloadSnapshot();
+  UpdateDownloadSnapshot _download = const UpdateDownloadSnapshot();
 
   @override
   void initState() {
@@ -84,7 +84,9 @@ class _UpdateDownloadSettingsTileState
   }
 
   void _apply(Map<dynamic, dynamic> event) {
-    if (mounted) setState(() => _download = _DownloadSnapshot.fromMap(event));
+    if (!mounted) return;
+    final next = UpdateDownloadSnapshot.fromMap(event);
+    setState(() => _download = _download.merge(next));
   }
 
   Future<void> _action(Future<Map<dynamic, dynamic>> Function() action) async {
@@ -186,7 +188,9 @@ class _UpdateDownloadDialog extends StatefulWidget {
 class _UpdateDownloadDialogState extends State<_UpdateDownloadDialog> {
   StreamSubscription<Map<dynamic, dynamic>>? _subscription;
   Timer? _statusPoll;
-  _DownloadSnapshot _download = const _DownloadSnapshot(state: 'downloading');
+  UpdateDownloadSnapshot _download = const UpdateDownloadSnapshot(
+    state: 'downloading',
+  );
   bool _installerOpened = false;
   bool _polling = false;
 
@@ -219,8 +223,8 @@ class _UpdateDownloadDialogState extends State<_UpdateDownloadDialog> {
 
   void _apply(Map<dynamic, dynamic> event) {
     if (!mounted) return;
-    final next = _DownloadSnapshot.fromMap(event);
-    setState(() => _download = next);
+    final next = UpdateDownloadSnapshot.fromMap(event);
+    setState(() => _download = _download.merge(next));
     if (next.complete || next.failed) _statusPoll?.cancel();
     if (next.complete && !_installerOpened) {
       unawaited(_openInstaller());
@@ -323,8 +327,8 @@ class _UpdateDownloadDialogState extends State<_UpdateDownloadDialog> {
   }
 }
 
-class _DownloadSnapshot {
-  const _DownloadSnapshot({
+class UpdateDownloadSnapshot {
+  const UpdateDownloadSnapshot({
     this.state = 'idle',
     this.received = 0,
     this.total = 0,
@@ -335,8 +339,8 @@ class _DownloadSnapshot {
     this.canInstall = false,
   });
 
-  factory _DownloadSnapshot.fromMap(Map<dynamic, dynamic> map) =>
-      _DownloadSnapshot(
+  factory UpdateDownloadSnapshot.fromMap(Map<dynamic, dynamic> map) =>
+      UpdateDownloadSnapshot(
         state: '${map['state'] ?? 'idle'}',
         received: (map['received'] as num?)?.toInt() ?? 0,
         total: (map['total'] as num?)?.toInt() ?? 0,
@@ -359,9 +363,32 @@ class _DownloadSnapshot {
   bool get complete => state == 'complete' && canInstall;
   bool get failed => state == 'failed';
   bool get idle => state == 'idle' && received == 0;
+
+  UpdateDownloadSnapshot merge(UpdateDownloadSnapshot next) {
+    final sameTransfer = url.isNotEmpty &&
+        next.url.isNotEmpty &&
+        url == next.url &&
+        version == next.version &&
+        total == next.total;
+    final preserveProgress = sameTransfer &&
+        !next.idle &&
+        next.state != 'failed' &&
+        next.received < received;
+    if (!preserveProgress) return next;
+    return UpdateDownloadSnapshot(
+      state: next.state,
+      received: received,
+      total: next.total,
+      name: next.name,
+      version: next.version,
+      url: next.url,
+      canResume: next.canResume,
+      canInstall: next.canInstall,
+    );
+  }
 }
 
-String _statusText(BuildContext context, _DownloadSnapshot d) {
+String _statusText(BuildContext context, UpdateDownloadSnapshot d) {
   if (d.state == 'verifying') return context.s('verifyingUpdate');
   if (d.active) return context.s('downloadingUpdate');
   if (d.complete) return '${context.s('readyToInstall')} ${d.version}'.trim();

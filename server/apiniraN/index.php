@@ -184,6 +184,7 @@ catch (Throwable $exception) { $displayTimezone = new DateTimeZone('UTC'); }
 <title>niraNG Device Registry</title>
 <style nonce="<?= e($nonce) ?>">
 :root{color-scheme:dark;--bg:#0d0b14;--panel:#171321;--line:#302a40;--text:#f4efff;--muted:#aaa1bd;--accent:#8b7cf6;--ok:#45c59a;--bad:#ff6f82;--warn:#f3bd59}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top,#211a38,var(--bg) 40%);color:var(--text);font:14px system-ui,sans-serif}main{max-width:1280px;margin:auto;padding:28px}.card{background:rgba(23,19,33,.94);border:1px solid var(--line);border-radius:18px;padding:20px;margin-bottom:18px;overflow:auto}h1,h2{margin:0 0 14px}p{color:var(--muted)}input,button{border-radius:9px;border:1px solid var(--line);padding:9px 12px;background:#211b2f;color:var(--text)}button{cursor:pointer;background:var(--accent);border:0;font-weight:700}.danger{background:#a93650}.secondary{background:#3a334a}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.right{margin-left:auto}.badge{display:inline-block;padding:4px 8px;border-radius:999px;font-weight:800;font-size:12px}.allowed{background:#173d34;color:#7ce6c2}.blocked{background:#4b1f2b;color:#ff9bac}.outdated{background:#49391a;color:#ffd57f}.unknown{background:#34303c;color:#c6bdcf}.reinstall{background:#39295b;color:#cbbcff}table{border-collapse:collapse;width:100%;min-width:1050px}th,td{text-align:left;padding:11px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--muted);font-size:12px}.mono{font-family:ui-monospace,monospace;font-size:12px}.notice{padding:10px;border-radius:9px;margin:10px 0}.error{background:#4b1f2b}.success{background:#173d34}@media(max-width:700px){main{padding:14px}.right{margin-left:0}}
+.latest{background:#172f4d;color:#8fd0ff}
 </style></head><body><main>
 <div class="row"><h1>niraNG Device Registry</h1><?php if ($authenticated): ?><form class="right" method="post"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="logout"><button class="secondary">Log out</button></form><?php endif; ?></div>
 <?php if ($error !== null): ?><div class="notice error"><?= e($error) ?></div><?php endif; ?>
@@ -195,7 +196,7 @@ catch (Throwable $exception) { $displayTimezone = new DateTimeZone('UTC'); }
 <?php if ($setupRequired): ?><input type="password" name="password_confirmation" minlength="10" maxlength="1024" required placeholder="Confirm password"><?php endif; ?><button>Continue</button></div></form></section>
 <?php else: ?>
 <section class="card"><h2>Remote access policy</h2><form method="post" class="row"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="minimum_versions"><label>Android display version <input name="minimum_android_version" value="<?= e($minimumAndroidVersion) ?>" pattern="[0-9]+\.[0-9]+\.[0-9]+.*" required></label><label>Android minimum build <input name="minimum_android_build" type="number" min="0" step="1" value="<?= $minimumAndroidBuild ?>" required></label><label>Windows / niraN minimum <input name="minimum_windows_version" value="<?= e($minimumWindowsVersion) ?>" pattern="[0-9]+\.[0-9]+\.[0-9]+.*" required></label><button>Save</button></form>
-<p>Android access is enforced by versionCode/build (minimum <?= $minimumAndroidBuild ?>); the display version is shown to users. Build 0 keeps legacy Android clients allowed. Windows remains semantic-version based.</p></section>
+<p>Android forced updates use versionCode/build (minimum <?= $minimumAndroidBuild ?>). Registry Status and the Latest version badge use only the display-version policy; build values never mark a registry row Outdated. Windows remains semantic-version based.</p></section>
 <section class="card"><h2>Devices (<?= count($rows) ?>)</h2><table><thead><tr><th>Status</th><th>Device</th><th>Platform / Version</th><th>Device Key</th><th>Installation ID</th><th>First Seen</th><th>Last Seen</th><th>Action</th></tr></thead><tbody>
 <?php foreach ($rows as $row):
     $version = is_string($row['app_version']) ? $row['app_version'] : '0.0.0';
@@ -203,16 +204,20 @@ catch (Throwable $exception) { $displayTimezone = new DateTimeZone('UTC'); }
     $minimumVersion = $platform === 'android' ? $minimumAndroidVersion : $minimumWindowsVersion;
     $hasDeviceKey = is_string($row['device_key']) && preg_match('/^[0-9a-f]{64}$/', $row['device_key']) === 1;
     $appBuild = (int)($row['app_build'] ?? 0);
-    $outdated = $platform === 'android'
-        ? $appBuild < $minimumAndroidBuild
-        : registry_is_outdated($version, $minimumVersion);
+    $displayState = registry_display_status(
+        $version,
+        $minimumVersion,
+        (string)($row['access_status'] ?? ''),
+        $hasDeviceKey
+    );
+    $outdated = $displayState['outdated'];
     $controllable = $hasDeviceKey && !$outdated;
     $blocked = $hasDeviceKey && ($row['access_status'] ?? '') === 'blocked';
-    $status = $blocked ? 'blocked' : ($outdated ? 'outdated' : (($row['access_status'] ?? '') === 'allowed' ? 'allowed' : 'unknown'));
+    $status = $displayState['status'];
 ?>
 <tr><td><span class="badge <?= e($status) ?>"><?= e(ucfirst($status)) ?></span><?php if ($blocked && $outdated): ?> <span class="badge outdated">Outdated</span><?php endif; ?><?php if ((int)$row['reinstalled_after_block'] === 1): ?><br><span class="badge reinstall">Reinstalled after block</span><?php endif; ?><?php if ($outdated): ?><br><small>Remote control unavailable.<br>User must update <?= $platform === 'android' ? 'niraNG' : 'niraN' ?> to <?= e($minimumVersion) ?> or newer.</small><?php endif; ?></td>
 <td><strong><?= e((string)($row['device_name'] ?: $row['device_model'] ?: 'Unknown device')) ?></strong><br><small><?= e(trim((string)$row['manufacturer'] . ' ' . (string)$row['model'])) ?></small></td>
-<td><?= e((string)$row['platform']) ?><br><?= e((string)$row['app_name'] . ' ' . $version) ?><?php if ($platform === 'android'): ?><br><small>Build <?= $appBuild ?></small><?php endif; ?></td>
+<td><?= e((string)$row['platform']) ?><br><?= e((string)$row['app_name'] . ' ' . $version) ?><?php if ($displayState['latest']): ?> <span class="badge latest">Latest version</span><?php endif; ?><?php if ($platform === 'android'): ?><br><small>Build <?= $appBuild ?></small><?php endif; ?></td>
 <td class="mono"><?= e(registry_short_key(is_string($row['device_key']) ? $row['device_key'] : null)) ?><?php if ((int)$row['bypass_attempts'] > 0): ?><br><small>Attempts: <?= (int)$row['bypass_attempts'] ?></small><?php endif; ?></td>
 <td class="mono"><?= e((string)$row['installation_id']) ?></td><td><?= e(display_timestamp($row['first_seen'], $displayTimezone)) ?></td><td><?= e(display_timestamp($row['last_seen'], $displayTimezone)) ?></td>
 <td><?php if ($controllable || $blocked): ?><form method="post"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="device_key" value="<?= e((string)$row['device_key']) ?>"><input type="hidden" name="action" value="<?= $blocked ? 'unblock' : 'block' ?>"><button class="<?= $blocked ? 'secondary' : 'danger' ?>"><?= $blocked ? 'Unblock' : 'Block' ?></button></form><?php else: ?>—<?php endif; ?></td></tr>

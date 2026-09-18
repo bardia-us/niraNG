@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nirang/core/formatters.dart';
 import 'package:nirang/core/async_operation_guard.dart';
@@ -12,6 +13,8 @@ import 'package:nirang/core/theme/app_theme.dart';
 import 'package:nirang/core/update_checker.dart';
 import 'package:nirang/core/user_facing_error.dart';
 import 'package:nirang/core/widgets/release_notes_markdown.dart';
+import 'package:nirang/core/widgets/glass_dialog.dart';
+import 'package:nirang/core/widgets/update_dialog.dart';
 import 'package:nirang/features/settings/per_app_ordering.dart';
 import 'package:nirang/features/servers/server_sorting.dart';
 import 'package:nirang/features/vpn/app_controller.dart';
@@ -39,12 +42,55 @@ void main() {
     },
   );
 
+  testWidgets('release notes dialog has one continuous scroll view', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: NirangAlertDialog(
+              title: Text("What's new"),
+              content: ReleaseNotesMarkdown(
+                data: '## Changes\n- First item\n- Second item',
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(SingleChildScrollView), findsOneWidget);
+  });
+
   test('formats persisted byte counters without speed units', () {
     expect(formatBytes(0), '0 B');
     expect(formatBytes(1024), '1.00 KB');
     expect(formatBytes(5 * 1024 * 1024), '5.00 MB');
     expect(formatBytes(18 * 1024 * 1024 * 1024 + 451 * 1024 * 1024), '18.4 GB');
     expect(formatBytes(2 * 1024 * 1024 * 1024 * 1024), '2.00 TB');
+  });
+
+  test('active update progress never moves backwards for one transfer', () {
+    const current = UpdateDownloadSnapshot(
+      state: 'downloading',
+      received: 2300,
+      total: 10000,
+      name: 'niraNG.apk',
+      version: '1.1.9',
+      url:
+          'https://github.com/bardia-us/niraNG/releases/download/v1.1.9/niraNG.apk',
+    );
+    const stalePoll = UpdateDownloadSnapshot(
+      state: 'downloading',
+      received: 2100,
+      total: 10000,
+      name: 'niraNG.apk',
+      version: '1.1.9',
+      url:
+          'https://github.com/bardia-us/niraNG/releases/download/v1.1.9/niraNG.apk',
+    );
+    expect(current.merge(stalePoll).received, 2300);
   });
 
   test('presentation strips only a leading country flag from server names', () {

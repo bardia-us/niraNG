@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nirang/core/registration/device_registration.dart';
+import 'package:nirang/core/localization/app_strings.dart';
 import 'package:nirang/features/registration/registration_bootstrap.dart';
 
 void main() {
@@ -118,6 +119,9 @@ void main() {
     expect(find.textContaining('Update required'), findsOneWidget);
     expect(find.text('Update now'), findsOneWidget);
     expect(find.text('Download manually'), findsOneWidget);
+    final updateContext = tester.element(find.text('Update now'));
+    expect(AppStrings.of(updateContext).text('downloadAndInstall'), isNotEmpty);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('Retry immediately unlocks after backend allows the build', (

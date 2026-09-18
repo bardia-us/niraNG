@@ -330,14 +330,9 @@ class _AppShellState extends ConsumerState<AppShell> {
         builder: (dialogContext) => NirangAlertDialog(
           icon: const Icon(Icons.auto_awesome_rounded),
           title: Text(persian ? 'چه چیزهایی جدید است؟' : "What's new"),
-          content: ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 420),
-            child: SingleChildScrollView(
-              child: Directionality(
-                textDirection: persian ? TextDirection.rtl : TextDirection.ltr,
-                child: ReleaseNotesMarkdown(data: body),
-              ),
-            ),
+          content: Directionality(
+            textDirection: persian ? TextDirection.rtl : TextDirection.ltr,
+            child: ReleaseNotesMarkdown(data: body),
           ),
           actions: [
             FilledButton(

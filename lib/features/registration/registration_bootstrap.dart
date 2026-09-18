@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/services.dart';
 
+import '../../core/localization/app_strings.dart';
 import '../../core/registration/device_registration.dart';
 import '../../core/platform/nirang_native.dart';
 import '../../core/theme/app_theme.dart';
@@ -118,6 +120,13 @@ class _NirangRegistrationBootstrapState
     theme: AppTheme.light,
     darkTheme: AppTheme.dark,
     themeMode: ThemeMode.system,
+    supportedLocales: AppStrings.supportedLocales,
+    localizationsDelegates: const [
+      AppStrings.delegate,
+      GlobalMaterialLocalizations.delegate,
+      GlobalWidgetsLocalizations.delegate,
+      GlobalCupertinoLocalizations.delegate,
+    ],
     home: home,
   );
 

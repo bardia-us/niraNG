@@ -65,6 +65,12 @@ try {
     $oldBuild = registry_access_state('9.9.9', '1.1.1', 'allowed', false, 19, 20);
     assert_same('outdated', $oldBuild['status'], 'Android build below minimum is outdated');
 
+    $registryBuildZero = registry_display_status('1.1.8', '1.1.8', 'allowed', true);
+    assert_same('allowed', $registryBuildZero['status'], 'registry status ignores Android build values');
+    assert_same(true, $registryBuildZero['latest'], 'current display version is marked latest');
+    $registryOldDisplay = registry_display_status('1.1.7', '1.1.8', 'allowed', true);
+    assert_same('outdated', $registryOldDisplay['status'], 'registry status follows display version policy');
+
     $columns = [];
     foreach ($pdo->query('PRAGMA table_info(installations)') as $column) {
         $columns[] = $column['name'];
