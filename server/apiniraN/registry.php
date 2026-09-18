@@ -251,19 +251,109 @@ function registry_is_outdated(string $version, string $minimum): bool
     return version_compare(preg_replace('/[-+].*$/', '', $version), preg_replace('/[-+].*$/', '', $minimum), '<');
 }
 
+function registry_normalize_release_version(?string $version): ?string
+{
+    if (!is_string($version)) return null;
+    $version = preg_replace('/^v/i', '', trim($version));
+    if (!is_string($version)) return null;
+    return registry_valid_version($version);
+}
+
+function registry_is_latest_version(string $version, ?string $latestVersion): bool
+{
+    $installed = registry_normalize_release_version($version);
+    $latest = registry_normalize_release_version($latestVersion);
+    if ($installed === null || $latest === null) return false;
+    return version_compare(
+        preg_replace('/[-+].*$/', '', $installed),
+        preg_replace('/[-+].*$/', '', $latest),
+        '=='
+    );
+}
+
+function registry_fetch_latest_release_version(string $repository): ?string
+{
+    if (preg_match('/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/', $repository) !== 1) return null;
+    $url = 'https://api.github.com/repos/' . $repository . '/releases/latest';
+    $body = false;
+    if (function_exists('curl_init')) {
+        $curl = curl_init($url);
+        if ($curl !== false) {
+            curl_setopt_array($curl, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_CONNECTTIMEOUT => 3,
+                CURLOPT_TIMEOUT => 5,
+                CURLOPT_HTTPHEADER => [
+                    'Accept: application/vnd.github+json',
+                    'User-Agent: niraNG-device-registry',
+                    'X-GitHub-Api-Version: 2022-11-28',
+                ],
+            ]);
+            $response = curl_exec($curl);
+            $status = (int)curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
+            if (is_string($response) && $status === 200) $body = $response;
+        }
+    } else {
+        $context = stream_context_create(['http' => [
+            'method' => 'GET',
+            'timeout' => 5,
+            'ignore_errors' => true,
+            'header' => "Accept: application/vnd.github+json\r\n"
+                . "User-Agent: niraNG-device-registry\r\n"
+                . "X-GitHub-Api-Version: 2022-11-28\r\n",
+        ]]);
+        $response = @file_get_contents($url, false, $context);
+        if (is_string($response)) $body = $response;
+    }
+    if (!is_string($body)) return null;
+    $payload = json_decode($body, true);
+    return is_array($payload)
+        ? registry_normalize_release_version(is_string($payload['tag_name'] ?? null) ? $payload['tag_name'] : null)
+        : null;
+}
+
+function registry_latest_release_version(PDO $pdo, string $repository, int $cacheSeconds = 600): ?string
+{
+    $cacheKey = 'latest_release_' . hash('sha256', strtolower($repository));
+    $statement = $pdo->prepare(
+        'SELECT setting_value, updated_at FROM admin_settings WHERE setting_key = :key LIMIT 1'
+    );
+    $statement->execute([':key' => $cacheKey]);
+    $cached = $statement->fetch();
+    $cachedVersion = is_array($cached)
+        ? registry_normalize_release_version(is_string($cached['setting_value'] ?? null) ? $cached['setting_value'] : null)
+        : null;
+    $cachedAt = is_array($cached) && is_string($cached['updated_at'] ?? null)
+        ? strtotime($cached['updated_at'])
+        : false;
+    if ($cachedVersion !== null && $cachedAt !== false && $cachedAt >= time() - $cacheSeconds) {
+        return $cachedVersion;
+    }
+
+    $latest = registry_fetch_latest_release_version($repository);
+    if ($latest === null) return $cachedVersion;
+    $save = $pdo->prepare(
+        'INSERT INTO admin_settings (setting_key, setting_value, updated_at) VALUES (:key, :value, :updated_at)
+         ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value, updated_at = excluded.updated_at'
+    );
+    $save->execute([':key' => $cacheKey, ':value' => $latest, ':updated_at' => registry_now()]);
+    return $latest;
+}
+
 /** Registry presentation policy is independent from Android forced-update builds. */
 function registry_display_status(
     string $version,
     string $minimumDisplayVersion,
     string $keyStatus,
-    bool $hasDeviceKey
+    bool $hasDeviceKey,
+    ?string $latestDisplayVersion = null
 ): array {
     $blocked = $hasDeviceKey && $keyStatus === 'blocked';
     $outdated = registry_is_outdated($version, $minimumDisplayVersion);
     return [
         'blocked' => $blocked,
         'outdated' => $outdated,
-        'latest' => !$outdated,
+        'latest' => registry_is_latest_version($version, $latestDisplayVersion),
         'status' => $blocked
             ? 'blocked'
             : ($outdated ? 'outdated' : ($hasDeviceKey && $keyStatus === 'allowed' ? 'allowed' : 'unknown')),

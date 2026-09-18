@@ -167,6 +167,12 @@ $minimumWindowsVersion = $database instanceof PDO
 $minimumAndroidBuild = $database instanceof PDO
     ? registry_minimum_android_build($database)
     : NIRANG_DEFAULT_MINIMUM_ANDROID_BUILD;
+$latestAndroidVersion = $authenticated
+    ? registry_latest_release_version($database, 'bardia-us/niraNG')
+    : null;
+$latestWindowsVersion = $authenticated
+    ? registry_latest_release_version($database, 'bardia-us/niraN')
+    : null;
 $rows = [];
 if ($authenticated) {
     $rows = $database->query(
@@ -196,19 +202,21 @@ catch (Throwable $exception) { $displayTimezone = new DateTimeZone('UTC'); }
 <?php if ($setupRequired): ?><input type="password" name="password_confirmation" minlength="10" maxlength="1024" required placeholder="Confirm password"><?php endif; ?><button>Continue</button></div></form></section>
 <?php else: ?>
 <section class="card"><h2>Remote access policy</h2><form method="post" class="row"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="minimum_versions"><label>Android display version <input name="minimum_android_version" value="<?= e($minimumAndroidVersion) ?>" pattern="[0-9]+\.[0-9]+\.[0-9]+.*" required></label><label>Android minimum build <input name="minimum_android_build" type="number" min="0" step="1" value="<?= $minimumAndroidBuild ?>" required></label><label>Windows / niraN minimum <input name="minimum_windows_version" value="<?= e($minimumWindowsVersion) ?>" pattern="[0-9]+\.[0-9]+\.[0-9]+.*" required></label><button>Save</button></form>
-<p>Android forced updates use versionCode/build (minimum <?= $minimumAndroidBuild ?>). Registry Status and the Latest version badge use only the display-version policy; build values never mark a registry row Outdated. Windows remains semantic-version based.</p></section>
+<p>Android forced updates use versionCode/build (minimum <?= $minimumAndroidBuild ?>). Registry Status uses only the display-version policy; build values never mark a registry row Outdated. The Latest version badge is matched separately against GitHub Releases (niraNG <?= e($latestAndroidVersion ?? 'unavailable') ?> / niraN <?= e($latestWindowsVersion ?? 'unavailable') ?>).</p></section>
 <section class="card"><h2>Devices (<?= count($rows) ?>)</h2><table><thead><tr><th>Status</th><th>Device</th><th>Platform / Version</th><th>Device Key</th><th>Installation ID</th><th>First Seen</th><th>Last Seen</th><th>Action</th></tr></thead><tbody>
 <?php foreach ($rows as $row):
     $version = is_string($row['app_version']) ? $row['app_version'] : '0.0.0';
     $platform = $row['platform'] === 'android' ? 'android' : 'windows';
     $minimumVersion = $platform === 'android' ? $minimumAndroidVersion : $minimumWindowsVersion;
+    $latestVersion = $platform === 'android' ? $latestAndroidVersion : $latestWindowsVersion;
     $hasDeviceKey = is_string($row['device_key']) && preg_match('/^[0-9a-f]{64}$/', $row['device_key']) === 1;
     $appBuild = (int)($row['app_build'] ?? 0);
     $displayState = registry_display_status(
         $version,
         $minimumVersion,
         (string)($row['access_status'] ?? ''),
-        $hasDeviceKey
+        $hasDeviceKey,
+        $latestVersion
     );
     $outdated = $displayState['outdated'];
     $controllable = $hasDeviceKey && !$outdated;

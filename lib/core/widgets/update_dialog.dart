@@ -21,19 +21,27 @@ Future<void> showUpdateOptionsDialog(
     ).showSnackBar(SnackBar(content: Text(context.s('updateApkUnavailable'))));
     return;
   }
+  if (release.mandatory) {
+    await _showUpdateDownloadDialog(
+      context,
+      asset: asset,
+      version: release.latestVersion.toString(),
+      mandatory: true,
+    );
+    return;
+  }
   final choice = await showNirangDialog<String>(
     context: context,
-    barrierDismissible: !release.mandatory,
+    barrierDismissible: true,
     builder: (dialogContext) => NirangAlertDialog(
       icon: const Icon(Icons.new_releases_outlined),
       title: Text(dialogContext.s('newVersionAvailable')),
       content: Text('${release.latestVersion}\n${asset.name}'),
       actions: [
-        if (!release.mandatory)
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, 'later'),
-            child: Text(dialogContext.s('later')),
-          ),
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext, 'later'),
+          child: Text(dialogContext.s('later')),
+        ),
         TextButton(
           onPressed: () => Navigator.pop(dialogContext, 'browser'),
           child: Text(dialogContext.s('downloadWithBrowser')),
@@ -52,16 +60,29 @@ Future<void> showUpdateOptionsDialog(
   if (choice == 'browser') {
     await NirangNative.openExternalUrl(asset.downloadUrl.toString());
   } else if (choice == 'install') {
-    await showNirangDialog<void>(
-      context: context,
-      barrierDismissible: true,
-      builder: (_) => _UpdateDownloadDialog(
-        asset: asset,
-        version: release.latestVersion.toString(),
-      ),
+    await _showUpdateDownloadDialog(
+      context,
+      asset: asset,
+      version: release.latestVersion.toString(),
+      mandatory: false,
     );
   }
 }
+
+Future<void> _showUpdateDownloadDialog(
+  BuildContext context, {
+  required ReleaseAsset asset,
+  required String version,
+  required bool mandatory,
+}) => showNirangDialog<void>(
+  context: context,
+  barrierDismissible: !mandatory,
+  builder: (_) => _UpdateDownloadDialog(
+    asset: asset,
+    version: version,
+    mandatory: mandatory,
+  ),
+);
 
 class UpdateDownloadSettingsTile extends StatefulWidget {
   const UpdateDownloadSettingsTile({super.key});
@@ -177,9 +198,14 @@ class _UpdateDownloadSettingsTileState
 }
 
 class _UpdateDownloadDialog extends StatefulWidget {
-  const _UpdateDownloadDialog({required this.asset, required this.version});
+  const _UpdateDownloadDialog({
+    required this.asset,
+    required this.version,
+    required this.mandatory,
+  });
   final ReleaseAsset asset;
   final String version;
+  final bool mandatory;
 
   @override
   State<_UpdateDownloadDialog> createState() => _UpdateDownloadDialogState();
@@ -278,51 +304,57 @@ class _UpdateDownloadDialogState extends State<_UpdateDownloadDialog> {
     final progress = d.total > 0
         ? (d.received / d.total).clamp(0.0, 1.0)
         : null;
-    return NirangAlertDialog(
-      icon: Icon(
-        d.failed
-            ? Icons.error_outline
-            : d.complete
-            ? Icons.download_done_rounded
-            : d.state == 'verifying'
-            ? Icons.verified_outlined
-            : Icons.download_rounded,
-      ),
-      title: Text(_statusText(context, d)),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          LinearProgressIndicator(
-            value: d.state == 'verifying' ? null : progress,
-          ),
-          const SizedBox(height: 10),
-          Text('${_bytes(d.received)} / ${_bytes(d.total)}'),
-          const SizedBox(height: 6),
-          Text(context.s('downloadContinuesInBackground')),
+    return PopScope(
+      canPop: !widget.mandatory,
+      child: NirangAlertDialog(
+        icon: Icon(
+          d.failed
+              ? Icons.error_outline
+              : d.complete
+              ? Icons.download_done_rounded
+              : d.state == 'verifying'
+              ? Icons.verified_outlined
+              : Icons.download_rounded,
+        ),
+        title: Text(_statusText(context, d)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            LinearProgressIndicator(
+              value: d.state == 'verifying' ? null : progress,
+            ),
+            const SizedBox(height: 10),
+            Text('${_bytes(d.received)} / ${_bytes(d.total)}'),
+            const SizedBox(height: 6),
+            Text(context.s('downloadContinuesInBackground')),
+          ],
+        ),
+        actions: [
+          if (!widget.mandatory)
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(context.s('hide')),
+            ),
+          if (d.failed)
+            TextButton(
+              onPressed: () async {
+                await NirangNative.openExternalUrl(
+                  widget.asset.downloadUrl.toString(),
+                );
+                if (!widget.mandatory && context.mounted) {
+                  Navigator.pop(context);
+                }
+              },
+              child: Text(context.s('downloadWithBrowser')),
+            ),
+          if (d.complete)
+            FilledButton.icon(
+              onPressed: _openInstaller,
+              icon: const Icon(Icons.install_mobile_rounded),
+              label: Text(context.s('install')),
+            ),
         ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text(context.s('hide')),
-        ),
-        if (d.failed)
-          TextButton(
-            onPressed: () async {
-              await NirangNative.openExternalUrl(
-                widget.asset.downloadUrl.toString(),
-              );
-              if (context.mounted) Navigator.pop(context);
-            },
-            child: Text(context.s('downloadWithBrowser')),
-          ),
-        if (d.complete)
-          FilledButton.icon(
-            onPressed: _openInstaller,
-            icon: const Icon(Icons.install_mobile_rounded),
-            label: Text(context.s('install')),
-          ),
-      ],
     );
   }
 }
@@ -365,12 +397,14 @@ class UpdateDownloadSnapshot {
   bool get idle => state == 'idle' && received == 0;
 
   UpdateDownloadSnapshot merge(UpdateDownloadSnapshot next) {
-    final sameTransfer = url.isNotEmpty &&
+    final sameTransfer =
+        url.isNotEmpty &&
         next.url.isNotEmpty &&
         url == next.url &&
         version == next.version &&
         total == next.total;
-    final preserveProgress = sameTransfer &&
+    final preserveProgress =
+        sameTransfer &&
         !next.idle &&
         next.state != 'failed' &&
         next.received < received;

@@ -61,6 +61,109 @@ void main() {
     );
 
     expect(find.byType(SingleChildScrollView), findsOneWidget);
+    expect(find.byType(SelectableText), findsNothing);
+  });
+
+  testWidgets('mandatory in-app update opens progress directly and cannot hide', (
+    tester,
+  ) async {
+    const control = MethodChannel('dev.nirang.client/control');
+    const updateEvents = MethodChannel('dev.nirang.client/update_download');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      control,
+      (call) async => switch (call.method) {
+        'supportedAbis' => <String>['arm64-v8a'],
+        'startUpdateDownload' => <String, Object?>{
+          'state': 'downloading',
+          'received': 1024,
+          'total': 4096,
+          'name': 'niraNG-v1.1.9-arm64-v8a.apk',
+          'version': '1.1.9',
+          'url':
+              'https://github.com/bardia-us/niraNG/releases/download/v1.1.9/niraNG-v1.1.9-arm64-v8a.apk',
+          'canResume': false,
+          'canInstall': false,
+        },
+        'getUpdateDownload' => <String, Object?>{
+          'state': 'downloading',
+          'received': 1024,
+          'total': 4096,
+          'name': 'niraNG-v1.1.9-arm64-v8a.apk',
+          'version': '1.1.9',
+          'url':
+              'https://github.com/bardia-us/niraNG/releases/download/v1.1.9/niraNG-v1.1.9-arm64-v8a.apk',
+          'canResume': false,
+          'canInstall': false,
+        },
+        _ => null,
+      },
+    );
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      updateEvents,
+      (_) async => null,
+    );
+    final release = ReleaseCheckResult(
+      latestVersion: const SemanticVersion(1, 1, 9),
+      releaseUrl: Uri.parse(
+        'https://github.com/bardia-us/niraNG/releases/tag/v1.1.9',
+      ),
+      updateAvailable: true,
+      mandatory: true,
+      assets: [
+        ReleaseAsset(
+          name: 'niraNG-v1.1.9-arm64-v8a.apk',
+          downloadUrl: Uri.parse(
+            'https://github.com/bardia-us/niraNG/releases/download/v1.1.9/niraNG-v1.1.9-arm64-v8a.apk',
+          ),
+          size: 4096,
+          sha256: 'a' * 64,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          localizationsDelegates: const [
+            AppStrings.delegate,
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          supportedLocales: AppStrings.supportedLocales,
+          home: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showUpdateOptionsDialog(context, release),
+              child: const Text('START_MANDATORY_UPDATE'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('START_MANDATORY_UPDATE'));
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+
+    expect(find.text('Hide'), findsNothing);
+    expect(find.text('Download with browser'), findsNothing);
+    expect(find.text('Later'), findsNothing);
+    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(tester.widget<PopScope>(find.byType(PopScope)).canPop, isFalse);
+
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      control,
+      null,
+    );
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      updateEvents,
+      null,
+    );
   });
 
   test('formats persisted byte counters without speed units', () {

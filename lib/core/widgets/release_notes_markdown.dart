@@ -61,11 +61,7 @@ class ReleaseNotesMarkdown extends StatelessWidget {
                   padding: EdgeInsetsDirectional.only(end: 8),
                   child: Text('•'),
                 ),
-                Expanded(
-                  child: SelectableText.rich(
-                    _inline(context, line.substring(2)),
-                  ),
-                ),
+                Expanded(child: Text.rich(_inline(context, line.substring(2)))),
               ],
             ),
           ),
@@ -87,7 +83,7 @@ class ReleaseNotesMarkdown extends StatelessWidget {
     double top = 2,
   }) => Padding(
     padding: EdgeInsets.only(top: top, bottom: 2),
-    child: SelectableText.rich(_inline(context, text, baseStyle: style)),
+    child: Text.rich(_inline(context, text, baseStyle: style)),
   );
 
   TextSpan _inline(BuildContext context, String text, {TextStyle? baseStyle}) {
