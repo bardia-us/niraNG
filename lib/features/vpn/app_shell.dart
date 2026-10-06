@@ -140,23 +140,14 @@ class _AppShellState extends ConsumerState<AppShell> {
     }
   }
 
-  bool _settleQueued = false;
-  bool _pagerDragging = false;
   bool _onPagerScroll(ScrollNotification notification) {
     if (notification.depth != 0 ||
         notification.metrics.axis != Axis.horizontal) {
       return false;
     }
-    if (notification is ScrollStartNotification) {
-      _pagerDragging = notification.dragDetails != null;
-    } else if (notification is ScrollUpdateNotification) {
-      _pagerDragging = notification.dragDetails != null;
-      if (!_pagerDragging) {
-        _unlockDestination();
-        _settleLastPixels(notification.scrollDelta ?? 0);
-      }
-    } else if (notification is ScrollEndNotification) {
-      _pagerDragging = false;
+    if (notification is ScrollUpdateNotification &&
+        notification.dragDetails == null) {
+      _unlockDestination();
     }
     return false;
   }
@@ -169,33 +160,6 @@ class _AppShellState extends ConsumerState<AppShell> {
     // destination accept touches once 80% is visible, without stopping the
     // animation or reaching into ScrollableState's protected implementation.
     _pageController.position.context.setIgnorePointer(false);
-  }
-
-  void _settleLastPixels(double delta) {
-    if (!_pageController.hasClients || _settleQueued) return;
-    final position = _pageController.position;
-    // Use public scroll notifications, not ScrollPosition's protected activity.
-    // A slow ballistic tail may finish; a fast fling/active drag must not.
-    if (!position.isScrollingNotifier.value || _pagerDragging) return;
-    final page = _pageController.page;
-    if (page == null) return;
-    final target = _tabAnimating ? _index : page.round();
-    if (!_tabAnimating && (delta.abs() > 2 || delta * (target - page) < 0)) {
-      return;
-    }
-    final remaining = (page - target).abs() * position.viewportDimension;
-    if (remaining > 2) return;
-    _settleQueued = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _settleQueued = false;
-      if (!mounted || !_pageController.hasClients) return;
-      final current = _pageController.position;
-      if (_pagerDragging || !current.isScrollingNotifier.value) return;
-      final currentPage = _pageController.page!;
-      if ((currentPage - target).abs() * current.viewportDimension <= 2) {
-        _pageController.jumpToPage(target);
-      }
-    });
   }
 
   void _queueStartupWork(VoidCallback work) {

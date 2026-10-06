@@ -30,6 +30,7 @@ class LiquidActionMenu<T> extends ConsumerStatefulWidget {
     required this.fallback,
     this.icon = const Icon(Icons.more_vert_rounded),
     this.serverActions = false,
+    this.triggerDecorator,
     super.key,
   });
   final List<LiquidActionItem<T>> items;
@@ -37,6 +38,8 @@ class LiquidActionMenu<T> extends ConsumerStatefulWidget {
   final String tooltip;
   final Widget fallback, icon;
   final bool serverActions;
+  // Decorate only the anchored control; the popup lives in its own overlay.
+  final Widget Function(Widget trigger)? triggerDecorator;
   @override
   ConsumerState<LiquidActionMenu<T>> createState() =>
       _LiquidActionMenuState<T>();
@@ -72,7 +75,10 @@ class _LiquidActionMenuState<T> extends ConsumerState<LiquidActionMenu<T>> {
     return ValueListenableBuilder<bool>(
       valueListenable: liveGlassReadyListenable,
       builder: (context, ready, _) {
-        if (reduced || !ready) return widget.fallback;
+        if (reduced || !ready) {
+          return widget.triggerDecorator?.call(widget.fallback) ??
+              widget.fallback;
+        }
         return glass.GlassMenu(
           useGlassTriggerFade: true,
           onVisibilityChanged: _visibilityChanged,
@@ -90,59 +96,62 @@ class _LiquidActionMenuState<T> extends ConsumerState<LiquidActionMenu<T>> {
             performanceMode: performance,
           ),
           quality: glass.GlassQuality.premium,
-          triggerBuilder: (context, toggle) => Tooltip(
-            message: widget.tooltip,
-            child: widget.serverActions
-                ? LayoutBuilder(
-                    builder: (context, constraints) {
-                      // Dense ListTile + compact visual density caps trailing
-                      // height at 40. Fit both axes, not only the requested height,
-                      // or a nominal 44x44 lens is painted as a flattened 44x40 oval.
-                      final side = math.min(
-                        44.0,
-                        math.min(constraints.maxWidth, constraints.maxHeight),
-                      );
-                      return glass.GlassButton.custom(
-                        onTap: toggle,
-                        label: widget.tooltip,
-                        width: side,
-                        height: side,
-                        shape: const glass.LiquidOval(),
-                        stretch: 0,
-                        interactionScale: 1,
-                        isStationary: true,
-                        useOwnLayer: true,
-                        settings: liquidControlSettings(
-                          theme.brightness,
-                          performanceMode: performance,
-                        ),
-                        quality: glass.GlassQuality.premium,
-                        child: IconTheme(
-                          data: IconThemeData(
-                            size: 22,
-                            color: theme.colorScheme.onSurface,
+          triggerBuilder: (context, toggle) {
+            final trigger = Tooltip(
+              message: widget.tooltip,
+              child: widget.serverActions
+                  ? LayoutBuilder(
+                      builder: (context, constraints) {
+                        // Dense ListTile + compact visual density caps trailing
+                        // height at 40. Fit both axes, not only the requested height,
+                        // or a nominal 44x44 lens is painted as a flattened 44x40 oval.
+                        final side = math.min(
+                          44.0,
+                          math.min(constraints.maxWidth, constraints.maxHeight),
+                        );
+                        return glass.GlassButton.custom(
+                          onTap: toggle,
+                          label: widget.tooltip,
+                          width: side,
+                          height: side,
+                          shape: const glass.LiquidOval(),
+                          stretch: 0,
+                          interactionScale: 1,
+                          isStationary: true,
+                          useOwnLayer: true,
+                          settings: liquidControlSettings(
+                            theme.brightness,
+                            performanceMode: performance,
                           ),
-                          child: widget.icon,
-                        ),
-                      );
-                    },
-                  )
-                : glass.GlassIconButton(
-                    icon: widget.icon,
-                    onPressed: toggle,
-                    semanticLabel: widget.tooltip,
-                    size: 44,
-                    // A BackdropGroup is not a geometry/render layer. Standalone
-                    // row triggers must provision one; nested triggers need their
-                    // own lens to retain the requested raised optical control.
-                    useOwnLayer: true,
-                    settings: liquidControlSettings(
-                      theme.brightness,
-                      performanceMode: performance,
+                          quality: glass.GlassQuality.premium,
+                          child: IconTheme(
+                            data: IconThemeData(
+                              size: 22,
+                              color: theme.colorScheme.onSurface,
+                            ),
+                            child: widget.icon,
+                          ),
+                        );
+                      },
+                    )
+                  : glass.GlassIconButton(
+                      icon: widget.icon,
+                      onPressed: toggle,
+                      semanticLabel: widget.tooltip,
+                      size: 44,
+                      // A BackdropGroup is not a geometry/render layer. Standalone
+                      // row triggers must provision one; nested triggers need their
+                      // own lens to retain the requested raised optical control.
+                      useOwnLayer: true,
+                      settings: liquidControlSettings(
+                        theme.brightness,
+                        performanceMode: performance,
+                      ),
+                      quality: glass.GlassQuality.premium,
                     ),
-                    quality: glass.GlassQuality.premium,
-                  ),
-          ),
+            );
+            return widget.triggerDecorator?.call(trigger) ?? trigger;
+          },
           items: [
             for (final item in widget.items)
               glass.GlassMenuItem(

@@ -7,6 +7,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as glass;
 import 'package:nirang/core/platform/native_models.dart';
 import 'package:nirang/core/widgets/glass_surface.dart';
 import 'package:nirang/core/widgets/liquid_controls.dart';
+import 'package:nirang/core/widgets/header_excluded_control.dart';
 import 'package:nirang/core/widgets/live_liquid_glass.dart';
 import 'package:nirang/core/update_checker.dart';
 import 'package:nirang/core/theme/app_theme.dart';
@@ -36,6 +37,7 @@ void main() {
       'server actions fit the compact row as a circle ($brightness, performance=$performanceMode)',
       (tester) async {
         liveGlassReadyListenable.value = true;
+        final header = GlobalKey();
         var selected = 0;
         await tester.pumpWidget(
           ProviderScope(
@@ -54,33 +56,47 @@ void main() {
                         ? AppTheme.lightPerformance
                         : AppTheme.light),
               home: Scaffold(
-                body: glass.GlassBackdropGroup(
-                  child: Center(
-                    child: ListTile(
-                      title: const Text('Server'),
-                      subtitle: const Text('VLESS TCP'),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Text('120 ms'),
-                          const SizedBox(width: 10),
-                          LiquidActionMenu<int>(
-                            serverActions: true,
-                            tooltip: 'Server actions',
-                            fallback: const Text('Fallback'),
-                            onSelected: (_) => selected++,
-                            items: const [
-                              LiquidActionItem(
-                                value: 1,
-                                label: 'Select server',
-                                icon: Icons.check,
+                body: Stack(
+                  children: [
+                    glass.GlassBackdropGroup(
+                      child: Center(
+                        child: ListTile(
+                          title: const Text('Server'),
+                          subtitle: const Text('VLESS TCP'),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text('120 ms'),
+                              const SizedBox(width: 10),
+                              LiquidActionMenu<int>(
+                                serverActions: true,
+                                triggerDecorator: (trigger) =>
+                                    HeaderExcludedControl(
+                                      headerKey: header,
+                                      child: trigger,
+                                    ),
+                                tooltip: 'Server actions',
+                                fallback: const Text('Fallback'),
+                                onSelected: (_) => selected++,
+                                items: const [
+                                  LiquidActionItem(
+                                    value: 1,
+                                    label: 'Select server',
+                                    icon: Icons.check,
+                                  ),
+                                ],
                               ),
                             ],
                           ),
-                        ],
+                        ),
                       ),
                     ),
-                  ),
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      child: SizedBox(key: header, width: 200, height: 64),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -116,6 +132,14 @@ void main() {
         await tester.tap(find.byTooltip('Server actions'));
         await tester.pumpAndSettle();
         expect(find.text('Select server'), findsOneWidget);
+        expect(
+          find.ancestor(
+            of: find.text('Select server'),
+            matching: find.byType(HeaderExcludedControl),
+          ),
+          findsNothing,
+          reason: 'Only the trigger is masked, never its popup overlay',
+        );
         await tester.tap(find.text('Select server'));
         await tester.pumpAndSettle();
         expect(selected, 1);

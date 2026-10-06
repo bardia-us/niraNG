@@ -152,7 +152,7 @@ void main() {
     }, createHttpClient: (_) => client);
     startupNetworkReady.value = false;
   });
-  testWidgets('target page accepts taps before the last two pixels settle', (
+  testWidgets('last two pixels finish naturally without an early page jump', (
     tester,
   ) async {
     await _mountShell(tester);
@@ -161,8 +161,13 @@ void main() {
     await tester.pump(const Duration(milliseconds: 230));
     // Exercise the small ease-out tail without waiting all 240ms.
     final pager = tester.widget<PageView>(find.byType(PageView));
-    expect(pager.controller!.position.isScrollingNotifier.value, isFalse);
-    expect(pager.controller!.page, 1);
+    expect(pager.controller!.position.isScrollingNotifier.value, isTrue);
+    expect(pager.controller!.page, lessThan(1));
+    expect(pager.controller!.page, greaterThan(.99));
+    final previous = pager.controller!.page!;
+    await tester.pump(const Duration(milliseconds: 5));
+    expect(pager.controller!.page, greaterThan(previous));
+    expect(pager.controller!.page, lessThan(1));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   });

@@ -14,6 +14,7 @@ import '../../core/widgets/country_flag_badge.dart';
 import '../../core/widgets/glass_surface.dart';
 import '../../core/widgets/glass_dialog.dart';
 import '../../core/widgets/liquid_controls.dart';
+import '../../core/widgets/header_excluded_control.dart';
 import '../../core/widgets/menu_activity.dart';
 import '../vpn/app_controller.dart';
 import 'server_information_screen.dart';
@@ -26,6 +27,7 @@ class ServersScreen extends ConsumerStatefulWidget {
 }
 
 class _ServersScreenState extends ConsumerState<ServersScreen> {
+  final _headerKey = GlobalKey();
   Rect? _menuAnchor;
   ServerInfo? _serverActionsTarget;
 
@@ -226,6 +228,14 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
                                                       const SizedBox(width: 10),
                                                       LiquidActionMenu<String>(
                                                         serverActions: true,
+                                                        triggerDecorator:
+                                                            (trigger) =>
+                                                                HeaderExcludedControl(
+                                                                  headerKey:
+                                                                      _headerKey,
+                                                                  child:
+                                                                      trigger,
+                                                                ),
                                                         tooltip: context.s(
                                                           'serverActions',
                                                         ),
@@ -321,6 +331,7 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
           left: 8,
           right: 8,
           child: _ServersGlassHeader(
+            key: _headerKey,
             height: headerHeight,
             serverCount: app.servers.length,
             isPinging: app.isPinging,
@@ -685,6 +696,7 @@ class _PressScaleState extends State<_PressScale> {
 
 class _ServersGlassHeader extends StatefulWidget {
   const _ServersGlassHeader({
+    super.key,
     required this.height,
     required this.serverCount,
     required this.isPinging,
