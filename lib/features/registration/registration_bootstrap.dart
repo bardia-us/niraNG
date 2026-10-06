@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/services.dart';
@@ -10,16 +11,19 @@ import '../../core/update_checker.dart';
 import '../../core/user_facing_error.dart';
 import '../../core/widgets/glass_surface.dart';
 import '../../core/widgets/update_dialog.dart';
+import '../../core/widgets/startup_loading.dart';
 
 class NirangRegistrationBootstrap extends StatefulWidget {
   const NirangRegistrationBootstrap({
     required this.child,
     this.coordinator = const NativeDeviceRegistrationCoordinator(),
+    this.prepareApp,
     super.key,
   });
 
   final Widget child;
   final DeviceRegistrationCoordinator coordinator;
+  final Future<void> Function()? prepareApp;
 
   @override
   State<NirangRegistrationBootstrap> createState() =>
@@ -31,10 +35,16 @@ class _NirangRegistrationBootstrapState
   late Future<bool> _initialization;
   bool _accepting = false;
   String? _error;
+  StartupStage _stage = StartupStage.device;
+  bool _networkQueued = false;
+  bool _cachedRestriction = false;
+  Object? _refreshedPolicyError;
 
   @override
   void initState() {
     super.initState();
+    startupNetworkReady.value = false;
+    deviceAccessVerified.value = 0;
     _initialization = _verifyAccess();
   }
 
@@ -43,13 +53,12 @@ class _NirangRegistrationBootstrapState
     future: _initialization,
     builder: (context, snapshot) {
       if (snapshot.connectionState != ConnectionState.done) {
-        return _registrationApp(
-          const Scaffold(body: Center(child: CircularProgressIndicator())),
-        );
+        return _registrationApp(StartupLoadingScreen(stage: _stage));
       }
-      final error = snapshot.error;
+      final error = _refreshedPolicyError ?? snapshot.error;
       if (_isBlocked(error)) markDeviceAccessBlocked();
       if (snapshot.data == true) {
+        _queueNetworkAfterReadyFrame();
         return ValueListenableBuilder<bool>(
           valueListenable: deviceUpdateRequired,
           child: ValueListenableBuilder<String?>(
@@ -69,6 +78,12 @@ class _NirangRegistrationBootstrapState
         );
       }
       if (error != null) {
+        // A cached restriction still renders immediately. Refresh its policy
+        // only after that local screen has painted, not during loading.
+        if (_isBlocked(error) || _isOutdated(error)) {
+          _cachedRestriction = true;
+          _queueNetworkAfterReadyFrame();
+        }
         return _registrationApp(
           _isBlocked(error)
               ? BlockedAccessScreen(onRetry: _retry, onExit: _exit)
@@ -95,23 +110,56 @@ class _NirangRegistrationBootstrapState
   Future<bool> _verifyAccess() async {
     final accepted = await widget.coordinator.initialize();
     if (!accepted) return false;
-    try {
-      await widget.coordinator.verifyAccess();
-      clearDeviceUpdateRequired();
-      markDeviceAccessVerified();
-    } catch (error) {
-      if (_isOutdated(error)) markDeviceUpdateRequired();
-      if (_isBlocked(error) || _isOutdated(error)) rethrow;
-      // Transient network failures are fail-open. Only an explicit backend
-      // policy response may prevent entry to the app.
-    }
+    if (mounted) setState(() => _stage = StartupStage.settings);
+    await widget.prepareApp?.call().then<void>(
+      (_) {},
+      onError: (Object error, StackTrace stack) {},
+    );
     return accepted;
   }
 
-  void _retry() {
-    setState(() {
-      _initialization = _verifyAccess();
+  void _queueNetworkAfterReadyFrame() {
+    if (_networkQueued) return;
+    _networkQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      startupNetworkReady.value = true;
+      unawaited(_refreshAccess());
     });
+  }
+
+  Future<void> _refreshAccess({bool retry = false}) async {
+    try {
+      await widget.coordinator.verifyAccess().timeout(
+        const Duration(seconds: 7),
+      );
+      if (!mounted) return;
+      final wasRestricted =
+          deviceAccessBlock.value != null || deviceUpdateRequired.value;
+      clearDeviceAccessBlocked();
+      clearDeviceUpdateRequired();
+      markDeviceAccessVerified();
+      if (retry || wasRestricted || _cachedRestriction) {
+        _cachedRestriction = false;
+        setState(() {
+          _refreshedPolicyError = null;
+          _initialization = _verifyAccess();
+        });
+      }
+    } catch (error) {
+      if (!mounted) return;
+      if (_isBlocked(error)) markDeviceAccessBlocked();
+      if (_isOutdated(error)) markDeviceUpdateRequired();
+      if (_cachedRestriction && (_isBlocked(error) || _isOutdated(error))) {
+        setState(() => _refreshedPolicyError = error);
+      }
+      // Transient network failures are fail-open. Only an explicit backend
+      // policy response may add a restriction; cached restrictions stay put.
+    }
+  }
+
+  void _retry() {
+    unawaited(_refreshAccess(retry: true));
   }
 
   Widget _registrationApp(Widget home) => MaterialApp(
@@ -341,6 +389,7 @@ class _AccessMessageCard extends StatelessWidget {
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 560),
                 child: GlassSurface(
+                  messageSurface: true,
                   radius: 24,
                   blur: GlassSurface.liquidBlur,
                   padding: const EdgeInsets.all(24),
@@ -406,6 +455,7 @@ class RegistrationConsentScreen extends StatelessWidget {
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 620),
                 child: GlassSurface(
+                  messageSurface: true,
                   radius: 24,
                   blur: GlassSurface.liquidBlur,
                   padding: const EdgeInsets.all(24),
@@ -441,7 +491,7 @@ class RegistrationConsentScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 20),
                       const Text(
-                        'Before entering niraNG, this installation must be registered and its access status verified securely over HTTPS.',
+                        'With your consent, niraNG loads saved data locally first, then registers this installation and checks its access status securely over HTTPS. Saved administrator restrictions remain in effect while offline.',
                       ),
                       const SizedBox(height: 12),
                       const _DisclosureItem(

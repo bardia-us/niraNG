@@ -17,7 +17,7 @@ class XrayAdvancedSettingsTest {
             fakeDns = false,
             enableIpv6 = true,
         )
-        val direct = dns.getJSONArray("servers").getJSONObject(0)
+        val direct = dns.getJSONArray("servers").getJSONObject(1)
         assertEquals("https+local://cloudflare-dns.com/dns-query", direct.getString("address"))
         assertTrue((0 until direct.getJSONArray("domains").length())
             .map { direct.getJSONArray("domains").getString(it) }.contains("domain:ir"))
@@ -26,11 +26,12 @@ class XrayAdvancedSettingsTest {
     }
 
     @Test
-    fun `disabled direct DNS adds no synthetic resolver`() {
+    fun `disabled optional direct DNS preserves remote and mandatory system local resolver`() {
         val dns = XrayConfigBuilder.buildDnsSettings(
             "1.1.1.1", false, "9.9.9.9", "global", "", false, false,
         )
-        assertFalse(dns.getJSONArray("servers").get(0) is org.json.JSONObject)
+        assertEquals("localhost", dns.getJSONArray("servers").getJSONObject(0).getString("address"))
+        assertEquals("1.1.1.1", dns.getJSONArray("servers").getString(1))
     }
 
     @Test

@@ -6,6 +6,14 @@ import org.junit.Test
 
 class QuickSettingsTilePolicyTest {
     @Test
+    fun `disabled notifications do not open main app when VPN consent exists`() {
+        assertEquals(
+            QuickSettingsConnectAction.CONNECT_DIRECTLY,
+            QuickSettingsConnectPolicy.action(true, true, true, false),
+        )
+    }
+
+    @Test
     fun `fresh install tile connect opens prerequisite flow instead of starting service`() {
         assertEquals(
             QuickSettingsConnectAction.OPEN_APP_FOR_PREREQUISITES,

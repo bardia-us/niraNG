@@ -52,6 +52,18 @@ class NirangNative {
         'ids': ids,
       })) ??
       const [];
+  static Future<List<dynamic>> updateServerProfile(
+    String id,
+    Map<String, Object?> values,
+  ) async =>
+      (await _methods.invokeMethod<List<dynamic>>('updateServerProfile', {
+        'id': id,
+        'values': values,
+      })) ??
+      const [];
+
+  static Future<bool> refreshPublicIp() async =>
+      await _methods.invokeMethod<bool>('refreshPublicIp') ?? false;
   static Future<Map<dynamic, dynamic>> deleteServer(String id) async =>
       (await _methods.invokeMethod<Map<dynamic, dynamic>>('deleteServer', {
         'id': id,

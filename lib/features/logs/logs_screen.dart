@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show SelectedContent, ScrollCacheExtent;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/formatters.dart';
 import '../../core/localization/app_strings.dart';
 import '../../core/widgets/glass_dialog.dart';
+import '../../core/widgets/glass_surface.dart';
 import '../../core/platform/native_models.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/user_facing_error.dart';
@@ -19,6 +21,19 @@ class LogsScreen extends ConsumerStatefulWidget {
 class _LogsScreenState extends ConsumerState<LogsScreen> {
   final _scrollController = ScrollController();
   bool _nearBottom = false;
+  bool _selectionActive = false;
+  List<LogEntry> _visibleLogs = const [];
+
+  void _selectionChanged(SelectedContent? content) {
+    final wasActive = _selectionActive;
+    _selectionActive = content != null && content.plainText.isNotEmpty;
+    if (wasActive && !_selectionActive) {
+      // Keep the selected snapshot intact until the native selection is gone.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_selectionActive) setState(() {});
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -33,6 +48,10 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
         (value) => value.asData?.value.logs ?? const <LogEntry>[],
       ),
     );
+    // Native batches can replace or trim old entries. Applying them during a
+    // selection would move its handles or change what the user is copying.
+    if (!_selectionActive) _visibleLogs = logs;
+    final visibleLogs = _visibleLogs;
     ref.listen(
       appControllerProvider.select((value) {
         final current = value.asData?.value.logs ?? const <LogEntry>[];
@@ -42,9 +61,11 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
         );
       }),
       (_, _) {
-        if (!_nearBottom) return;
+        if (!_nearBottom || _selectionActive) return;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted || !_scrollController.hasClients) return;
+          if (!mounted || !_scrollController.hasClients || _selectionActive) {
+            return;
+          }
           _scrollController.animateTo(
             _scrollController.position.maxScrollExtent,
             duration: const Duration(milliseconds: 140),
@@ -59,6 +80,10 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
     });
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
         title: Text(context.s('logs')),
         actions: [
           IconButton(
@@ -77,37 +102,95 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
         children: [
           const Divider(height: 1),
           Expanded(
-            child: logs.isEmpty
+            child: visibleLogs.isEmpty
                 ? Center(child: Text(context.s('noLogs')))
-                : NotificationListener<ScrollNotification>(
-                    onNotification: (notification) {
-                      _nearBottom = notification.metrics.extentAfter < 48;
-                      return false;
-                    },
-                    child: ListView.separated(
-                      controller: _scrollController,
-                      cacheExtent: 420,
-                      itemCount: logs.length,
-                      separatorBuilder: (_, _) => const Divider(indent: 50),
-                      itemBuilder: (context, index) {
-                        final log = logs[index];
-                        final color = switch (log.level) {
-                          'error' => Theme.of(context).colorScheme.error,
-                          'warning' => context.semanticColors.warning,
-                          _ => Theme.of(context).colorScheme.primary,
-                        };
-                        return ListTile(
-                          leading: Icon(Icons.circle, size: 9, color: color),
-                          title: Text(
-                            log.message,
-                            maxLines: 5,
-                            overflow: TextOverflow.ellipsis,
+                : Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                    child: GlassSurface(
+                      showShadow: false,
+                      child: SelectionArea(
+                        onSelectionChanged: _selectionChanged,
+                        child: NotificationListener<ScrollNotification>(
+                          onNotification: (notification) {
+                            _nearBottom = notification.metrics.extentAfter < 48;
+                            return false;
+                          },
+                          child: ListView.separated(
+                            controller: _scrollController,
+                            scrollCacheExtent: const ScrollCacheExtent.pixels(
+                              420,
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            itemCount: visibleLogs.length,
+                            separatorBuilder: (_, _) => Divider(
+                              height: 1,
+                              indent: 38,
+                              endIndent: 14,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .outlineVariant
+                                  .withValues(alpha: .35),
+                            ),
+                            itemBuilder: (context, index) {
+                              final log = visibleLogs[index];
+                              final color = switch (log.level) {
+                                'error' => Theme.of(context).colorScheme.error,
+                                'warning' => context.semanticColors.warning,
+                                _ => Theme.of(context).colorScheme.primary,
+                              };
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 12,
+                                ),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 7),
+                                      child: Icon(
+                                        Icons.circle,
+                                        size: 7,
+                                        color: color,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            log.message,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodyMedium
+                                                ?.copyWith(height: 1.5),
+                                          ),
+                                          const SizedBox(height: 5),
+                                          Text(
+                                            formatDateTime(
+                                              log.time.millisecondsSinceEpoch,
+                                            ),
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .labelSmall
+                                                ?.copyWith(
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .onSurfaceVariant,
+                                                ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
                           ),
-                          subtitle: Text(
-                            formatDateTime(log.time.millisecondsSinceEpoch),
-                          ),
-                        );
-                      },
+                        ),
+                      ),
                     ),
                   ),
           ),

@@ -52,11 +52,13 @@ android {
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 24
         targetSdk = flutter.targetSdkVersion
-        versionCode = flutter.versionCode
+        // Migrate past historical split codes: 1000/2000/4000 + base.
+        // Disable extra ABI offsets in gradle.properties so universal and
+        // split APKs can update each other without a version-code downgrade.
+        versionCode = 4000 + flutter.versionCode
         versionName = flutter.versionName
-        // Split APK outputs add ABI offsets to VERSION_CODE (for example
-        // 19 -> 1019/2019/4019). Remote policy and in-app migration logic must
-        // always use the publisher-controlled base build number instead.
+        // Remote policy and migrations use the publisher-controlled base,
+        // not the installation code (4000 + base, identical for all ABIs).
         buildConfigField("int", "BASE_VERSION_CODE", flutter.versionCode.toString())
         buildConfigField("String", "TELEGRAM_URL", telegramChannelUrl.asBuildConfigString())
         buildConfigField("String", "TELEGRAM_CONTACT", telegramContact.asBuildConfigString())

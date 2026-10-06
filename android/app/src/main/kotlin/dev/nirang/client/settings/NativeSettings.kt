@@ -50,8 +50,11 @@ class NativeSettings(context: Context) {
     val autoUpdate: Boolean get() = safeBoolean("autoUpdate", true)
     val updateIntervalHours: Int get() = safeInt("updateIntervalHours", 12).takeIf(ALLOWED_INTERVALS::contains) ?: 12
     val themeMode: String get() = safeString("themeMode", "system").takeIf(ALLOWED_THEMES::contains) ?: "system"
+    val accentColor: String get() = safeString("accentColor", "purple").takeIf(ALLOWED_ACCENTS::contains) ?: "purple"
+    val darkCanvas: String get() = safeString("darkCanvas", "midnight").takeIf(ALLOWED_CANVASES::contains) ?: "midnight"
+    val feedbackMode: String get() = safeString("feedbackMode", "haptic").takeIf(ALLOWED_FEEDBACK::contains) ?: "haptic"
     val language: String get() = safeString("language", "en").takeIf(ALLOWED_LANGUAGES::contains) ?: "en"
-    val performanceMode: Boolean get() = safeBoolean("performanceMode", false)
+    val performanceMode: Boolean get() = safeBoolean("performanceMode", true)
     val performanceModePrompted: Boolean get() = safeBoolean("performanceModePrompted", false)
     val autoConnect: Boolean get() = safeBoolean("autoConnect", false)
     val perAppMode: String get() = safeString("perAppMode", "all").takeIf(ALLOWED_PER_APP_MODES::contains) ?: "all"
@@ -98,6 +101,9 @@ class NativeSettings(context: Context) {
         "autoUpdate" to autoUpdate,
         "updateIntervalHours" to updateIntervalHours,
         "themeMode" to themeMode,
+        "accentColor" to accentColor,
+        "darkCanvas" to darkCanvas,
+        "feedbackMode" to feedbackMode,
         "language" to language,
         "performanceMode" to performanceMode,
         "performanceModePrompted" to performanceModePrompted,
@@ -119,6 +125,7 @@ class NativeSettings(context: Context) {
 
     fun update(values: Map<*, *>) {
         val strings = mutableMapOf<String, String>()
+        strings.putAll(validatedAppearance(values))
         values["connectionMode"]?.toString()?.let {
             require(it in ALLOWED_CONNECTION_MODES) { "Unsupported connection mode" }
             strings["connectionMode"] = it
@@ -305,14 +312,26 @@ class NativeSettings(context: Context) {
     }
 
     fun telegramReminderEligible(): Boolean {
-        if (BuildConfig.TELEGRAM_URL.isBlank()) return false
-        return !safeBoolean("telegramNever", false)
+        return telegramReminderStage() != "none"
+    }
+
+    fun telegramReminderStage(): String {
+        if (BuildConfig.TELEGRAM_URL.isBlank()) return "none"
+        return TelegramReminderPolicy.stage(
+            safeBoolean("telegramNever", false),
+            safeBoolean("telegramSecondShown", false),
+            safeString("telegramFirstSession", ""),
+            TELEGRAM_SESSION,
+        )
     }
 
     fun recordTelegramDecision(decision: String) {
         val editor = prefs.edit().putLong("telegramLastShown", System.currentTimeMillis())
         if (decision == "never" || decision == "joined") {
             editor.putBoolean("telegramNever", true)
+                .putString("telegramFirstSession", TELEGRAM_SESSION)
+        } else if (decision == "second_shown" && safeBoolean("telegramNever", false)) {
+            editor.putBoolean("telegramSecondShown", true)
         }
         editor.apply()
     }
@@ -355,6 +374,29 @@ class NativeSettings(context: Context) {
     }
 
     companion object {
+        // Process lifetime, not Activity recreation/provider retries: the
+        // follow-up is eligible only after a genuine later app launch.
+        private val TELEGRAM_SESSION = java.util.UUID.randomUUID().toString()
+        private val ALLOWED_ACCENTS = setOf("purple", "blue", "teal", "green", "orange", "rose")
+        private val ALLOWED_CANVASES = setOf("midnight", "graphite", "oled")
+        private val ALLOWED_FEEDBACK = setOf("haptic", "sound", "off")
+
+        internal fun validatedAppearance(values: Map<*, *>): Map<String, String> {
+            val choices = mapOf(
+                "accentColor" to ALLOWED_ACCENTS,
+                "darkCanvas" to ALLOWED_CANVASES,
+                "feedbackMode" to ALLOWED_FEEDBACK,
+            )
+            return buildMap {
+                for ((key, allowed) in choices) {
+                    if (!values.containsKey(key)) continue
+                    val value = values[key]
+                    require(value is String && value in allowed) { "Unsupported $key value" }
+                    put(key, value)
+                }
+            }
+        }
+
         private const val DEFAULTS_SCHEMA_KEY = "installDefaultsSchema"
         private const val DEFAULTS_SCHEMA_VERSION = 5
         private val DEFAULTS_MIGRATION_LOCK = Any()

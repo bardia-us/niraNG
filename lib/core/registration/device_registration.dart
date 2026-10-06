@@ -5,6 +5,8 @@ import '../platform/nirang_native.dart';
 final deviceAccessBlock = ValueNotifier<String?>(null);
 final deviceUpdateRequired = ValueNotifier<bool>(false);
 final deviceAccessVerified = ValueNotifier<int>(0);
+// Automatic startup network work must never race local app preparation.
+final startupNetworkReady = ValueNotifier<bool>(false);
 
 void markDeviceAccessBlocked([String? message]) {
   deviceAccessBlock.value = message?.trim().isNotEmpty == true

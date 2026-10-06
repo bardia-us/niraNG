@@ -8,12 +8,15 @@ import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.ProxyInfo
 import android.net.VpnService
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelFileDescriptor
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import dev.nirang.client.MainActivity
 import dev.nirang.client.R
@@ -30,38 +33,43 @@ import dev.nirang.client.xray.XrayCore
 import dev.nirang.client.xray.IranCidrRepository
 import java.net.InetAddress
 import java.util.concurrent.Executors
-import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicBoolean
 
 class NirangVpnService : VpnService() {
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val worker = Executors.newSingleThreadExecutor()
+    private val worker = VpnTaskRunner()
     private val coreStopWorker = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "nirang-core-stop").apply { isDaemon = true }
     }
     private val startGuard = AtomicBoolean(false)
     private val foregroundActive = AtomicBoolean(false)
     private val operationGate = ConnectionOperationGate()
+    private data class PublicIpRequest(val providerUrl: String, val serverId: String, val operation: Long)
+    private val publicIpRefreshGate = PublicIpRefreshGate<PublicIpRequest>(SystemClock::elapsedRealtime)
     private val connectionListener: (ConnectionSnapshot) -> Unit = { snapshot ->
         mainHandler.post {
-            if (foregroundActive.get()) updateNotification(snapshot)
+            if (NotificationControlPolicy.shouldUpdateNotification(
+                    foregroundActive.get(), snapshot.state, ConnectionStore.state(),
+                )) updateNotification(snapshot)
             NirangTileService.requestRefresh(applicationContext)
         }
     }
     private var vpnInterface: ParcelFileDescriptor? = null
     private var currentConfig: String? = null
-    private var currentServerId: String? = null
+    @Volatile private var currentServerId: String? = null
     private var currentServerName: String? = null
     private var currentMode: String = "vpn"
     private var connectivityManager: ConnectivityManager? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     @Volatile private var activeNetwork: Network? = null
     @Volatile private var networkWasLost = false
+    private val underlyingNetworks = UnderlyingNetworkTracker<Network>()
 
     override fun onCreate() {
         super.onCreate()
         SafeLog.initialize(this)
         ensureNotificationChannel()
+        liveInstance = this
         ConnectionStore.addListener(connectionListener)
         if (
             !XrayCore.isRunning() &&
@@ -77,10 +85,11 @@ class NirangVpnService : VpnService() {
             ACTION_STOP -> stopImmediately(false)
             ACTION_STOP_PRESERVING_ERROR -> stopImmediately(true)
             ACTION_STOP_FOR_RESTART -> {
+                val operation = operationGate.cancel()
                 val generation = intent.getLongExtra(EXTRA_RESTART_GENERATION, 0L)
                 val serverId = intent.getStringExtra(EXTRA_SERVER_ID)
                 val serverName = intent.getStringExtra(EXTRA_SERVER_NAME)
-                submit { stopForRestartInternal(generation, serverId, serverName) }
+                submit { stopForRestartInternal(generation, serverId, serverName, operation) }
             }
             ACTION_START -> {
                 if (
@@ -120,8 +129,11 @@ class NirangVpnService : VpnService() {
     }
 
     override fun onDestroy() {
+        if (liveInstance === this) liveInstance = null
+        publicIpRefreshGate.invalidate()
         operationGate.cancel()
         foregroundActive.set(false)
+        removeForegroundNotification()
         ConnectionStore.removeListener(connectionListener)
         closeTunnelAndCallbacks()
         stopCoreAsync()
@@ -182,12 +194,12 @@ class NirangVpnService : VpnService() {
                 cleanupResources()
                 return
             }
-            registerNetworkCallback()
+            registerNetworkCallback(operation)
             ConnectionStore.transition(ConnectionState.CONNECTED, server.id, server.name)
             markLastWorking(server.id)
             SafeLog.info(this, "VPN started")
             SafeLog.info(this, "Xray started")
-            submit { refreshPublicIp(settings.ipCheckUrl, server.id) }
+            requestPublicIpRefresh(settings.ipCheckUrl, server.id, operation)
             refreshConnectedServerPing(repository, server.id)
         } catch (error: Throwable) {
             if (!operationGate.isCurrent(operation) || error.message == CANCELLED_OPERATION) {
@@ -236,7 +248,7 @@ class NirangVpnService : VpnService() {
                 safeSettings.resetNetworkToSafeDefaults()
                 NativeEvents.emit("settings", safeSettings.toMap())
             }
-            registerNetworkCallback()
+            registerNetworkCallback(operation)
             ConnectionStore.transition(
                 ConnectionState.CONNECTED,
                 fallback.id,
@@ -244,7 +256,7 @@ class NirangVpnService : VpnService() {
                 "Selected configuration failed; safe network settings restored",
             )
             SafeLog.warning(this, "Previous working server restored")
-            submit { refreshPublicIp(settings.ipCheckUrl, fallback.id) }
+            requestPublicIpRefresh(settings.ipCheckUrl, fallback.id, operation)
             refreshConnectedServerPing(repository, fallback.id)
             true
         }.getOrElse { false }
@@ -319,50 +331,84 @@ class NirangVpnService : VpnService() {
         return systemDns ?: runCatching { InetAddress.getByName("1.1.1.1") }.getOrNull()
     }
 
-    private fun registerNetworkCallback() {
+    private fun registerNetworkCallback(operation: Long) {
         unregisterNetworkCallback()
         val manager = getSystemService(ConnectivityManager::class.java) ?: return
         connectivityManager = manager
         networkCallback = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) {
-                activeNetwork = network
-                runCatching { setUnderlyingNetworks(arrayOf(network)) }
-                if (networkWasLost && ConnectionStore.state() == ConnectionState.RECONNECTING) {
-                    networkWasLost = false
-                    submit { reconnectCore() }
-                }
+            override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
+                if (networkCallback !== this || !operationGate.isCurrent(operation)) return
+                if (!capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)) return
+                val selected = underlyingNetworks.update(
+                    network,
+                    capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED),
+                )
+                updateUnderlyingNetwork(selected, operation)
             }
 
             override fun onLost(network: Network) {
-                if (network != activeNetwork || ConnectionStore.state() != ConnectionState.CONNECTED) return
-                networkWasLost = true
-                ConnectionStore.transition(ConnectionState.RECONNECTING, currentServerId, currentServerName)
-                SafeLog.info(this@NirangVpnService, "Network changed")
+                if (networkCallback !== this || !operationGate.isCurrent(operation)) return
+                updateUnderlyingNetwork(underlyingNetworks.remove(network), operation)
             }
-        }.also(manager::registerDefaultNetworkCallback)
+        }
+        val request = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+            .build()
+        manager.registerNetworkCallback(request, networkCallback!!)
     }
 
-    private fun reconnectCore() {
-        val operation = operationGate.begin()
+    private fun updateUnderlyingNetwork(network: Network?, operation: Long) {
+        if (!operationGate.isCurrent(operation)) return
+        val previous = activeNetwork
+        if (previous != network) publicIpRefreshGate.invalidate()
+        activeNetwork = network
+        runCatching { setUnderlyingNetworks(network?.let { arrayOf(it) } ?: emptyArray()) }
+        val state = ConnectionStore.state()
+        if (previous != network && (previous != null || state == ConnectionState.RECONNECTING)) {
+            networkWasLost = true
+            if (state == ConnectionState.CONNECTED) {
+                ConnectionStore.transition(ConnectionState.RECONNECTING, currentServerId, currentServerName)
+            }
+            SafeLog.info(this, "Underlying network changed")
+        }
+        if (network != null && networkWasLost && ConnectionStore.state() == ConnectionState.RECONNECTING) {
+            val candidate = underlyingNetworks.snapshot()
+            if (candidate.network != network) return
+            networkWasLost = false
+            submit { reconnectCore(operation, candidate) }
+        } else if (previous == null && network != null && state == ConnectionState.CONNECTED) {
+            currentServerId?.let { requestPublicIpRefresh(NativeSettings(this).ipCheckUrl, it, operation) }
+        }
+    }
+
+    private fun reconnectCore(operation: Long, candidate: UnderlyingNetworkTracker.Snapshot<Network>) {
+        if (!operationGate.isCurrent(operation) || !underlyingNetworks.isCurrent(candidate)) return
         val config = currentConfig ?: return
         val fd = vpnInterface?.fd ?: if (currentMode == "proxy") 0 else return
         val delays = longArrayOf(500L, 1_500L, 3_000L)
         for (delay in delays) {
-            if (!operationGate.isCurrent(operation)) return
+            if (!operationGate.isCurrent(operation) || !underlyingNetworks.isCurrent(candidate)) return
             try {
                 XrayCore.stop()
                 Thread.sleep(delay)
-                if (!operationGate.isCurrent(operation)) return
+                if (!operationGate.isCurrent(operation) || !underlyingNetworks.isCurrent(candidate)) return
                 XrayCore.start(this, config, fd)
-                if (!operationGate.isCurrent(operation)) {
+                if (!operationGate.isCurrent(operation) || !underlyingNetworks.isCurrent(candidate)) {
                     XrayCore.stop()
                     return
                 }
-                ConnectionStore.transition(ConnectionState.CONNECTED, currentServerId, currentServerName)
-                SafeLog.info(this, "VPN reconnected")
-                submit {
-                    currentServerId?.let { refreshPublicIp(NativeSettings(this).ipCheckUrl, it) }
+                val completed = underlyingNetworks.completeReconnect(candidate) {
+                    if (operationGate.isCurrent(operation)) {
+                        ConnectionStore.transition(ConnectionState.CONNECTED, currentServerId, currentServerName)
+                    }
                 }
+                if (!completed || !operationGate.isCurrent(operation)) {
+                    XrayCore.stop()
+                    return
+                }
+                SafeLog.info(this, "VPN reconnected")
+                currentServerId?.let { requestPublicIpRefresh(NativeSettings(this).ipCheckUrl, it, operation) }
                 return
             } catch (_: InterruptedException) {
                 Thread.currentThread().interrupt()
@@ -371,25 +417,74 @@ class NirangVpnService : VpnService() {
                 // Continue with bounded exponential backoff.
             }
         }
-        if (!operationGate.isCurrent(operation)) return
+        if (!operationGate.isCurrent(operation) || !underlyingNetworks.isCurrent(candidate)) return
         failAndStop("Unable to reconnect after network change")
     }
 
-    private fun refreshPublicIp(providerUrl: String, expectedServerId: String) {
-        if (!ConnectionStore.beginPublicIpRefresh(expectedServerId)) return
+    private fun requestPublicIpRefresh(
+        providerUrl: String,
+        expectedServerId: String,
+        operation: Long,
+        manual: Boolean = false,
+    ): Boolean {
+        if (!operationGate.isCurrent(operation) || currentServerId != expectedServerId ||
+            ConnectionStore.state() != ConnectionState.CONNECTED) return false
+        val request = publicIpRefreshGate.tryBegin(
+            manual,
+            PublicIpRequest(providerUrl, expectedServerId, operation),
+        ) ?: return false
+        return dispatchPublicIpRefresh(request)
+    }
+
+    private fun dispatchPublicIpRefresh(request: PublicIpRefreshGate.Request<PublicIpRequest>): Boolean {
+        val parameters = request.payload
+        if (!publicIpRefreshGate.commitIfCurrent(request) {
+                isPublicIpRequestCurrent(parameters) && ConnectionStore.beginPublicIpRefresh(parameters.serverId)
+            }) {
+            publicIpRefreshGate.abandon(request)?.let(::dispatchPublicIpRefresh)
+            return false
+        }
+        val accepted = submitDiagnostic {
+            try {
+                refreshPublicIp(request)
+            } finally {
+                publicIpRefreshGate.complete(request)?.let(::dispatchPublicIpRefresh)
+            }
+        }
+        if (!accepted) {
+            publicIpRefreshGate.commitIfCurrent(request) {
+                isPublicIpRequestCurrent(parameters) && ConnectionStore.setPublicIp(parameters.serverId, null, null, null)
+            }
+            publicIpRefreshGate.invalidate()
+            publicIpRefreshGate.abandon(request)
+        }
+        return accepted
+    }
+
+    private fun isPublicIpRequestCurrent(request: PublicIpRequest): Boolean =
+        operationGate.isCurrent(request.operation) && currentServerId == request.serverId &&
+            ConnectionStore.state() == ConnectionState.CONNECTED && !Thread.currentThread().isInterrupted
+
+    private fun refreshPublicIp(request: PublicIpRefreshGate.Request<PublicIpRequest>) {
+        val parameters = request.payload
         repeat(PUBLIC_IP_ATTEMPTS) { attempt ->
-            if (currentServerId != expectedServerId || ConnectionStore.state() != ConnectionState.CONNECTED) return
-            val result = runCatching { ProxyIpChecker.check(providerUrl) }.getOrNull()
+            if (!publicIpRefreshGate.commitIfCurrent(request) { isPublicIpRequestCurrent(parameters) }) return
+            val result = runCatching { ProxyIpChecker.check(parameters.providerUrl) }.getOrNull()
+            if (!publicIpRefreshGate.commitIfCurrent(request) { isPublicIpRequestCurrent(parameters) }) return
             if (result?.ip?.isNotBlank() == true) {
-                if (ConnectionStore.setPublicIp(expectedServerId, result.ip, result.countryCode, result.city)) {
+                if (publicIpRefreshGate.commitIfCurrent(request) {
+                        isPublicIpRequestCurrent(parameters) &&
+                            ConnectionStore.setPublicIp(parameters.serverId, result.ip, result.countryCode, result.city)
+                    }) {
                     SafeLog.info(this, "Public IP refreshed")
                 }
                 return
             }
             if (attempt + 1 < PUBLIC_IP_ATTEMPTS) Thread.sleep(PUBLIC_IP_RETRY_DELAY_MS)
         }
-        ConnectionStore.setPublicIp(expectedServerId, null, null, null)
-        SafeLog.warning(this, "Public IP check failed")
+        if (publicIpRefreshGate.commitIfCurrent(request) {
+                isPublicIpRequestCurrent(parameters) && ConnectionStore.setPublicIp(parameters.serverId, null, null, null)
+            }) SafeLog.warning(this, "Public IP check failed")
     }
 
     private fun routingCidrs(settings: NativeSettings): List<String> =
@@ -414,19 +509,17 @@ class NirangVpnService : VpnService() {
         startGuard.set(false)
     }
 
-    private fun submit(action: () -> Unit): Boolean = try {
-        worker.execute {
-            runCatching(action).onFailure { error ->
-                handleUnexpectedWorkerFailure(error)
-            }
+    private fun submit(action: () -> Unit): Boolean = worker.submit {
+        runCatching(action).onFailure { error ->
+            handleUnexpectedWorkerFailure(error)
         }
-        true
-    } catch (_: RejectedExecutionException) {
-        // Android can deliver a late network callback while onDestroy is
-        // shutting the executor down. Dropping that stale callback avoids a
-        // process-level uncaught exception.
-        SafeLog.warning(this, "Ignored a late VPN lifecycle callback")
-        false
+    }
+
+    private fun submitDiagnostic(action: () -> Unit): Boolean = worker.submitDiagnostic {
+        runCatching(action).onFailure { error ->
+            if (error is InterruptedException) Thread.currentThread().interrupt()
+            else SafeLog.warning(this, "VPN diagnostic failed: ${error.javaClass.simpleName}")
+        }
     }
 
     private fun handleUnexpectedWorkerFailure(error: Throwable) {
@@ -438,25 +531,27 @@ class NirangVpnService : VpnService() {
     }
 
     private fun handleLifecycleFailure(error: Throwable) {
+        foregroundActive.set(false)
         SafeLog.error(this, "VPN service lifecycle failure: ${error.javaClass.simpleName}")
         ConnectionStore.transition(ConnectionState.ERROR, currentServerId, currentServerName, "VPN service could not start")
         runCatching { cleanupResources() }
-        runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
+        removeForegroundNotification()
         stopSelf()
     }
 
     private fun stopInternal(preserveError: Boolean) {
+        foregroundActive.set(false)
         operationGate.cancel()
         if (!preserveError) ConnectionStore.transition(ConnectionState.STOPPING, currentServerId, currentServerName)
         cleanupResources()
         if (!preserveError) ConnectionStore.transition(ConnectionState.DISCONNECTED)
         SafeLog.info(this, "VPN stopped")
-        foregroundActive.set(false)
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        removeForegroundNotification()
         stopSelf()
     }
 
     private fun stopImmediately(preserveError: Boolean) {
+        foregroundActive.set(false)
         operationGate.cancel()
         VpnRestartCoordinator.cancel()
         startGuard.set(false)
@@ -468,17 +563,18 @@ class NirangVpnService : VpnService() {
         currentMode = "vpn"
         stopCoreAsync()
         SafeLog.info(this, "VPN stop requested")
-        foregroundActive.set(false)
-        runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
+        removeForegroundNotification()
         stopSelf()
     }
 
-    private fun stopForRestartInternal(generation: Long, serverId: String?, serverName: String?) {
+    private fun stopForRestartInternal(generation: Long, serverId: String?, serverName: String?, operation: Long) {
+        if (!operationGate.isCurrent(operation)) return
+        foregroundActive.set(false)
         cleanupResources()
+        if (!operationGate.isCurrent(operation)) return
         ConnectionStore.transition(ConnectionState.RESTARTING, serverId, serverName)
         SafeLog.info(this, "VPN service stopped for restart")
-        foregroundActive.set(false)
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        removeForegroundNotification()
         VpnRestartCoordinator.onServiceStopped(generation)
         stopSelf()
     }
@@ -511,11 +607,13 @@ class NirangVpnService : VpnService() {
     }
 
     private fun unregisterNetworkCallback() {
+        publicIpRefreshGate.invalidate()
         networkCallback?.let { callback -> runCatching { connectivityManager?.unregisterNetworkCallback(callback) } }
         networkCallback = null
         connectivityManager = null
         activeNetwork = null
         networkWasLost = false
+        underlyingNetworks.clear()
     }
 
     private fun ensureNotificationChannel() {
@@ -528,6 +626,18 @@ class NirangVpnService : VpnService() {
         if (manager.getNotificationChannel(LEGACY_CHANNEL_ID) != null) {
             manager.deleteNotificationChannel(LEGACY_CHANNEL_ID)
         }
+    }
+
+    private fun removeForegroundNotification() {
+        val remove = {
+            // Serialize removal with listener notifications. A queued worker
+            // teardown must not remove a newly started foreground session.
+            if (!foregroundActive.get()) {
+                runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
+                runCatching { getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID) }
+            }
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) remove() else mainHandler.post { remove() }
     }
 
     private fun updateNotification(snapshot: ConnectionSnapshot) {
@@ -596,6 +706,19 @@ class NirangVpnService : VpnService() {
         private const val PUBLIC_IP_ATTEMPTS = 3
         private const val PUBLIC_IP_RETRY_DELAY_MS = 700L
         private const val CANCELLED_OPERATION = "Connection operation was cancelled"
+        @Volatile private var liveInstance: NirangVpnService? = null
+
+        fun refreshPublicIp(context: Context): Boolean {
+            val service = liveInstance ?: return false
+            val serverId = service.currentServerId ?: return false
+            if (ConnectionStore.state() != ConnectionState.CONNECTED) return false
+            return service.requestPublicIpRefresh(
+                NativeSettings(context.applicationContext).ipCheckUrl,
+                serverId,
+                service.operationGate.current(),
+                manual = true,
+            )
+        }
 
         fun start(context: Context, serverId: String, allowFallback: Boolean = true) {
             val intent = Intent(context, NirangVpnService::class.java)

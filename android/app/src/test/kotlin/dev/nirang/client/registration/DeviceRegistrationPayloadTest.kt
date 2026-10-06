@@ -8,6 +8,16 @@ import org.junit.Test
 import org.json.JSONObject
 
 class DeviceRegistrationPayloadTest {
+    @Test fun `temporary API response preserves a saved administrator restriction`() {
+        assertEquals(RemoteAccessState.BLOCKED,
+            DeviceRegistrationManager.cachedDenial(RemoteAccessState.BLOCKED, RemoteAccessState.UNKNOWN))
+        assertEquals(RemoteAccessState.OUTDATED,
+            DeviceRegistrationManager.cachedDenial(RemoteAccessState.OUTDATED, RemoteAccessState.UNKNOWN))
+        assertEquals(null,
+            DeviceRegistrationManager.cachedDenial(null, RemoteAccessState.UNKNOWN))
+        assertEquals(RemoteAccessState.OUTDATED,
+            DeviceRegistrationManager.cachedDenial(RemoteAccessState.BLOCKED, RemoteAccessState.OUTDATED))
+    }
     @Test
     fun `Android registration contains only disclosed installation metadata`() {
         val payload = DeviceRegistrationManager.buildPayload(

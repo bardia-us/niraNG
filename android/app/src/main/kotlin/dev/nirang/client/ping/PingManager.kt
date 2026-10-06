@@ -24,6 +24,9 @@ class PingManager(
     private val pending = AtomicInteger(0)
     private val tasks = mutableListOf<Future<*>>()
     private val lifecycle = PingLifecycleTracker()
+    // Separate service auto-probes and manual probes, including overlapping
+    // probes of the same server across reconnects.
+    private val managerId = java.util.UUID.randomUUID().toString()
 
     fun testSingle(serverId: String, onComplete: (() -> Unit)? = null) {
         cancelTasks(emitEvent = false)
@@ -127,7 +130,7 @@ class PingManager(
             if (generation.get() != expectedGeneration || Thread.currentThread().isInterrupted) return
             val status = if (delay >= 0) "success" else "timeout"
             repository.updatePing(serverId, delay.takeIf { it >= 0 }, status)
-            emit(serverId, delay.takeIf { it >= 0 }, status)
+            emit(serverId, delay.takeIf { it >= 0 }, status, expectedGeneration)
             lifecycle.finish(serverId)
             SafeLog.info(context, if (tcpOnly) "TCP delay completed" else "Real delay completed")
         } catch (_: InterruptedException) {
@@ -141,8 +144,11 @@ class PingManager(
         }
     }
 
-    private fun emit(serverId: String, ping: Long?, status: String) {
-        NativeEvents.emit("serverPing", mapOf("id" to serverId, "ping" to ping, "status" to status))
+    private fun emit(serverId: String, ping: Long?, status: String, probeGeneration: Int = generation.get()) {
+        NativeEvents.emit("serverPing", mapOf(
+            "id" to serverId, "ping" to ping, "status" to status,
+            "probeId" to "$managerId:$probeGeneration:$serverId",
+        ))
     }
 
     companion object {

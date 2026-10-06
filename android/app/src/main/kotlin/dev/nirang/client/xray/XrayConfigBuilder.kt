@@ -322,6 +322,8 @@ object XrayConfigBuilder {
                 putOptionalArray("alpn", server.parameters["alpn"])
                 server.parameters["fp"]?.takeIf(String::isNotBlank)?.let { put("fingerprint", it) }
                 server.parameters["cs"]?.trim()?.takeIf(String::isNotBlank)?.let { put("cipherSuites", it) }
+                (server.parameters["echConfigList"]?.takeIf(String::isNotBlank)
+                    ?: server.parameters["ech"]?.takeIf(String::isNotBlank))?.let { put("echConfigList", it) }
                 server.parameters["pcs"]?.trim()?.takeIf(String::isNotBlank)?.let {
                     putOptionalArray("pinnedPeerCertSha256", it)
                 }
@@ -343,7 +345,9 @@ object XrayConfigBuilder {
                     ?.let { put("mldsa65Verify", it) }
             })
         }
-        val profileFinalMask = server.parameters["fm"]?.trim()?.takeIf(String::isNotEmpty)
+        val profileFinalMask = server.parameters["fm"]?.trim()?.takeIf {
+            it.isNotEmpty() && server.security.equals("tls", true) && network != "hysteria"
+        }
         if (profileFinalMask != null) {
             val decoded = runCatching { JSONObject(profileFinalMask) }
                 .getOrElse { throw IllegalArgumentException("FinalMask must be a JSON object", it) }
@@ -421,7 +425,7 @@ object XrayConfigBuilder {
             .ifEmpty { listOf("localhost") }
             .mapTo(mutableListOf<Any>()) { it }
         val directDomains = when (routingMode) {
-            "bypassIran" -> listOf("domain:ir", "full:localhost", "domain:localhost", "domain:local")
+            "bypassIran" -> listOf("domain:ir")
             "custom" -> splitDomainRules(customDomains)
             else -> emptyList()
         }
@@ -435,6 +439,14 @@ object XrayConfigBuilder {
             }
         }
         if (fakeDns) servers.add(0, "fakedns")
+        // Local names belong to the physical network's resolver. A failed local
+        // answer must never fall through to remote DNS or a synthetic FakeDNS IP.
+        servers.add(0, JSONObject().apply {
+            put("address", "localhost")
+            put("domains", JSONArray(LOCAL_DOMAINS))
+            put("skipFallback", true)
+            put("finalQuery", true)
+        })
         put("servers", JSONArray(servers))
         put("queryStrategy", if (enableIpv6) "UseIP" else "UseIPv4")
     }
@@ -479,6 +491,10 @@ object XrayConfigBuilder {
         require(domainStrategy in setOf("AsIs", "IPIfNonMatch", "IPOnDemand")) { "Unsupported domain strategy" }
         put("domainStrategy", domainStrategy)
         put("rules", JSONArray().apply {
+            // Conditions inside an Xray rule are ANDed. Keep IPs and names in
+            // separate rules so raw LAN IPs and local names each bypass proxy.
+            putRoutingRule("direct", PRIVATE_IPS, emptyList())
+            putRoutingRule("direct", emptyList(), LOCAL_DOMAINS)
             if (blockQuic) {
                 put(JSONObject().apply {
                     put("type", "field")
@@ -499,7 +515,6 @@ object XrayConfigBuilder {
                     put("outboundTag", "dns-out")
                 })
             }
-            val privateDomains = listOf("full:localhost", "domain:localhost", "domain:local")
             val parsedCustomIps = splitRules(customIps)
             val parsedCustomDomains = splitDomainRules(customDomains)
             when (routingMode) {
@@ -508,13 +523,13 @@ object XrayConfigBuilder {
                     putRoutingRule(
                         "direct",
                         emptyList(),
-                        listOf("domain:ir") + privateDomains,
+                        listOf("domain:ir"),
                     )
-                    putRoutingRule("direct", PRIVATE_IPS + iranCidrs, emptyList())
+                    putRoutingRule("direct", iranCidrs, emptyList())
                 }
                 "custom" -> {
-                    putRoutingRule("direct", PRIVATE_IPS, privateDomains)
-                    putRoutingRule("direct", parsedCustomIps, parsedCustomDomains)
+                    putRoutingRule("direct", parsedCustomIps, emptyList())
+                    putRoutingRule("direct", emptyList(), parsedCustomDomains)
                 }
             }
         })
@@ -620,6 +635,8 @@ object XrayConfigBuilder {
         val values = csv?.split(',')?.map(String::trim)?.filter(String::isNotEmpty).orEmpty()
         if (values.isNotEmpty()) put(key, JSONArray(values))
     }
+
+    private val LOCAL_DOMAINS = listOf("full:localhost", "domain:localhost", "domain:local")
 
     private val PRIVATE_IPS = listOf(
         "10.0.0.0/8",

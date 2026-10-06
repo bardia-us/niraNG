@@ -20,7 +20,15 @@ link for the exact artifact.
 - License: Mozilla Public License 2.0 (MPL-2.0)
 - Source used by the pinned wrapper is declared in the wrapper’s `go.mod`.
 
-## Flutter and AndroidX
+## Liquid Glass Widgets
+
+- Project: <https://github.com/sdegenaar/liquid_glass_widgets>
+- Vendored release: `1.9.0`, with local compatibility patches.
+- Copyright: 2024–2026 Sebastian Degenaar.
+- License: MIT, retained at `packages/liquid_glass_widgets/LICENSE`.
+- Source and patch notes: `packages/liquid_glass_widgets/` and its `PATCHES.md`.
+
+## Flutter and AndroidX dependencies
 
 Flutter, Dart packages and AndroidX dependencies retain their respective
 licenses. Release builds should generate and ship a complete dependency license

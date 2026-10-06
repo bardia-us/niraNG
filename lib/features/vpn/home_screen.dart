@@ -8,6 +8,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/user_facing_error.dart';
 import '../../core/widgets/country_flag_badge.dart';
 import '../../core/widgets/glass_surface.dart';
+import '../../core/widgets/liquid_controls.dart';
 import 'app_controller.dart';
 
 class HomeScreen extends ConsumerWidget {
@@ -36,12 +37,23 @@ class HomeScreen extends ConsumerWidget {
     );
     final controller = ref.read(appControllerProvider.notifier);
     return RefreshIndicator(
+      edgeOffset: MediaQuery.paddingOf(context).top + 6,
+      displacement: 28,
       onRefresh: controller.refreshSubscription,
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
+        padding: EdgeInsets.fromLTRB(
+          16,
+          MediaQuery.paddingOf(context).top + 6,
+          16,
+          24,
+        ),
         children: [
-          _ConnectionCard(app: app, controller: controller),
+          _ConnectionCard(
+            app: app,
+            controller: controller,
+            reducedEffects: MediaQuery.disableAnimationsOf(context),
+          ),
           if (app.subscriptionError != null) ...[
             const SizedBox(height: 8),
             Text(
@@ -58,10 +70,15 @@ class HomeScreen extends ConsumerWidget {
 }
 
 class _ConnectionCard extends StatelessWidget {
-  const _ConnectionCard({required this.app, required this.controller});
+  const _ConnectionCard({
+    required this.app,
+    required this.controller,
+    required this.reducedEffects,
+  });
 
   final AppSnapshot app;
   final AppController controller;
+  final bool reducedEffects;
 
   @override
   Widget build(BuildContext context) {
@@ -84,20 +101,12 @@ class _ConnectionCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: statusColor.withValues(alpha: .12),
-                  borderRadius: BorderRadius.circular(11),
-                ),
-                child: Icon(
-                  connection.isConnected
-                      ? Icons.shield_rounded
-                      : Icons.shield_outlined,
-                  color: statusColor,
-                  size: 21,
-                ),
+              ConnectionShield(
+                state: connection.state,
+                color: statusColor,
+                connected: connection.isConnected,
+                reducedEffects:
+                    reducedEffects || MediaQuery.disableAnimationsOf(context),
               ),
               const SizedBox(width: 11),
               Expanded(
@@ -189,6 +198,10 @@ class _ConnectionCard extends StatelessWidget {
                     value: publicIpValue,
                     subtitle: connection.publicCity,
                     fitValue: true,
+                    busy: connection.isConnected && !connection.publicIpChecked,
+                    onTap: connection.isConnected
+                        ? () => _perform(context, controller.refreshPublicIp)
+                        : null,
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -229,10 +242,10 @@ class _ConnectionAction extends StatelessWidget {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          FilledButton.tonalIcon(
+          LiquidConnectButton(
             onPressed: () => _perform(context, controller.disconnect),
             icon: const Icon(Icons.stop_rounded, size: 18),
-            label: Text(context.s('disconnect')),
+            label: context.s('disconnect'),
           ),
           const SizedBox(height: 5),
           OutlinedButton.icon(
@@ -247,7 +260,7 @@ class _ConnectionAction extends StatelessWidget {
         ],
       );
     }
-    return FilledButton.icon(
+    return LiquidConnectButton(
       onPressed: connection.canConnect
           ? () => _perform(context, controller.connect)
           : null,
@@ -257,7 +270,7 @@ class _ConnectionAction extends StatelessWidget {
               child: CircularProgressIndicator(strokeWidth: 2),
             )
           : const Icon(Icons.play_arrow_rounded, size: 19),
-      label: Text(context.s(connection.isBusy ? connection.state : 'connect')),
+      label: context.s(connection.isBusy ? connection.state : 'connect'),
     );
   }
 }
@@ -270,6 +283,7 @@ class _CompactMetric extends StatelessWidget {
     this.onTap,
     this.subtitle,
     this.fitValue = false,
+    this.busy = false,
   });
 
   final IconData icon;
@@ -278,6 +292,7 @@ class _CompactMetric extends StatelessWidget {
   final VoidCallback? onTap;
   final String? subtitle;
   final bool fitValue;
+  final bool busy;
 
   @override
   Widget build(BuildContext context) => InkWell(
@@ -293,7 +308,24 @@ class _CompactMetric extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(icon, size: 18, color: Theme.of(context).colorScheme.primary),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 150),
+            child: busy
+                ? SizedBox.square(
+                    key: const ValueKey('checking-ip'),
+                    dimension: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  )
+                : Icon(
+                    icon,
+                    key: const ValueKey('metric-ready'),
+                    size: 18,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
@@ -368,11 +400,7 @@ class _SubscriptionSection extends StatelessWidget {
                   ),
                   if (progress != null) ...[
                     const SizedBox(height: 9),
-                    LinearProgressIndicator(
-                      value: progress,
-                      minHeight: 6,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
+                    _ReplayUsageBar(value: progress),
                     const SizedBox(height: 7),
                   ],
                   _ValueRow(
@@ -400,6 +428,59 @@ class _SubscriptionSection extends StatelessWidget {
       ),
     );
   }
+}
+
+class _ReplayUsageBar extends StatefulWidget {
+  const _ReplayUsageBar({required this.value});
+  final double value;
+  @override
+  State<_ReplayUsageBar> createState() => _ReplayUsageBarState();
+}
+
+class _ReplayUsageBarState extends State<_ReplayUsageBar>
+    with SingleTickerProviderStateMixin {
+  late final _animation = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 650),
+    value: 1,
+  );
+  @override
+  void dispose() {
+    _animation.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    label: context.s('subscriptionUsage'),
+    value: '${(widget.value * 100).round()}%',
+    child: GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        if (!MediaQuery.disableAnimationsOf(context)) {
+          _animation.forward(from: 0);
+        }
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 9),
+        child: AnimatedBuilder(
+          animation: _animation,
+          builder: (context, _) {
+            final t = Curves.easeOutCubic.transform(_animation.value);
+            return Transform.scale(
+              scale: 1 + .02 * (1 - t),
+              child: LinearProgressIndicator(
+                value: widget.value * t,
+                minHeight: 6,
+                borderRadius: BorderRadius.circular(8),
+              ),
+            );
+          },
+        ),
+      ),
+    ),
+  );
 }
 
 class _Section extends StatelessWidget {

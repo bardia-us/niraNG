@@ -4,7 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/formatters.dart';
 import '../../core/localization/app_strings.dart';
 import '../../core/widgets/glass_dialog.dart';
+import '../../core/widgets/choice_dialog_options.dart';
 import '../../core/widgets/update_dialog.dart';
+import '../../core/widgets/telegram_mark.dart';
+import '../../core/theme/app_theme.dart';
 import '../../core/platform/native_models.dart';
 import '../../core/platform/nirang_native.dart';
 import '../../core/update_checker.dart';
@@ -52,7 +55,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     return RepaintBoundary(
       key: _backdropKey,
       child: ListView(
-        padding: const EdgeInsets.only(bottom: 24),
+        padding: EdgeInsets.only(
+          top: MediaQuery.paddingOf(context).top,
+          bottom: 24,
+        ),
         children: [
           _SettingsExpansion(
             title: context.s('connection'),
@@ -528,8 +534,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ],
           ),
           _SettingsExpansion(
-            title: context.s('performance'),
-            icon: Icons.bolt_outlined,
+            title: context.s('themeAppearance'),
+            icon: Icons.palette_outlined,
             children: [
               ListTile(
                 leading: const Icon(Icons.contrast_rounded),
@@ -546,6 +552,60 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   },
                   onSelected: (value) =>
                       controller.updateSettings({'themeMode': value}),
+                ),
+              ),
+              ListTile(
+                leading: _ColorPreview(
+                  AppTheme.accentColors[settings.accentColor]!,
+                ),
+                title: Text(context.s('accentColor')),
+                subtitle: Text(context.s('accent_${settings.accentColor}')),
+                onTap: () => _chooseValue(
+                  context,
+                  title: context.s('accentColor'),
+                  current: settings.accentColor,
+                  values: {
+                    for (final key in AppTheme.accentColors.keys)
+                      key: context.s('accent_$key'),
+                  },
+                  previewColors: AppTheme.accentColors,
+                  onSelected: (value) =>
+                      controller.updateSettings({'accentColor': value}),
+                ),
+              ),
+              ListTile(
+                leading: _ColorPreview(
+                  AppTheme.darkCanvases[settings.darkCanvas]!,
+                ),
+                title: Text(context.s('darkCanvas')),
+                subtitle: Text(context.s('canvas_${settings.darkCanvas}')),
+                onTap: () => _chooseValue(
+                  context,
+                  title: context.s('darkCanvas'),
+                  current: settings.darkCanvas,
+                  values: {
+                    for (final key in AppTheme.darkCanvases.keys)
+                      key: context.s('canvas_$key'),
+                  },
+                  previewColors: AppTheme.darkCanvases,
+                  onSelected: (value) =>
+                      controller.updateSettings({'darkCanvas': value}),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.touch_app_outlined),
+                title: Text(context.s('feedbackMode')),
+                subtitle: Text(context.s('feedback_${settings.feedbackMode}')),
+                onTap: () => _chooseValue(
+                  context,
+                  title: context.s('feedbackMode'),
+                  current: settings.feedbackMode,
+                  values: {
+                    for (final key in NativeSettings.feedbackModes)
+                      key: context.s('feedback_$key'),
+                  },
+                  onSelected: (value) =>
+                      controller.updateSettings({'feedbackMode': value}),
                 ),
               ),
               ListTile(
@@ -765,7 +825,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
               ListTile(
                 enabled: settings.telegramUrlConfigured,
-                leading: const Icon(Icons.send_outlined),
+                leading: const TelegramMark(),
                 title: Text(context.s('telegram')),
                 subtitle: Text(
                   settings.telegramContact.isEmpty
@@ -1052,6 +1112,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     required Map<String, String> values,
     required Future<void> Function(String value) onSelected,
     Map<String, String>? descriptions,
+    Map<String, Color>? previewColors,
   }) async {
     final selected = await _pickValue(
       context,
@@ -1059,6 +1120,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       current: current,
       values: values,
       descriptions: descriptions,
+      previewColors: previewColors,
     );
     if (selected != null && selected != current && context.mounted) {
       await _perform(context, () => onSelected(selected));
@@ -1071,6 +1133,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     required String current,
     required Map<String, String> values,
     Map<String, String>? descriptions,
+    Map<String, Color>? previewColors,
   }) async {
     var temporary = current;
     return _showSettingsDialog<String>(
@@ -1078,27 +1141,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) => NirangAlertDialog(
           title: Text(title),
+          scrollContent: false,
           contentPadding: const EdgeInsets.fromLTRB(8, 12, 8, 0),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final entry in values.entries)
-                ListTile(
-                  leading: Icon(
-                    entry.key == temporary
-                        ? Icons.radio_button_checked_rounded
-                        : Icons.radio_button_unchecked_rounded,
-                    color: entry.key == temporary
-                        ? Theme.of(context).colorScheme.primary
-                        : Theme.of(context).colorScheme.outline,
-                  ),
-                  title: Text(entry.value),
-                  subtitle: descriptions?[entry.key] == null
-                      ? null
-                      : Text(descriptions![entry.key]!),
-                  onTap: () => setDialogState(() => temporary = entry.key),
-                ),
-            ],
+          content: ChoiceDialogOptions(
+            values: values,
+            current: temporary,
+            descriptions: descriptions,
+            previewColors: previewColors,
+            onSelected: (value) => setDialogState(() => temporary = value),
           ),
           actions: [
             TextButton(
@@ -1162,6 +1212,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ),
     );
   }
+}
+
+class _ColorPreview extends StatelessWidget {
+  const _ColorPreview(this.color);
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 22,
+    height: 22,
+    decoration: BoxDecoration(
+      color: color,
+      shape: BoxShape.circle,
+      border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+    ),
+  );
 }
 
 class _TextValueDialog extends StatefulWidget {
@@ -1470,31 +1536,29 @@ class _CustomRulesDialogState extends State<_CustomRulesDialog> {
     title: Text(context.s('custom')),
     content: Form(
       key: _formKey,
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextFormField(
-              controller: _domains,
-              maxLines: 4,
-              validator: _validateDomains,
-              decoration: InputDecoration(
-                labelText: context.s('customDomains'),
-                hintText: 'domain:example.com, full:api.example.com',
-              ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextFormField(
+            controller: _domains,
+            maxLines: 4,
+            validator: _validateDomains,
+            decoration: InputDecoration(
+              labelText: context.s('customDomains'),
+              hintText: 'domain:example.com, full:api.example.com',
             ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _ips,
-              maxLines: 4,
-              validator: _validateIps,
-              decoration: InputDecoration(
-                labelText: context.s('customIps'),
-                hintText: '1.2.3.4, 10.0.0.0/8, 2001:db8::/32',
-              ),
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _ips,
+            maxLines: 4,
+            validator: _validateIps,
+            decoration: InputDecoration(
+              labelText: context.s('customIps'),
+              hintText: '1.2.3.4, 10.0.0.0/8, 2001:db8::/32',
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     ),
     actions: [

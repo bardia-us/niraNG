@@ -29,6 +29,9 @@ data class ServerRecord(
     var pingMs: Long? = null,
     var pingStatus: String = "idle",
 ) {
+    val profileEditable: Boolean get() = protocol.lowercase() in setOf("vless", "vmess", "trojan", "http") &&
+        security.lowercase() in setOf("tls", "reality") && transport.lowercase() !in setOf("hysteria", "quic")
+
     fun safeMetadata(selectedId: String?): Map<String, Any?> = mapOf(
         "id" to id,
         "name" to name,
@@ -38,6 +41,14 @@ data class ServerRecord(
         "security" to securityLabel(),
         "port" to port,
         "sni" to parameters["sni"].orEmpty(),
+        "fingerprint" to parameters["fp"].orEmpty(),
+        "cipherSuites" to parameters["cs"].orEmpty(),
+        "finalMask" to parameters["fm"].orEmpty(),
+        "alpn" to parameters["alpn"].orEmpty(),
+        "allowInsecure" to listOf("allowInsecure", "insecure", "allow_insecure").any {
+            parameters[it] == "1" || parameters[it].equals("true", true)
+        },
+        "profileEditable" to profileEditable,
         "credentialLabel" to if (protocol.lowercase() in setOf("vless", "vmess")) "UUID" else "Password",
         "credentialMasked" to if (protocol.lowercase() in setOf("vless", "vmess")) "********-****-****-****-************" else "••••••••••••",
         "realityPublicKeyMasked" to if (parameters["pbk"].isNullOrBlank()) "" else "••••••••••••••••",

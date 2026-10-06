@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/services.dart';
 
 const nirangRepositoryUrl = 'https://github.com/bardia-us/niraNG';
 const nirangLatestReleaseApi =
@@ -94,7 +95,11 @@ class ReleaseAsset {
 }
 
 class GitHubUpdateChecker {
-  const GitHubUpdateChecker();
+  const GitHubUpdateChecker({
+    this.requestTimeout = const Duration(seconds: 28),
+  });
+
+  final Duration requestTimeout;
 
   Future<ReleaseCheckResult> check(String currentVersion) async {
     final payload = await _fetch(
@@ -105,6 +110,13 @@ class GitHubUpdateChecker {
   }
 
   Future<BilingualReleaseNotes> releaseNotes(String version) async {
+    // This APK has not necessarily been published yet; its own notes should
+    // remain available offline, without displaying another release's notes.
+    if (version == '1.2.0') {
+      return parseBilingualReleaseNotes(
+        await rootBundle.loadString('assets/release_notes/1.2.0.md'),
+      );
+    }
     final tag = version.startsWith('v') ? version : 'v$version';
     final payload = await _fetch(
       Uri.parse('$nirangReleaseByTagApi${Uri.encodeComponent(tag)}'),
@@ -115,7 +127,7 @@ class GitHubUpdateChecker {
 
   Future<Map<String, dynamic>> _fetch(Uri uri, String currentVersion) async {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
-    try {
+    Future<Map<String, dynamic>> fetch() async {
       final request = await client.getUrl(uri);
       request.headers
         ..set(HttpHeaders.acceptHeader, 'application/vnd.github+json')
@@ -139,6 +151,10 @@ class GitHubUpdateChecker {
         throw const FormatException('Invalid GitHub response');
       }
       return payload;
+    }
+
+    try {
+      return await fetch().timeout(requestTimeout);
     } finally {
       client.close(force: true);
     }

@@ -3,15 +3,17 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:liquid_glass_renderer/liquid_glass_renderer.dart';
 import 'package:nirang/core/platform/native_models.dart';
 import 'package:nirang/core/widgets/country_flag_badge.dart';
 import 'package:nirang/core/widgets/glass_dialog.dart';
 import 'package:nirang/core/widgets/glass_surface.dart';
 import 'package:nirang/features/servers/server_sorting.dart';
 import 'package:nirang/features/servers/servers_screen.dart';
+import 'package:nirang/features/settings/settings_screen.dart';
 import 'package:nirang/features/vpn/app_controller.dart';
 import 'package:nirang/main.dart';
+import 'package:nirang/core/registration/device_registration.dart';
+import 'package:nirang/features/registration/registration_bootstrap.dart';
 
 const _serverA = ServerInfo(
   id: 'a',
@@ -254,15 +256,20 @@ class _PerformancePromptController extends AppController {
   }
 }
 
+Finder get _settingsScrollable => find.descendant(
+  of: find.byType(SettingsScreen),
+  matching: find.byType(Scrollable),
+);
+
 Future<void> _openSettingsSection(WidgetTester tester, String title) async {
   final section = find.text(title);
   await tester.scrollUntilVisible(
     section,
     260,
-    scrollable: find.byType(Scrollable).first,
+    scrollable: _settingsScrollable,
   );
   if (tester.getCenter(section).dy > 470) {
-    await tester.drag(find.byType(Scrollable).first, const Offset(0, -150));
+    await tester.drag(_settingsScrollable, const Offset(0, -150));
     await tester.pumpAndSettle();
   }
   await tester.tap(section);
@@ -270,13 +277,9 @@ Future<void> _openSettingsSection(WidgetTester tester, String title) async {
 }
 
 Future<void> _tapVisibleSetting(WidgetTester tester, Finder finder) async {
-  await tester.scrollUntilVisible(
-    finder,
-    220,
-    scrollable: find.byType(Scrollable).first,
-  );
+  await tester.scrollUntilVisible(finder, 220, scrollable: _settingsScrollable);
   if (tester.getCenter(finder).dy > 470) {
-    await tester.drag(find.byType(Scrollable).first, const Offset(0, -140));
+    await tester.drag(_settingsScrollable, const Offset(0, -140));
     await tester.pumpAndSettle();
   }
   await tester.tap(finder);
@@ -284,6 +287,48 @@ Future<void> _tapVisibleSetting(WidgetTester tester, Finder finder) async {
 }
 
 void main() {
+  testWidgets(
+    'preloaded bootstrap still runs the first performance choice without another event',
+    (tester) async {
+      final verification = Completer<void>();
+      late _PerformancePromptController controller;
+      final container = ProviderContainer(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => controller = _PerformancePromptController(),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: NirangRegistrationBootstrap(
+            coordinator: _ReadyCoordinator(verification.future),
+            prepareApp: () =>
+                container.read(appControllerProvider.future).then((_) {}),
+            child: const NirangApp(),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(container.read(appControllerProvider).asData, isNotNull);
+      await tester.pumpAndSettle();
+      expect(find.byType(NavigationBar), findsOneWidget);
+      verification.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('Keep full effects'), findsOneWidget);
+      await tester.tap(find.text('Keep full effects'));
+      await tester.pumpAndSettle();
+      expect(
+        controller.state.asData!.value.settings.performanceModePrompted,
+        isTrue,
+      );
+      expect(find.text('Keep full effects'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
   testWidgets('performance mode prompt is recorded after one explicit choice', (
     tester,
   ) async {
@@ -399,7 +444,8 @@ void main() {
       ),
     );
     await tester.pump();
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(find.text('Loading saved settings'), findsOneWidget);
+    expect(find.byType(NavigationBar), findsNothing);
     expect(tester.takeException(), isNull);
 
     gate.complete();
@@ -448,7 +494,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('servers header uses localized blur only with full effects', (
+  testWidgets('server glass keeps localized blur at a lower performance cost', (
     tester,
   ) async {
     late _FakeAppController controller;
@@ -467,7 +513,40 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Servers (2)'), findsOneWidget);
-    expect(find.byType(LiquidGlass), findsWidgets);
+    final headerSurface = find.ancestor(
+      of: find.text('Servers (2)'),
+      matching: find.byType(GlassSurface),
+    );
+    final fullEffectsSigma = tester
+        .widget<FrostedSurface>(
+          find.descendant(
+            of: headerSurface,
+            matching: find.byType(FrostedSurface),
+          ),
+        )
+        .sigma;
+    expect(
+      find.descendant(of: headerSurface, matching: find.byType(BackdropFilter)),
+      findsOneWidget,
+    );
+    void expectPerformanceGlass(Finder surface) {
+      final frost = tester.widget<FrostedSurface>(
+        find.descendant(of: surface, matching: find.byType(FrostedSurface)),
+      );
+      expect(frost.opaque, isFalse);
+      expect(frost.sigma, greaterThan(0));
+      expect(frost.sigma, lessThan(fullEffectsSigma));
+      final filter = find.descendant(
+        of: surface,
+        matching: find.byType(BackdropFilter),
+      );
+      expect(filter, findsOneWidget);
+      expect(
+        find.ancestor(of: filter, matching: find.byType(ClipRRect)),
+        findsWidgets,
+      );
+    }
+
     expect(find.text('Test all'), findsNothing);
     expect(find.byTooltip('Server page actions'), findsOneWidget);
     await tester.tap(find.byTooltip('Server page actions'));
@@ -518,7 +597,7 @@ void main() {
     expect(
       find.descendant(
         of: bottomSheetFinder,
-        matching: find.byType(LiquidGlass),
+        matching: find.byType(BackdropFilter),
       ),
       findsOneWidget,
     );
@@ -527,7 +606,7 @@ void main() {
 
     await controller.updateSettings({'performanceMode': true});
     await tester.pumpAndSettle();
-    expect(find.byType(LiquidGlass), findsNothing);
+    expectPerformanceGlass(headerSurface);
     await tester.tap(find.byTooltip('Server page actions'));
     await tester.pumpAndSettle();
     final performanceMenu = tester.widget<GlassSurface>(
@@ -535,14 +614,16 @@ void main() {
     );
     expect(performanceMenu.blur, GlassSurface.liquidBlur);
     expect(performanceMenu.surfaceOpacity, isNull);
-    expect(find.byType(LiquidGlass), findsNothing);
+    expectPerformanceGlass(
+      find.byKey(const ValueKey('server-page-actions-surface')),
+    );
     await tester.dragFrom(const Offset(20, 430), const Offset(0, -80));
     await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.more_vert_rounded).first);
     await tester.pumpAndSettle();
     expect(find.text('Server information'), findsOneWidget);
     expect(find.text('Delete'), findsOneWidget);
-    expect(find.byType(LiquidGlass), findsNothing);
+    expectPerformanceGlass(bottomSheetFinder);
     expect(tester.takeException(), isNull);
   });
 
@@ -680,11 +761,18 @@ void main() {
     await tester.tap(find.byIcon(Icons.dns_outlined));
     await tester.pumpAndSettle();
 
+    final rowSpacing =
+        tester.getCenter(find.text('Server B')).dy -
+        tester.getCenter(find.text('Server A')).dy;
     final gesture = await tester.startGesture(
       tester.getCenter(find.text('Server A')),
     );
     await tester.pump(const Duration(milliseconds: 650));
-    await gesture.moveBy(const Offset(0, 130));
+    // Move through the next row and drop over its slot, like a real finger,
+    // rather than jumping beyond the entire two-item list in one update.
+    await gesture.moveBy(Offset(0, rowSpacing / 2 + 7));
+    await tester.pump();
+    await gesture.moveBy(Offset(0, rowSpacing / 2 + 7));
     await tester.pump(const Duration(milliseconds: 250));
     await gesture.up();
     await tester.pumpAndSettle();
@@ -711,6 +799,7 @@ void main() {
                 publicIp: '213.165.41.160',
                 publicCountry: 'NL',
                 publicCity: 'Amsterdam',
+                publicIpChecked: true,
               ),
             ),
           ),
@@ -747,9 +836,11 @@ void main() {
         child: const NirangApp(),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
 
     expect(find.text('Restart Service'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
     await tester.tap(find.text('Restart Service'));
     await tester.pump();
     expect(controller.restartRequests, 1);
@@ -905,7 +996,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byIcon(Icons.settings_outlined));
       await tester.pumpAndSettle();
-      await _openSettingsSection(tester, 'Performance');
+      await _openSettingsSection(tester, 'Theme & Appearance');
       await tester.tap(find.text('Theme'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Dark'));
@@ -1071,7 +1162,7 @@ void main() {
     await tester.scrollUntilVisible(
       find.text('Domain strategy'),
       220,
-      scrollable: find.byType(Scrollable).first,
+      scrollable: _settingsScrollable,
     );
     await tester.tap(find.text('Domain strategy'));
     await tester.pumpAndSettle();
@@ -1204,7 +1295,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byIcon(Icons.settings_outlined));
       await tester.pumpAndSettle();
-      await _openSettingsSection(tester, 'Performance');
+      await _openSettingsSection(tester, 'Theme & Appearance');
       await tester.tap(find.text('Theme'));
       await tester.pumpAndSettle();
 
@@ -1222,4 +1313,17 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+}
+
+class _ReadyCoordinator implements DeviceRegistrationCoordinator {
+  _ReadyCoordinator(this.verification);
+  final Future<void> verification;
+  @override
+  Future<bool> initialize() async => true;
+  @override
+  Future<void> verifyAccess() => verification;
+  @override
+  Future<void> accept() async {}
+  @override
+  Future<void> exitApplication() async {}
 }

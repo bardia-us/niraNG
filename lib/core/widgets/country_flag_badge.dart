@@ -21,15 +21,7 @@ class CountryFlagBadge extends StatelessWidget {
       height: height,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: Theme.of(
-          context,
-        ).colorScheme.surfaceContainerHighest.withValues(alpha: .72),
-        borderRadius: BorderRadius.circular(5),
-        border: Border.all(
-          color: Theme.of(
-            context,
-          ).colorScheme.outlineVariant.withValues(alpha: .55),
-        ),
+        borderRadius: BorderRadius.circular(3),
       ),
       clipBehavior: Clip.antiAlias,
       child: valid

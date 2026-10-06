@@ -50,6 +50,9 @@ class NirangBridge(
 ) : MethodChannel.MethodCallHandler {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val executor = Executors.newSingleThreadExecutor()
+    // A startup API timeout must not queue local settings/server operations
+    // behind an unavailable network.
+    private val accessExecutor = Executors.newSingleThreadExecutor()
     private val disposed = AtomicBoolean(false)
     private val repository = SubscriptionRepository(activity.applicationContext)
     private val pingManager = PingManager(activity.applicationContext, repository)
@@ -80,6 +83,12 @@ class NirangBridge(
             "refreshSubscription" -> refreshSubscription(result)
             "selectServer" -> selectServer(call, result)
             "reorderServers" -> reorderServers(call, result)
+            "updateServerProfile" -> success(result) {
+                val id = requireNotNull(call.argument<String>("id"))
+                val values = requireNotNull(call.argument<Map<String, Any?>>("values"))
+                require(repository.updateServerProfile(id, values)) { "Server not found" }
+                repository.safeServers()
+            }
             "deleteServer" -> deleteServer(call, result)
             "restoreDeletedServers" -> restoreDeletedServers(result)
             "connect" -> connect(call, result)
@@ -88,6 +97,7 @@ class NirangBridge(
                 result.success(true)
             }
             "restartService" -> restartService(result)
+            "refreshPublicIp" -> result.success(NirangVpnService.refreshPublicIp(activity))
             "requestQuickSettingsTile" -> requestQuickSettingsTile(result)
             "batteryOptimizationStatus" -> {
                 val powerManager = activity.getSystemService(PowerManager::class.java)
@@ -175,6 +185,7 @@ class NirangBridge(
         updateEventChannel.setStreamHandler(null)
         pingManager.close()
         executor.shutdownNow()
+        accessExecutor.shutdownNow()
     }
 
     private fun initialize(result: MethodChannel.Result) {
@@ -205,12 +216,12 @@ class NirangBridge(
     }
 
     private fun deviceRegistrationStatus(result: MethodChannel.Result) {
-        // A cached administrator block remains authoritative. A cached
-        // outdated state must not short-circuit the network verification,
-        // otherwise lowering minimum_build on the backend can never unlock
-        // the current session via Retry.
-        if (DeviceRegistrationManager.hasConsent(activity) && DeviceRegistrationManager.isLocallyBlocked(activity)) {
-            result.error("blocked", "Device access policy requires attention", null)
+        // Display saved policy immediately. Flutter refreshes it after the
+        // local screen paints; Retry explicitly checks remote policy too.
+        val localState = if (DeviceRegistrationManager.hasConsent(activity))
+            DeviceRegistrationManager.localAccessState(activity) else null
+        if (localState != null) {
+            result.error(if (localState == RemoteAccessState.BLOCKED) "blocked" else "outdated", "Device access policy requires attention", null)
         } else {
             result.success(DeviceRegistrationManager.hasConsent(activity))
         }
@@ -221,8 +232,8 @@ class NirangBridge(
             result.error("consent_required", "Device registration consent is required", null)
             return
         }
-        executor.execute {
-            runCatching { DeviceRegistrationManager.requireAllowed(activity) }
+        accessExecutor.execute {
+            runCatching { DeviceRegistrationManager.requireAllowed(activity, timeoutMillis = 7_000) }
                 .onSuccess {
                     postToFlutter {
                         result.success(true)
@@ -633,6 +644,7 @@ class NirangBridge(
             "whatsNewUpgradeFromBuild" to upgradeFromBuild,
             "subscriptionConfigured" to true,
             "telegramEligible" to NativeSettings(activity).telegramReminderEligible(),
+            "telegramStage" to NativeSettings(activity).telegramReminderStage(),
             "deletedServerCount" to repository.deletedCount(),
         )
     }

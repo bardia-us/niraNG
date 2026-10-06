@@ -43,23 +43,40 @@ migration رجیستری در `server/apiniraN/DEPLOYMENT.md` قرار دارد.
 
 ## Build و تست
 
+### انتخاب APK / Choosing an APK
+
+- `arm64-v8a`: گوشی‌های ARM شصت‌وچهار‌بیتی؛ مناسب بیشتر گوشی‌های جدید.
+- `armeabi-v7a`: دستگاه‌های ARM سی‌ودو‌بیتی.
+- `x86_64`: دستگاه یا شبیه‌ساز x86 شصت‌وچهار‌بیتی؛ نسخهٔ همگانی نیست.
+- `universal`: هر سه معماری در یک APK بزرگ‌تر؛ اگر معماری دستگاه را نمی‌دانید این فایل را بگیرید.
+
+The universal APK contains ARM64, ARM32 and x86-64 native libraries. Android
+selects the compatible library; it is not an x86 APK renamed as universal.
+All builds require Android 7.0/API 24 or newer and a supported ABI.
+Starting with 1.2.0, every output uses the same installation version code
+(`4000 + base build`) so universal and split APKs can update each other.
+The API/What's New base build number remains unchanged.
+
 ```powershell
 flutter analyze
 flutter test
 flutter build apk --release --split-per-abi
+# Build and name all four signed artifacts:
+.\tool\build_release.ps1
 ```
 
 خروجی‌ها در مسیر زیر ساخته می‌شوند:
 
 ```text
-build/app/outputs/flutter-apk/niraNG-v<version>-arm64-v8a.apk
-build/app/outputs/flutter-apk/niraNG-v<version>-armeabi-v7a.apk
-build/app/outputs/flutter-apk/niraNG-v<version>-x86_64.apk
+build/releases/v<version>/niraNG-v<version>-arm64-v8a.apk
+build/releases/v<version>/niraNG-v<version>-armeabi-v7a.apk
+build/releases/v<version>/niraNG-v<version>-x86_64.apk
+build/releases/v<version>/niraNG-v<version>-universal.apk
 ```
 
 ## Native core
 
-پروژه از `AndroidLibXrayLite v26.5.19` استفاده می‌کند. کتابخانه فعلی برای
+پروژه از `AndroidLibXrayLite v26.8.28` استفاده می‌کند. کتابخانه فعلی برای
 `arm64-v8a`، `armeabi-v7a` و `x86_64` موجود است. مجوزهای اجزای ثالث در
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) ثبت شده‌اند.
 

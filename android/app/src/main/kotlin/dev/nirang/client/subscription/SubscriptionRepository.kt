@@ -14,6 +14,8 @@ import java.io.IOException
 class SubscriptionRepository(private val context: Context) {
     private val prefs = context.getSharedPreferences("nirang_subscription", Context.MODE_PRIVATE)
     private val cacheFile = File(context.noBackupFilesDir, "subscription-cache.json")
+    private val profileOverridesFile = File(context.noBackupFilesDir, "server-profile-overrides.json")
+    private var profileOverrides = ServerProfileOverrides()
 
     @Volatile private var snapshot = SubscriptionSnapshot(emptyList(), SubscriptionUsage(), 0L)
     @Volatile private var loaded = false
@@ -64,6 +66,18 @@ class SubscriptionRepository(private val context: Context) {
         snapshot.servers.filterNot { it.id in hidden }.map { it.safeMetadata(selected) }
     }
 
+    fun updateServerProfile(serverId: String, values: Map<String, *>): Boolean = synchronized(lock) {
+        ensureLoaded()
+        val server = snapshot.servers.firstOrNull { it.id == serverId && it.id !in hiddenIds() }
+            ?: return false
+        val updated = profileOverrides.updated(server, values)
+        // Write the encrypted override atomically before publishing it to readers.
+        SecureSubscriptionCache.writeAtomic(profileOverridesFile, updated.toJson().toString())
+        profileOverrides = updated
+        snapshot = snapshot.copy(servers = updated.apply(snapshot.servers))
+        true
+    }
+
     fun delete(serverId: String): Boolean = synchronized(lock) {
         ensureLoaded()
         if (snapshot.servers.none { it.id == serverId } || serverId in hiddenIds()) return false
@@ -87,8 +101,9 @@ class SubscriptionRepository(private val context: Context) {
         if (visibleIds.size != currentVisible.size || visibleIds.toSet() != currentVisible.toSet()) return false
         val hidden = hiddenIds()
         val completeOrder = visibleIds + snapshot.servers.filter { it.id in hidden }.map(ServerRecord::id)
-        snapshot = snapshot.copy(servers = ServerOrderPolicy.apply(completeOrder, snapshot.servers))
-        persist(snapshot)
+        val candidate = snapshot.copy(servers = ServerOrderPolicy.apply(completeOrder, snapshot.servers))
+        persist(candidate)
+        snapshot = candidate
         prefs.edit()
             .putString(SERVER_ORDER, JSONArray(snapshot.servers.map(ServerRecord::id).distinct()).toString())
             .putBoolean(SERVER_ORDER_MANUAL, true)
@@ -127,7 +142,7 @@ class SubscriptionRepository(private val context: Context) {
         }
 
         val updated = SubscriptionSnapshot(
-            servers = servers,
+            servers = profileOverrides.apply(servers),
             usage = SubscriptionParser.parseUsage(remote.usageHeader),
             lastUpdatedEpochMillis = System.currentTimeMillis(),
         )
@@ -168,11 +183,17 @@ class SubscriptionRepository(private val context: Context) {
 
     private fun ensureLoaded() {
         if (loaded) return
+        profileOverrides = if (profileOverridesFile.exists()) runCatching {
+            ServerProfileOverrides.fromJson(JSONObject(SecureSubscriptionCache.read(profileOverridesFile).text))
+        }.getOrElse {
+            SafeLog.warning(context, "Stored profile overrides could not be read; source profiles were preserved")
+            ServerProfileOverrides()
+        } else ServerProfileOverrides()
         val loadedSnapshot = loadFromDisk()
         snapshot = if (prefs.getBoolean(SERVER_ORDER_MANUAL, false)) {
-            loadedSnapshot.copy(servers = ServerOrderPolicy.apply(storedOrder(), loadedSnapshot.servers))
+            loadedSnapshot.copy(servers = profileOverrides.apply(ServerOrderPolicy.apply(storedOrder(), loadedSnapshot.servers)))
         } else {
-            loadedSnapshot
+            loadedSnapshot.copy(servers = profileOverrides.apply(loadedSnapshot.servers))
         }
         loaded = true
     }

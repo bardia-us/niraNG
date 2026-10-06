@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as glass;
 
 import '../../core/localization/app_strings.dart';
 import '../../core/formatters.dart';
@@ -11,6 +13,8 @@ import '../../core/user_facing_error.dart';
 import '../../core/widgets/country_flag_badge.dart';
 import '../../core/widgets/glass_surface.dart';
 import '../../core/widgets/glass_dialog.dart';
+import '../../core/widgets/liquid_controls.dart';
+import '../../core/widgets/menu_activity.dart';
 import '../vpn/app_controller.dart';
 import 'server_information_screen.dart';
 
@@ -59,6 +63,7 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
     );
     final controller = ref.read(appControllerProvider.notifier);
     const headerHeight = 64.0;
+    final chromeTop = MediaQuery.paddingOf(context).top;
     return Stack(
       children: [
         Positioned.fill(
@@ -67,161 +72,230 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
               children: [
                 Positioned.fill(
                   child: RepaintBoundary(
-                    child: NotificationListener<ScrollNotification>(
-                      onNotification: _handleHeaderScroll,
-                      child: app.servers.isEmpty
-                          ? Padding(
-                              padding: const EdgeInsets.only(
-                                top: headerHeight + 10,
-                              ),
-                              child: _EmptyServers(app: app),
-                            )
-                          : ReorderableListView.builder(
-                              cacheExtent: 360,
-                              buildDefaultDragHandles: false,
-                              itemCount: app.servers.length,
-                              padding: const EdgeInsets.fromLTRB(
-                                8,
-                                headerHeight + 16,
-                                8,
-                                16,
-                              ),
-                              onReorder: (oldIndex, newIndex) {
-                                unawaited(
-                                  _perform(
-                                    context,
-                                    () => controller.reorderServers(
-                                      oldIndex,
-                                      newIndex,
+                    child: glass.GlassBackdropGroup(
+                      child: NotificationListener<ScrollNotification>(
+                        onNotification: _handleHeaderScroll,
+                        child: app.servers.isEmpty
+                            ? Padding(
+                                padding: EdgeInsets.only(
+                                  top: chromeTop + headerHeight + 10,
+                                ),
+                                child: _EmptyServers(app: app),
+                              )
+                            : ReorderableListView.builder(
+                                scrollCacheExtent:
+                                    const ScrollCacheExtent.pixels(360),
+                                buildDefaultDragHandles: false,
+                                itemCount: app.servers.length,
+                                padding: EdgeInsets.fromLTRB(
+                                  8,
+                                  chromeTop + headerHeight + 16,
+                                  8,
+                                  16,
+                                ),
+                                onReorderItem: (oldIndex, newIndex) {
+                                  unawaited(
+                                    _perform(
+                                      context,
+                                      () => controller.reorderServers(
+                                        oldIndex,
+                                        newIndex > oldIndex
+                                            ? newIndex + 1
+                                            : newIndex,
+                                      ),
                                     ),
-                                  ),
-                                );
-                              },
-                              proxyDecorator: (child, _, animation) =>
-                                  view.performanceMode
-                                  ? child
-                                  : AnimatedBuilder(
-                                      animation: animation,
-                                      builder: (context, _) {
-                                        final pressed = Curves.easeOutCubic
-                                            .transform(animation.value);
-                                        return Transform.translate(
-                                          offset: Offset(0, pressed * 2),
-                                          child: Transform.scale(
-                                            scale: 1 - (pressed * .015),
-                                            child: child,
-                                          ),
-                                        );
-                                      },
-                                    ),
-                              itemBuilder: (context, index) {
-                                final server = app.servers[index];
-                                return Padding(
-                                  key: ValueKey(server.id),
-                                  padding: const EdgeInsets.only(bottom: 5),
-                                  child: RepaintBoundary(
-                                    child: ReorderableDelayedDragStartListener(
-                                      index: index,
-                                      child: _PressScale(
-                                        enabled: !view.performanceMode,
-                                        child: AnimatedContainer(
-                                          duration: Duration(
-                                            milliseconds: view.performanceMode
-                                                ? 85
-                                                : 140,
-                                          ),
-                                          curve: Curves.easeOutCubic,
-                                          decoration: BoxDecoration(
-                                            color: server.selected
-                                                ? Theme.of(context)
-                                                      .colorScheme
-                                                      .primaryContainer
-                                                      .withValues(alpha: .26)
-                                                : Theme.of(context)
-                                                      .colorScheme
-                                                      .surfaceContainerLow
-                                                      .withValues(alpha: .42),
-                                            borderRadius: BorderRadius.circular(
-                                              13,
+                                  );
+                                },
+                                proxyDecorator: (child, _, animation) =>
+                                    view.performanceMode
+                                    ? child
+                                    : AnimatedBuilder(
+                                        animation: animation,
+                                        builder: (context, _) {
+                                          final pressed = Curves.easeOutCubic
+                                              .transform(animation.value);
+                                          return Transform.translate(
+                                            offset: Offset(0, pressed * 2),
+                                            child: Transform.scale(
+                                              scale: 1 - (pressed * .015),
+                                              child: child,
                                             ),
-                                            border: Border.all(
+                                          );
+                                        },
+                                      ),
+                                itemBuilder: (context, index) {
+                                  final server = app.servers[index];
+                                  return Padding(
+                                    key: ValueKey(server.id),
+                                    padding: const EdgeInsets.only(bottom: 5),
+                                    child: RepaintBoundary(
+                                      child: ReorderableDelayedDragStartListener(
+                                        index: index,
+                                        child: _PressScale(
+                                          enabled: !view.performanceMode,
+                                          child: AnimatedContainer(
+                                            duration: Duration(
+                                              milliseconds: view.performanceMode
+                                                  ? 85
+                                                  : 140,
+                                            ),
+                                            curve: Curves.easeOutCubic,
+                                            decoration: BoxDecoration(
                                               color: server.selected
                                                   ? Theme.of(context)
                                                         .colorScheme
-                                                        .primary
-                                                        .withValues(alpha: .28)
+                                                        .primaryContainer
+                                                        .withValues(alpha: .26)
                                                   : Theme.of(context)
                                                         .colorScheme
-                                                        .outlineVariant
-                                                        .withValues(alpha: .22),
-                                            ),
-                                          ),
-                                          child: ClipRRect(
-                                            borderRadius: BorderRadius.circular(
-                                              13,
-                                            ),
-                                            child: Material(
-                                              type: MaterialType.transparency,
-                                              child: ListTile(
-                                                splashColor: Theme.of(context)
-                                                    .colorScheme
-                                                    .primary
-                                                    .withValues(alpha: .10),
-                                                leading: _SelectionIndicator(
-                                                  selected: server.selected,
-                                                  reducedEffects:
-                                                      view.performanceMode,
-                                                ),
-                                                title: Row(
-                                                  children: [
-                                                    CountryFlagBadge(
-                                                      countryCode:
-                                                          server.country,
-                                                      width: 25,
-                                                      height: 18,
-                                                    ),
-                                                    const SizedBox(width: 8),
-                                                    Expanded(
-                                                      child: Text(
-                                                        displayServerName(
-                                                          server.name,
-                                                        ),
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow
-                                                            .ellipsis,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                                subtitle: Text(
-                                                  '${server.protocol}  ${server.transport}',
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                ),
-                                                trailing: Row(
-                                                  mainAxisSize:
-                                                      MainAxisSize.min,
-                                                  children: [
-                                                    _Latency(server: server),
-                                                    IconButton(
-                                                      tooltip: context.s(
-                                                        'serverActions',
-                                                      ),
-                                                      onPressed: () =>
-                                                          _serverActions(
-                                                            server,
+                                                        .surfaceContainerLow
+                                                        .withValues(alpha: .42),
+                                              borderRadius:
+                                                  BorderRadius.circular(13),
+                                              border: Border.all(
+                                                color: server.selected
+                                                    ? Theme.of(context)
+                                                          .colorScheme
+                                                          .primary
+                                                          .withValues(
+                                                            alpha: .28,
+                                                          )
+                                                    : Theme.of(context)
+                                                          .colorScheme
+                                                          .outlineVariant
+                                                          .withValues(
+                                                            alpha: .22,
                                                           ),
-                                                      icon: const Icon(
-                                                        Icons.more_vert_rounded,
+                                              ),
+                                            ),
+                                            child: ClipRRect(
+                                              borderRadius:
+                                                  BorderRadius.circular(13),
+                                              child: Material(
+                                                type: MaterialType.transparency,
+                                                child: ListTile(
+                                                  splashColor: Theme.of(context)
+                                                      .colorScheme
+                                                      .primary
+                                                      .withValues(alpha: .10),
+                                                  leading: _SelectionIndicator(
+                                                    selected: server.selected,
+                                                    reducedEffects:
+                                                        view.performanceMode,
+                                                  ),
+                                                  title: Row(
+                                                    children: [
+                                                      CountryFlagBadge(
+                                                        countryCode:
+                                                            server.country,
+                                                        width: 25,
+                                                        height: 18,
                                                       ),
-                                                    ),
-                                                  ],
-                                                ),
-                                                onTap: () => _perform(
-                                                  context,
-                                                  () => controller.selectServer(
-                                                    server.id,
+                                                      const SizedBox(width: 8),
+                                                      Expanded(
+                                                        child: Text(
+                                                          displayServerName(
+                                                            server.name,
+                                                          ),
+                                                          maxLines: 1,
+                                                          style: Theme.of(context)
+                                                              .textTheme
+                                                              .bodyLarge
+                                                              ?.copyWith(
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w600,
+                                                              ),
+                                                          overflow: TextOverflow
+                                                              .ellipsis,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  subtitle: Text(
+                                                    '${server.protocol}  ${server.transport}',
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                                  trailing: Row(
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
+                                                    children: [
+                                                      _Latency(server: server),
+                                                      const SizedBox(width: 10),
+                                                      LiquidActionMenu<String>(
+                                                        tooltip: context.s(
+                                                          'serverActions',
+                                                        ),
+                                                        items: [
+                                                          LiquidActionItem(
+                                                            value: 'select',
+                                                            label: context.s(
+                                                              'select',
+                                                            ),
+                                                            icon: Icons
+                                                                .check_circle_outline_rounded,
+                                                          ),
+                                                          LiquidActionItem(
+                                                            value: 'ping',
+                                                            label: context.s(
+                                                              'testLatency',
+                                                            ),
+                                                            icon: Icons
+                                                                .network_ping_rounded,
+                                                            enabled:
+                                                                !app.isPinging,
+                                                          ),
+                                                          LiquidActionItem(
+                                                            value: 'info',
+                                                            label: context.s(
+                                                              'serverInformation',
+                                                            ),
+                                                            icon: Icons
+                                                                .info_outline_rounded,
+                                                          ),
+                                                          LiquidActionItem(
+                                                            value: 'delete',
+                                                            label: context.s(
+                                                              'delete',
+                                                            ),
+                                                            icon: Icons
+                                                                .delete_outline_rounded,
+                                                            destructive: true,
+                                                          ),
+                                                        ],
+                                                        onSelected: (action) =>
+                                                            unawaited(
+                                                              _handleAction(
+                                                                context,
+                                                                controller,
+                                                                server,
+                                                                action,
+                                                              ),
+                                                            ),
+                                                        fallback: IconButton(
+                                                          tooltip: context.s(
+                                                            'serverActions',
+                                                          ),
+                                                          onPressed: () =>
+                                                              _serverActions(
+                                                                server,
+                                                              ),
+                                                          icon: const Icon(
+                                                            Icons
+                                                                .more_vert_rounded,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  onTap: () => _perform(
+                                                    context,
+                                                    () =>
+                                                        controller.selectServer(
+                                                          server.id,
+                                                        ),
                                                   ),
                                                 ),
                                               ),
@@ -230,10 +304,10 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
                                         ),
                                       ),
                                     ),
-                                  ),
-                                );
-                              },
-                            ),
+                                  );
+                                },
+                              ),
+                      ),
                     ),
                   ),
                 ),
@@ -242,7 +316,7 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
           ),
         ),
         Positioned(
-          top: 6,
+          top: chromeTop + 6,
           left: 8,
           right: 8,
           child: _ServersGlassHeader(
@@ -252,25 +326,66 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
             isRefreshing: app.isRefreshing,
             reducedEffects: view.performanceMode,
             onMenu: _openMenu,
+            items: [
+              LiquidActionItem(
+                value: _ServerPageAction.restart,
+                label: context.s('restartService'),
+                icon: Icons.restart_alt_rounded,
+                enabled: app.connection.isConnected,
+              ),
+              LiquidActionItem(
+                value: _ServerPageAction.sort,
+                label: context.s('sortByTestResults'),
+                icon: Icons.sort_rounded,
+                enabled: app.servers.isNotEmpty,
+              ),
+              LiquidActionItem(
+                value: _ServerPageAction.tcpDelay,
+                label: context.s('testTcpDelays'),
+                icon: Icons.cable_rounded,
+                enabled: app.servers.isNotEmpty && !app.isPinging,
+              ),
+              LiquidActionItem(
+                value: _ServerPageAction.realDelay,
+                label: context.s('testRealDelays'),
+                icon: Icons.network_ping_rounded,
+                enabled: app.servers.isNotEmpty && !app.isPinging,
+              ),
+              LiquidActionItem(
+                value: _ServerPageAction.refresh,
+                label: context.s('refresh'),
+                icon: Icons.sync_rounded,
+                enabled: !app.isRefreshing,
+              ),
+            ],
+            onSelected: (action) => unawaited(
+              _performServerPageAction(context, controller, action),
+            ),
           ),
         ),
         if (_menuAnchor case final anchor?)
           Positioned.fill(
-            child: _buildServerPageActions(context, controller, app, anchor),
+            child: MenuActivityScope(
+              child: _buildServerPageActions(context, controller, app, anchor),
+            ),
           ),
         if (_serverActionsTarget case final server?)
           Positioned.fill(
-            child: _ServerActionsSheetOverlay(
-              server: server,
-              performanceMode: view.performanceMode,
-              onClosed: (action) {
-                if (mounted) {
-                  setState(() => _serverActionsTarget = null);
-                }
-                if (action != null && context.mounted) {
-                  unawaited(_handleAction(context, controller, server, action));
-                }
-              },
+            child: MenuActivityScope(
+              child: _ServerActionsSheetOverlay(
+                server: server,
+                performanceMode: view.performanceMode,
+                onClosed: (action) {
+                  if (mounted) {
+                    setState(() => _serverActionsTarget = null);
+                  }
+                  if (action != null && context.mounted) {
+                    unawaited(
+                      _handleAction(context, controller, server, action),
+                    );
+                  }
+                },
+              ),
             ),
           ),
       ],
@@ -575,6 +690,8 @@ class _ServersGlassHeader extends StatefulWidget {
     required this.isRefreshing,
     required this.reducedEffects,
     required this.onMenu,
+    required this.items,
+    required this.onSelected,
   });
 
   final double height;
@@ -583,6 +700,8 @@ class _ServersGlassHeader extends StatefulWidget {
   final bool isRefreshing;
   final bool reducedEffects;
   final ValueChanged<Rect> onMenu;
+  final List<LiquidActionItem<_ServerPageAction>> items;
+  final ValueChanged<_ServerPageAction> onSelected;
 
   @override
   State<_ServersGlassHeader> createState() => _ServersGlassHeaderState();
@@ -632,12 +751,18 @@ class _ServersGlassHeaderState extends State<_ServersGlassHeader> {
                   ),
                 ),
               ),
-              IconButton(
-                key: _menuKey,
+              LiquidActionMenu<_ServerPageAction>(
                 tooltip: context.s('serverPageActions'),
-                onPressed: _openMenu,
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.more_vert_rounded),
+                icon: const Icon(Icons.sort_rounded),
+                items: widget.items,
+                onSelected: widget.onSelected,
+                fallback: IconButton(
+                  key: _menuKey,
+                  tooltip: context.s('serverPageActions'),
+                  onPressed: _openMenu,
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.sort_rounded),
+                ),
               ),
             ],
           ),

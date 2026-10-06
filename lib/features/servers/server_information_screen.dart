@@ -1,16 +1,33 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/localization/app_strings.dart';
 import '../../core/platform/native_models.dart';
 import '../../core/widgets/country_flag_badge.dart';
+import 'server_profile_settings_screen.dart';
+import '../vpn/app_controller.dart';
 
-class ServerInformationScreen extends StatelessWidget {
+class ServerInformationScreen extends ConsumerWidget {
   const ServerInformationScreen({required this.server, super.key});
 
   final ServerInfo server;
 
   @override
-  Widget build(BuildContext context) => Scaffold(
+  Widget build(BuildContext context, WidgetRef ref) {
+    final currentServers = ref
+        .watch(appControllerProvider)
+        .asData
+        ?.value
+        .servers;
+    final server =
+        currentServers
+            ?.where((value) => value.id == this.server.id)
+            .firstOrNull ??
+        this.server;
+    return _information(context, server);
+  }
+
+  Widget _information(BuildContext context, ServerInfo server) => Scaffold(
     appBar: AppBar(title: Text(context.s('serverInformation'))),
     body: ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
@@ -48,6 +65,19 @@ class ServerInformationScreen extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
+        if (server.profileEditable) ...[
+          FilledButton.tonalIcon(
+            key: const ValueKey('edit-server-profile'),
+            onPressed: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(
+                builder: (_) => ServerProfileSettingsScreen(server: server),
+              ),
+            ),
+            icon: const Icon(Icons.tune),
+            label: Text(context.s('serverProfileSettings')),
+          ),
+          const SizedBox(height: 12),
+        ],
         _InfoSection(
           title: context.s('generalInformation'),
           children: [

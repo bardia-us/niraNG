@@ -6,6 +6,13 @@ internal enum class NotificationControlAction { CONNECT, DISCONNECT, NONE }
 
 /** Pure projection of the real service state; no notification-owned state. */
 internal object NotificationControlPolicy {
+    fun shouldUpdateNotification(
+        foregroundActive: Boolean,
+        snapshotState: ConnectionState,
+        currentState: ConnectionState,
+    ): Boolean = foregroundActive && snapshotState == currentState &&
+        currentState !in setOf(ConnectionState.DISCONNECTED, ConnectionState.ERROR)
+
     fun badgeCount(state: ConnectionState): Int = if (state == ConnectionState.CONNECTED) 1 else 0
 
     fun action(state: ConnectionState): NotificationControlAction = when (state) {

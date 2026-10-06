@@ -119,9 +119,10 @@ object DeviceRegistrationManager {
     }
 
     @Throws(IOException::class)
-    fun requireAllowed(context: Context) {
+    fun requireAllowed(context: Context, timeoutMillis: Int? = null) {
         check(hasConsent(context)) { "Device registration consent is required" }
-        synchronize(context.applicationContext, register = accessToken(context) == null)
+        val deadline = timeoutMillis?.let { ApiRequestDeadline(it) }
+        synchronize(context.applicationContext, register = accessToken(context) == null, deadline = deadline)
     }
 
 
@@ -212,13 +213,13 @@ object DeviceRegistrationManager {
         return deriveDeviceKey(androidId, context.packageName)
     }
 
-    private fun synchronize(context: Context, register: Boolean): Unit = synchronized(accessLock) {
+    private fun synchronize(context: Context, register: Boolean, deadline: ApiRequestDeadline? = null): Unit = synchronized(accessLock) {
         val request = if (register) payload(context) else authorizedPayload(context, "status")
-        val response = execute(context, request, if (register) null else accessToken(context), 8_192)
+        val response = execute(context, request, if (register) null else accessToken(context), 8_192, deadline)
         val json = response.json
         if (!register && response.status == 401 && json?.optString("reason") in setOf("token_expired", "invalid_device_credentials")) {
             SecureTokenStore.clear(context)
-            synchronize(context, register = true)
+            synchronize(context, register = true, deadline = deadline)
             return@synchronized
         }
         if (response.status !in 200..299 || json?.optBoolean("allowed") != true) {
@@ -253,13 +254,14 @@ object DeviceRegistrationManager {
         }
     }
 
-    private fun execute(context: Context, payload: JSONObject, token: String?, maxBytes: Int): ApiResponse {
+    private fun execute(context: Context, payload: JSONObject, token: String?, maxBytes: Int, deadline: ApiRequestDeadline? = null): ApiResponse {
+        deadline?.remainingMillis()
         val body = payload.toString().toByteArray(Charsets.UTF_8)
         val connection = (URL(ENDPOINT).openConnection() as HttpsURLConnection).apply {
             sslSocketFactory = ApiPinning.socketFactory
             requestMethod = "POST"
-            connectTimeout = CONNECT_TIMEOUT_MS
-            readTimeout = READ_TIMEOUT_MS
+            connectTimeout = minOf(CONNECT_TIMEOUT_MS, deadline?.remainingMillis() ?: CONNECT_TIMEOUT_MS)
+            readTimeout = minOf(READ_TIMEOUT_MS, deadline?.remainingMillis() ?: READ_TIMEOUT_MS)
             instanceFollowRedirects = false
             doOutput = true
             setFixedLengthStreamingMode(body.size)
@@ -268,17 +270,20 @@ object DeviceRegistrationManager {
             setRequestProperty("User-Agent", "niraNG-device-access/${BuildConfig.VERSION_NAME}")
             if (token != null) setRequestProperty("Authorization", "Bearer $token")
         }
+        val cancellation = deadline?.watch(connection)
         try {
             connection.outputStream.use { it.write(body) }
             val status = connection.responseCode
             val stream = if (status in 200..299) connection.inputStream else connection.errorStream
             val bytes = stream?.use { it.readBounded(maxBytes + 1) } ?: ByteArray(0)
+            deadline?.remainingMillis()
             require(bytes.size <= maxBytes) { "API response is too large" }
             val json = if (connection.contentType.orEmpty().contains("json", ignoreCase = true) || status !in 200..299) {
                 runCatching { JSONObject(bytes.toString(Charsets.UTF_8)) }.getOrNull()
             } else null
             return ApiResponse(status, bytes, json, connection.getHeaderField("subscription-userinfo"))
         } finally {
+            cancellation?.close()
             connection.disconnect()
         }
     }
@@ -296,9 +301,17 @@ object DeviceRegistrationManager {
             RemoteAccessState.OUTDATED -> STATE_OUTDATED
             RemoteAccessState.UNKNOWN -> STATE_UNKNOWN
         }
-        val editor = preferences(context).edit().putString(REMOTE_STATE, state)
-        if (minimumVersion != null) editor.putString(MINIMUM_VERSION, minimumVersion)
-        if (minimumBuild != null) editor.putInt(MINIMUM_BUILD, minimumBuild)
+        val cached = cachedDenial(localAccessState(context), accessState)
+        val editor = preferences(context).edit()
+        when (cached) {
+            RemoteAccessState.BLOCKED -> editor.putString(REMOTE_STATE, STATE_BLOCKED)
+            RemoteAccessState.OUTDATED -> editor.putString(REMOTE_STATE, STATE_OUTDATED)
+            else -> Unit // An unavailable API cannot clear saved policy.
+        }
+        if (accessState != RemoteAccessState.UNKNOWN) {
+            if (minimumVersion != null) editor.putString(MINIMUM_VERSION, minimumVersion)
+            if (minimumBuild != null) editor.putInt(MINIMUM_BUILD, minimumBuild)
+        }
         editor.apply()
         val message = when (state) {
             STATE_BLOCKED -> "This device has been blocked by the administrator"
@@ -314,6 +327,9 @@ object DeviceRegistrationManager {
         json?.optBoolean("update_required") == true || status == 426 -> RemoteAccessState.OUTDATED
         else -> RemoteAccessState.UNKNOWN
     }
+
+    internal fun cachedDenial(previous: RemoteAccessState?, incoming: RemoteAccessState): RemoteAccessState? =
+        if (incoming == RemoteAccessState.UNKNOWN) previous else incoming
 
     private fun markAllowed(context: Context) {
         preferences(context).edit().putString(REMOTE_STATE, STATE_ALLOWED).putString(LAST_SEEN, timestamp()).apply()

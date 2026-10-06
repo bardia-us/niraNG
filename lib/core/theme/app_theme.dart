@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 abstract final class AppPalette {
-  static const primary = Color(0xFF6B57D6);
-  static const lightCanvas = Color(0xFFFAF8FC);
-  static const darkCanvas = Color(0xFF141019);
+  static const primary = Color(0xFF8E82E8);
+  static const lightCanvas = Color(0xFFF8F8FC);
+  static const darkCanvas = Color(0xFF10111A);
   static const lightSuccess = Color(0xFF287A62);
   static const darkSuccess = Color(0xFF6FC5AA);
   static const lightWarning = Color(0xFF9A6717);
@@ -41,15 +41,52 @@ extension NirangThemeContext on BuildContext {
 }
 
 abstract final class AppTheme {
+  static const accentColors = <String, Color>{
+    'purple': AppPalette.primary,
+    'blue': Color(0xFF1976D2),
+    'teal': Color(0xFF008B8B),
+    'green': Color(0xFF328449),
+    'orange': Color(0xFFB96B17),
+    'rose': Color(0xFFB94F84),
+  };
+  static const darkCanvases = <String, Color>{
+    'midnight': AppPalette.darkCanvas,
+    'graphite': Color(0xFF18191C),
+    'oled': Colors.black,
+  };
+  static final _personalized =
+      <(Brightness, bool, String, String), ThemeData>{};
+
+  static ThemeData forSettings({
+    required Brightness brightness,
+    required bool reducedEffects,
+    required String accentColor,
+    required String darkCanvas,
+  }) {
+    final accent = accentColors.containsKey(accentColor)
+        ? accentColor
+        : 'purple';
+    final canvas = darkCanvases.containsKey(darkCanvas) ? darkCanvas : 'midnight';
+    return _personalized.putIfAbsent(
+      (brightness, reducedEffects, accent, canvas),
+      () => _theme(brightness, reducedEffects, accent: accent, canvas: canvas),
+    );
+  }
+
   static final ThemeData light = _theme(Brightness.light, false);
   static final ThemeData dark = _theme(Brightness.dark, false);
   static final ThemeData lightPerformance = _theme(Brightness.light, true);
   static final ThemeData darkPerformance = _theme(Brightness.dark, true);
 
-  static ThemeData _theme(Brightness brightness, bool reducedEffects) {
+  static ThemeData _theme(
+    Brightness brightness,
+    bool reducedEffects, {
+    String accent = 'purple',
+    String canvas = 'midnight',
+  }) {
     final isDark = brightness == Brightness.dark;
     final scheme = ColorScheme.fromSeed(
-      seedColor: AppPalette.primary,
+      seedColor: accentColors[accent]!,
       brightness: brightness,
       dynamicSchemeVariant: DynamicSchemeVariant.tonalSpot,
     );
@@ -58,7 +95,7 @@ abstract final class AppTheme {
       brightness: brightness,
       colorScheme: scheme,
       scaffoldBackgroundColor: isDark
-          ? AppPalette.darkCanvas
+          ? darkCanvases[canvas]!
           : AppPalette.lightCanvas,
       extensions: [
         NirangSemanticColors(
@@ -112,7 +149,7 @@ abstract final class AppTheme {
         contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 1),
       ),
       navigationBarTheme: NavigationBarThemeData(
-        height: 66,
+        height: 74,
         indicatorShape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(10),
         ),
@@ -162,7 +199,10 @@ abstract final class NirangVisualEffects {
     required bool reducedEffects,
   }) {
     final background = theme.scaffoldBackgroundColor;
-    if (reducedEffects) return BoxDecoration(color: background);
+    if (reducedEffects ||
+        (theme.brightness == Brightness.dark && background == Colors.black)) {
+      return BoxDecoration(color: background);
+    }
 
     final scheme = theme.colorScheme;
     if (theme.brightness == Brightness.dark) {

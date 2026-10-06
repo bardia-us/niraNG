@@ -91,6 +91,8 @@ object SubscriptionParser {
                 "mldsa65Verify" to "pqv",
             )
                 .forEach { (target, source) -> json.optString(source).takeIf(String::isNotBlank)?.let { put(target, it) } }
+            (json.optString("echConfigList").takeIf(String::isNotBlank)
+                ?: json.optString("ech").takeIf(String::isNotBlank))?.let { put("echConfigList", it) }
         }
         return server(json.optString("ps", "Server").ifBlank { "Server" }, "vmess", normalizedHost(json.getString("add")), json.optString("port").toIntOrNull() ?: json.optInt("port", 443), json.getString("id"), json.optString("net", "tcp"), json.optString("tls", "none").ifBlank { "none" }, parameters)
     }

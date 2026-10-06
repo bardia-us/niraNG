@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
-import 'package:liquid_glass_renderer/liquid_glass_renderer.dart';
 
 import 'core/localization/app_strings.dart';
 import 'core/diagnostics.dart';
@@ -13,6 +12,7 @@ import 'core/platform/native_models.dart';
 import 'core/platform/nirang_native.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/app_scroll_behavior.dart';
+import 'core/widgets/live_liquid_glass.dart';
 import 'features/vpn/app_controller.dart';
 import 'features/vpn/app_shell.dart';
 import 'features/registration/registration_bootstrap.dart';
@@ -44,9 +44,19 @@ Future<void> main() async {
       ),
     ),
   );
-  await precacheLiquidGlassShaders();
   runApp(
-    const ProviderScope(child: NirangRegistrationBootstrap(child: NirangApp())),
+    ProviderScope(
+      child: Consumer(
+        builder: (context, ref, child) => NirangRegistrationBootstrap(
+          prepareApp: () => ref.read(appControllerProvider.future).then((_) {}),
+          child: child!,
+        ),
+        child: const NirangApp(),
+      ),
+    ),
+  );
+  WidgetsBinding.instance.addPostFrameCallback(
+    (_) => unawaited(prepareLiveGlass()),
   );
 }
 
@@ -76,6 +86,8 @@ class NirangApp extends ConsumerWidget {
           themeMode: settings.themeModeValue,
           language: settings.language,
           performanceMode: settings.performanceMode,
+          accentColor: settings.accentColor,
+          darkCanvas: settings.darkCanvas,
         );
       }),
     );
@@ -84,12 +96,18 @@ class NirangApp extends ConsumerWidget {
       navigatorObservers: [nirangRouteObserver],
       title: 'niraNG',
       debugShowCheckedModeBanner: false,
-      theme: appearance.performanceMode
-          ? AppTheme.lightPerformance
-          : AppTheme.light,
-      darkTheme: appearance.performanceMode
-          ? AppTheme.darkPerformance
-          : AppTheme.dark,
+      theme: AppTheme.forSettings(
+        brightness: Brightness.light,
+        reducedEffects: appearance.performanceMode,
+        accentColor: appearance.accentColor,
+        darkCanvas: appearance.darkCanvas,
+      ),
+      darkTheme: AppTheme.forSettings(
+        brightness: Brightness.dark,
+        reducedEffects: appearance.performanceMode,
+        accentColor: appearance.accentColor,
+        darkCanvas: appearance.darkCanvas,
+      ),
       themeMode: appearance.themeMode,
       themeAnimationDuration: Duration(
         milliseconds: appearance.performanceMode ? 70 : 120,

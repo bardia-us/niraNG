@@ -15,6 +15,12 @@ class ServerInfo {
     required this.selected,
     required this.status,
     this.sni = '',
+    this.fingerprint = '',
+    this.cipherSuites = '',
+    this.finalMask = '',
+    this.alpn = '',
+    this.allowInsecure = false,
+    this.profileEditable = false,
     this.credentialLabel = '',
     this.credentialMasked = '',
     this.realityPublicKeyMasked = '',
@@ -31,6 +37,12 @@ class ServerInfo {
     security: '${map['security'] ?? ''}',
     port: _int(map['port']) ?? 0,
     sni: '${map['sni'] ?? ''}',
+    fingerprint: '${map['fingerprint'] ?? ''}',
+    cipherSuites: '${map['cipherSuites'] ?? ''}',
+    finalMask: '${map['finalMask'] ?? ''}',
+    alpn: '${map['alpn'] ?? ''}',
+    allowInsecure: map['allowInsecure'] == true,
+    profileEditable: map['profileEditable'] == true,
     credentialLabel: '${map['credentialLabel'] ?? ''}',
     credentialMasked: '${map['credentialMasked'] ?? ''}',
     realityPublicKeyMasked: '${map['realityPublicKeyMasked'] ?? ''}',
@@ -48,6 +60,8 @@ class ServerInfo {
   final String security;
   final int port;
   final String sni;
+  final String fingerprint, cipherSuites, finalMask, alpn;
+  final bool allowInsecure, profileEditable;
   final String credentialLabel;
   final String credentialMasked;
   final String realityPublicKeyMasked;
@@ -70,6 +84,12 @@ class ServerInfo {
     security: security,
     port: port,
     sni: sni,
+    fingerprint: fingerprint,
+    cipherSuites: cipherSuites,
+    finalMask: finalMask,
+    alpn: alpn,
+    allowInsecure: allowInsecure,
+    profileEditable: profileEditable,
     credentialLabel: credentialLabel,
     credentialMasked: credentialMasked,
     realityPublicKeyMasked: realityPublicKeyMasked,
@@ -159,6 +179,20 @@ class SubscriptionUsage {
 }
 
 class NativeSettings {
+  static const accentColors = {
+    'purple',
+    'blue',
+    'teal',
+    'green',
+    'orange',
+    'rose',
+  };
+  static const darkCanvases = {'midnight', 'graphite', 'oled'};
+  static const feedbackModes = {'haptic', 'sound', 'off'};
+
+  static String _choice(Object? value, Set<String> choices, String fallback) =>
+      value is String && choices.contains(value) ? value : fallback;
+
   const NativeSettings({
     this.connectionMode = 'vpn',
     this.routingMode = 'bypassIran',
@@ -192,8 +226,11 @@ class NativeSettings {
     this.autoUpdate = true,
     this.updateIntervalHours = 12,
     this.themeMode = 'system',
+    this.accentColor = 'purple',
+    this.darkCanvas = 'midnight',
+    this.feedbackMode = 'haptic',
     this.language = 'en',
-    this.performanceMode = false,
+    this.performanceMode = true,
     this.performanceModePrompted = false,
     this.autoConnect = false,
     this.perAppMode = 'all',
@@ -244,8 +281,11 @@ class NativeSettings {
     autoUpdate: map['autoUpdate'] != false,
     updateIntervalHours: _int(map['updateIntervalHours']) ?? 12,
     themeMode: '${map['themeMode'] ?? 'system'}',
+    accentColor: _choice(map['accentColor'], accentColors, 'purple'),
+    darkCanvas: _choice(map['darkCanvas'], darkCanvases, 'midnight'),
+    feedbackMode: _choice(map['feedbackMode'], feedbackModes, 'haptic'),
     language: '${map['language'] ?? 'en'}',
-    performanceMode: map['performanceMode'] == true,
+    performanceMode: map['performanceMode'] != false,
     performanceModePrompted: map['performanceModePrompted'] == true,
     autoConnect: map['autoConnect'] == true,
     perAppMode: '${map['perAppMode'] ?? 'all'}',
@@ -297,6 +337,9 @@ class NativeSettings {
   final bool autoUpdate;
   final int updateIntervalHours;
   final String themeMode;
+  final String accentColor;
+  final String darkCanvas;
+  final String feedbackMode;
   final String language;
   final bool performanceMode;
   final bool performanceModePrompted;
@@ -359,6 +402,13 @@ class NativeSettings {
       autoUpdate: boolValue('autoUpdate', autoUpdate),
       updateIntervalHours: intValue('updateIntervalHours', updateIntervalHours),
       themeMode: stringValue('themeMode', themeMode),
+      accentColor: _choice(values['accentColor'], accentColors, accentColor),
+      darkCanvas: _choice(values['darkCanvas'], darkCanvases, darkCanvas),
+      feedbackMode: _choice(
+        values['feedbackMode'],
+        feedbackModes,
+        feedbackMode,
+      ),
       language: stringValue('language', language),
       performanceMode: boolValue('performanceMode', performanceMode),
       performanceModePrompted: boolValue(
@@ -441,6 +491,8 @@ class AppSnapshot {
     this.whatsNewUpgradeFromBuild = 0,
     this.subscriptionConfigured = false,
     this.telegramEligible = false,
+    this.telegramStage = 'first',
+    this.hasCompletedPing = false,
     this.subscriptionError,
     this.isRefreshing = false,
     this.isPinging = false,
@@ -461,6 +513,9 @@ class AppSnapshot {
   final int whatsNewUpgradeFromBuild;
   final bool subscriptionConfigured;
   final bool telegramEligible;
+  final String telegramStage;
+  // Session-local: cached server latency is not a newly completed ping.
+  final bool hasCompletedPing;
   final String? subscriptionError;
   final bool isRefreshing;
   final bool isPinging;
@@ -488,6 +543,8 @@ class AppSnapshot {
     int? whatsNewUpgradeFromBuild,
     bool? subscriptionConfigured,
     bool? telegramEligible,
+    String? telegramStage,
+    bool? hasCompletedPing,
     String? subscriptionError,
     bool clearSubscriptionError = false,
     bool? isRefreshing,
@@ -511,6 +568,8 @@ class AppSnapshot {
     subscriptionConfigured:
         subscriptionConfigured ?? this.subscriptionConfigured,
     telegramEligible: telegramEligible ?? this.telegramEligible,
+    telegramStage: telegramStage ?? this.telegramStage,
+    hasCompletedPing: hasCompletedPing ?? this.hasCompletedPing,
     subscriptionError: clearSubscriptionError
         ? null
         : subscriptionError ?? this.subscriptionError,

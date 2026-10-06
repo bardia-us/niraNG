@@ -7,6 +7,7 @@ import '../../core/platform/native_models.dart';
 import '../../core/platform/nirang_native.dart';
 import '../../core/registration/device_registration.dart';
 import '../../core/async_operation_guard.dart';
+import '../../core/interaction_feedback.dart';
 import '../../core/user_facing_error.dart';
 import '../servers/server_sorting.dart';
 
@@ -17,7 +18,7 @@ final appControllerProvider = AsyncNotifierProvider<AppController, AppSnapshot>(
 final performanceModeProvider = Provider<bool>(
   (ref) => ref.watch(
     appControllerProvider.select(
-      (value) => value.asData?.value.settings.performanceMode ?? false,
+      (value) => value.asData?.value.settings.performanceMode ?? true,
     ),
   ),
 );
@@ -29,6 +30,13 @@ class AppController extends AsyncNotifier<AppSnapshot> {
   Timer? _noticeTimer;
   int _noticeRevision = 0;
   final _operationGuard = AsyncOperationGuard();
+  Future<void> _serverMutationTail = Future<void>.value();
+  final Map<String, int> _pingRevisions = {};
+  Map<String, int>? _activeServerPingRevisions;
+  final _ipClock = Stopwatch()..start();
+  int? _lastIpRequest;
+  int _connectionRevision = 0;
+  String? _connectedProbeId;
 
   @override
   Future<AppSnapshot> build() async {
@@ -48,6 +56,47 @@ class AppController extends AsyncNotifier<AppSnapshot> {
   }
 
   AppSnapshot? get _current => state.asData?.value;
+
+  Future<void> refreshPublicIp() =>
+      _operationGuard.run('refreshPublicIp', () async {
+        final previous = _current?.connection;
+        final now = _ipClock.elapsedMilliseconds;
+        if (previous == null ||
+            !previous.isConnected ||
+            !previous.publicIpChecked ||
+            (_lastIpRequest != null && now - _lastIpRequest! < 5000)) {
+          return;
+        }
+        _lastIpRequest = now;
+        final revision = _connectionRevision;
+        _set(
+          (value) => value.copyWith(
+            connection: ConnectionInfo(
+              state: previous.state,
+              serverId: previous.serverId,
+              serverName: previous.serverName,
+              error: previous.error,
+            ),
+          ),
+        );
+        try {
+          final accepted = await NirangNative.refreshPublicIp();
+          if (!accepted) _restoreIp(previous, revision);
+        } catch (_) {
+          _restoreIp(previous, revision);
+          rethrow;
+        }
+      });
+
+  void _restoreIp(ConnectionInfo previous, int revision) => _set(
+    (value) =>
+        revision == _connectionRevision &&
+            value.connection.isConnected &&
+            value.connection.serverId == previous.serverId &&
+            !value.connection.publicIpChecked
+        ? value.copyWith(connection: previous)
+        : value,
+  );
 
   void _set(AppSnapshot Function(AppSnapshot value) update) {
     final current = _current;
@@ -89,46 +138,127 @@ class AppController extends AsyncNotifier<AppSnapshot> {
     }
   }
 
-  Future<void> selectServer(String id) async {
-    final servers = await NirangNative.selectServer(id);
-    _set((value) => value.copyWith(servers: _servers(servers)));
+  Future<void> selectServer(String id) {
+    _playInteractionFeedback();
+    return _queueServerMutation(() async {
+      final servers = await NirangNative.selectServer(id);
+      _applyNativeServers(servers);
+    });
   }
 
-  Future<void> reorderServers(int oldIndex, int requestedNewIndex) async {
+  Future<void> updateServerProfile(String id, Map<String, Object?> values) =>
+      _queueServerMutation(() async {
+        _applyNativeServers(await NirangNative.updateServerProfile(id, values));
+      });
+
+  Future<void> reorderServers(int oldIndex, int requestedNewIndex) {
     final current = _current;
     if (current == null || oldIndex < 0 || oldIndex >= current.servers.length) {
-      return;
+      return Future<void>.value();
     }
     final reordered = current.servers.toList();
     final server = reordered.removeAt(oldIndex);
     final newIndex = requestedNewIndex > oldIndex
         ? requestedNewIndex - 1
         : requestedNewIndex;
-    reordered.insert(newIndex.clamp(0, reordered.length).toInt(), server);
-    _set((value) => value.copyWith(servers: List.unmodifiable(reordered)));
+    final insertion = newIndex.clamp(0, reordered.length).toInt();
+    final beforeId = insertion < reordered.length
+        ? reordered[insertion].id
+        : null;
+    // Capture the drag's server/anchor from the visible order. A preceding
+    // failed write may roll back that order before this queued move executes.
+    return _queueServerMutation(() async {
+      final latest = _current?.servers.toList();
+      if (latest == null) return;
+      final source = latest.indexWhere((item) => item.id == server.id);
+      if (source < 0) return;
+      final moved = latest.removeAt(source);
+      final target = latest.indexWhere((item) => item.id == beforeId);
+      latest.insert(target < 0 ? latest.length : target, moved);
+      await _persistServerOrder(latest);
+    });
+  }
+
+  Future<void> sortServersByLatency() => _operationGuard.run(
+    'serverOrder',
+    () => _queueServerMutation(() async {
+      final current = _current;
+      if (current == null || current.servers.length < 2) return;
+      final sorted = sortServersByTestResults(current.servers);
+      if (sorted.indexed.every(
+        (entry) => entry.$2.id == current.servers[entry.$1].id,
+      )) {
+        return;
+      }
+      await _persistServerOrder(sorted);
+    }),
+  );
+
+  // Native selection replies include the stored server order. Keep these writes
+  // sequential so an older reply cannot reset a later order or selection.
+  Future<void> _queueServerMutation(Future<void> Function() operation) {
+    final request = _serverMutationTail.then((_) async {
+      _activeServerPingRevisions = Map.of(_pingRevisions);
+      try {
+        await operation();
+      } finally {
+        _activeServerPingRevisions = null;
+      }
+    });
+    _serverMutationTail = request.then<void>((_) {}, onError: (Object _) {});
+    return request;
+  }
+
+  Future<void> _persistServerOrder(List<ServerInfo> servers) async {
+    final previousIds = _current!.servers.map((server) => server.id).toList();
+    _set((value) => value.copyWith(servers: List.unmodifiable(servers)));
     try {
-      final servers = await NirangNative.reorderServers(
-        reordered.map((item) => item.id).toList(growable: false),
+      _applyNativeServers(
+        await NirangNative.reorderServers(
+          servers.map((server) => server.id).toList(growable: false),
+        ),
       );
-      _set((value) => value.copyWith(servers: _servers(servers)));
     } catch (_) {
-      _set((value) => value.copyWith(servers: current.servers));
+      // Restore only order: newer ping/selection events still belong to the UI.
+      _set((value) {
+        final byId = {for (final server in value.servers) server.id: server};
+        return value.copyWith(
+          servers: [
+            for (final id in previousIds) ?byId.remove(id),
+            ...byId.values,
+          ],
+        );
+      });
       rethrow;
     }
   }
 
-  Future<void> sortServersByLatency() =>
-      _operationGuard.run('serverOrder', () async {
-        final current = _current;
-        if (current == null || current.servers.length < 2) return;
-        final sorted = sortServersByTestResults(current.servers);
-        if (sorted.indexed.every(
-          (entry) => entry.$2.id == current.servers[entry.$1].id,
-        )) {
-          return;
-        }
-        _set((value) => value.copyWith(servers: sorted));
-      });
+  void _applyNativeServers(dynamic data) {
+    final requestedRevisions = _activeServerPingRevisions;
+    _set((value) {
+      final current = {for (final server in value.servers) server.id: server};
+      return value.copyWith(
+        servers: [
+          for (final server in _servers(data))
+            if (requestedRevisions != null &&
+                (_pingRevisions[server.id] ?? 0) !=
+                    (requestedRevisions[server.id] ?? 0) &&
+                current.containsKey(server.id))
+              server.copyWith(
+                ping: current[server.id]!.ping,
+                clearPing: current[server.id]!.ping == null,
+                status: current[server.id]!.status,
+              )
+            else
+              server,
+        ],
+      );
+    });
+  }
+
+  void _playInteractionFeedback() => unawaited(
+    InteractionFeedback.play(_current?.settings.feedbackMode ?? 'haptic'),
+  );
 
   Future<void> deleteServer(String id) async {
     final data = await NirangNative.deleteServer(id);
@@ -151,7 +281,10 @@ class AppController extends AsyncNotifier<AppSnapshot> {
     return _number(data['restored']);
   }
 
-  Future<void> connect() => _operationGuard.run('connect', _connect);
+  Future<void> connect() {
+    _playInteractionFeedback();
+    return _operationGuard.run('connect', _connect);
+  }
 
   Future<void> _connect() async {
     final selected = _current?.selectedServer;
@@ -199,8 +332,11 @@ class AppController extends AsyncNotifier<AppSnapshot> {
     }
   }
 
-  Future<void> disconnect() =>
-      _operationGuard.run('disconnect', NirangNative.disconnect);
+  Future<void> disconnect() {
+    _playInteractionFeedback();
+    return _operationGuard.run('disconnect', NirangNative.disconnect);
+  }
+
   Future<void> restartService() =>
       _operationGuard.run('restartService', NirangNative.restartService);
 
@@ -318,7 +454,13 @@ class AppController extends AsyncNotifier<AppSnapshot> {
     final data = event['data'];
     switch (type) {
       case 'connectionState':
+        _connectionRevision++;
+        final previousState = _current?.connection.state;
         var connection = ConnectionInfo.fromMap(_map(data));
+        if (connection.state != previousState ||
+            connection.serverId != _current?.connection.serverId) {
+          _connectedProbeId = null;
+        }
         final selected = _current?.selectedServer;
         if (connection.state == 'error' &&
             selected != null &&
@@ -337,8 +479,18 @@ class AppController extends AsyncNotifier<AppSnapshot> {
             ),
           );
         }
-        _set((value) => value.copyWith(connection: connection));
-        if (connection.state == 'connected') {
+        _set(
+          (value) => value.copyWith(
+            connection: connection,
+            hasCompletedPing:
+                connection.isConnected &&
+                    previousState == 'connected' &&
+                    connection.serverId == value.connection.serverId
+                ? value.hasCompletedPing
+                : false,
+          ),
+        );
+        if (connection.state == 'connected' && previousState != 'connected') {
           _showNotice('Service started successfully', NoticeTone.success);
         } else if (connection.state == 'error') {
           _showNotice(
@@ -347,12 +499,28 @@ class AppController extends AsyncNotifier<AppSnapshot> {
           );
         }
       case 'servers':
-        _set((value) => value.copyWith(servers: _servers(data)));
+        _applyNativeServers(data);
       case 'serverPing':
         final update = _map(data);
         final id = '${update['id'] ?? ''}';
+        final probeId = update['probeId']?.toString();
+        final status = '${update['status'] ?? 'idle'}';
+        final connection = _current?.connection;
+        final matchesConnection =
+            connection?.isConnected == true && connection?.serverId == id;
+        if (status == 'testing' && matchesConnection && probeId != null) {
+          _connectedProbeId = probeId;
+        }
+        final completedConnectedProbe =
+            matchesConnection &&
+            probeId != null &&
+            probeId == _connectedProbeId &&
+            (status == 'success' || status == 'timeout');
+        if (completedConnectedProbe) _connectedProbeId = null;
+        _pingRevisions[id] = (_pingRevisions[id] ?? 0) + 1;
         _set(
           (value) => value.copyWith(
+            hasCompletedPing: value.hasCompletedPing || completedConnectedProbe,
             servers: [
               for (final server in value.servers)
                 if (server.id == id)
@@ -393,7 +561,9 @@ class AppController extends AsyncNotifier<AppSnapshot> {
       case 'updateRequired':
         markDeviceUpdateRequired();
       case 'pingCompleted':
+        _set((value) => value.copyWith(isPinging: false));
       case 'pingCancelled':
+        _connectedProbeId = null;
         _set((value) => value.copyWith(isPinging: false));
     }
   }
@@ -412,6 +582,7 @@ class AppController extends AsyncNotifier<AppSnapshot> {
     whatsNewUpgradeFromBuild: _number(map['whatsNewUpgradeFromBuild']),
     subscriptionConfigured: map['subscriptionConfigured'] == true,
     telegramEligible: map['telegramEligible'] == true,
+    telegramStage: '${map['telegramStage'] ?? 'first'}',
     subscriptionError: map['subscriptionError']?.toString(),
     deletedServerCount: _number(map['deletedServerCount']),
   );

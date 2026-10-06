@@ -5,15 +5,15 @@ internal enum class QuickSettingsConnectAction {
     OPEN_APP_FOR_PREREQUISITES,
 }
 
-/** Keeps a fresh-install tile tap out of VpnService until every Android/app prerequisite exists. */
+/** Notification visibility is optional; app and VPN consent are mandatory. */
 internal object QuickSettingsConnectPolicy {
     fun action(
         hasServer: Boolean,
         hasRegistrationConsent: Boolean,
         hasVpnPermission: Boolean,
-        hasNotificationPermission: Boolean,
+        @Suppress("UNUSED_PARAMETER") hasNotificationPermission: Boolean,
     ): QuickSettingsConnectAction = if (
-        hasServer && hasRegistrationConsent && hasVpnPermission && hasNotificationPermission
+        hasServer && hasRegistrationConsent && hasVpnPermission
     ) {
         QuickSettingsConnectAction.CONNECT_DIRECTLY
     } else {

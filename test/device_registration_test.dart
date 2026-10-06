@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
@@ -7,6 +8,109 @@ import 'package:nirang/core/localization/app_strings.dart';
 import 'package:nirang/features/registration/registration_bootstrap.dart';
 
 void main() {
+  testWidgets(
+    'a successful local preload cannot bypass a later administrator denial',
+    (tester) async {
+      final verification = Completer<void>();
+      final coordinator = _FakeCoordinator()
+        ..accepted = true
+        ..pendingVerification = verification.future;
+      await tester.pumpWidget(
+        ProviderScope(
+          child: NirangRegistrationBootstrap(
+            coordinator: coordinator,
+            prepareApp: () async {},
+            child: const MaterialApp(home: Text('HOME_READY')),
+          ),
+        ),
+      );
+      await tester.pump();
+      coordinator.blocked = true;
+      verification.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('HOME_READY'), findsNothing);
+      expect(find.text('Access blocked'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+  testWidgets(
+    'saved app data finishes before background access verification starts',
+    (tester) async {
+      final verification = Completer<void>();
+      final preparation = Completer<void>();
+      var preparations = 0;
+      final coordinator = _FakeCoordinator()
+        ..accepted = true
+        ..pendingVerification = verification.future;
+      await tester.pumpWidget(
+        NirangRegistrationBootstrap(
+          coordinator: coordinator,
+          prepareApp: () {
+            preparations++;
+            return preparation.future;
+          },
+          child: const MaterialApp(home: Text('HOME_READY')),
+        ),
+      );
+      await tester.pump();
+      expect(preparations, 1);
+      expect(coordinator.verifications, 0);
+      expect(find.text('HOME_READY'), findsNothing);
+      verification.complete();
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('Loading saved settings'), findsOneWidget);
+      expect(find.text('HOME_READY'), findsNothing);
+      preparation.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('HOME_READY'), findsOneWidget);
+      expect(coordinator.verifications, 1);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('startup preparation never runs before registration consent', (
+    tester,
+  ) async {
+    var preparations = 0;
+    await tester.pumpWidget(
+      ProviderScope(
+        child: NirangRegistrationBootstrap(
+          coordinator: _FakeCoordinator(),
+          prepareApp: () async => preparations++,
+          child: const MaterialApp(home: Text('HOME_READY')),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(preparations, 0);
+    expect(find.text('HOME_READY'), findsNothing);
+    expect(find.text('Accept & Continue'), findsOneWidget);
+  });
+  testWidgets(
+    'slow remote access check no longer holds local Home in loading',
+    (tester) async {
+      final verification = Completer<void>();
+      final coordinator = _FakeCoordinator()
+        ..accepted = true
+        ..pendingVerification = verification.future;
+      await tester.pumpWidget(
+        NirangRegistrationBootstrap(
+          coordinator: coordinator,
+          child: const MaterialApp(home: Text('HOME_READY')),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('HOME_READY'), findsOneWidget);
+      expect(find.text('Checking device access'), findsNothing);
+      await tester.pump(const Duration(seconds: 5));
+      expect(find.text('HOME_READY'), findsOneWidget);
+      verification.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('HOME_READY'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
   tearDown(() {
     clearDeviceAccessBlocked();
     clearDeviceUpdateRequired();
@@ -180,6 +284,7 @@ final class _FakeCoordinator implements DeviceRegistrationCoordinator {
   bool outdated = false;
   bool verificationUnavailable = false;
   int verifications = 0;
+  Future<void>? pendingVerification;
 
   @override
   Future<bool> initialize() async {
@@ -195,6 +300,7 @@ final class _FakeCoordinator implements DeviceRegistrationCoordinator {
   @override
   Future<void> verifyAccess() async {
     verifications++;
+    await pendingVerification;
     if (blocked) {
       throw PlatformException(
         code: 'blocked',

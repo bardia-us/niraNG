@@ -10,5 +10,7 @@ internal class ConnectionOperationGate {
 
     fun cancel(): Long = generation.incrementAndGet()
 
+    fun current(): Long = generation.get()
+
     fun isCurrent(token: Long): Boolean = generation.get() == token
 }

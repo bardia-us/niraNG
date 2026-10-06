@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.net.VpnService
 import android.os.Build
 import dev.nirang.client.bridge.NirangBridge
+import dev.nirang.client.feedback.InteractionSound
 import dev.nirang.client.logs.SafeLog
 import dev.nirang.client.model.ConnectionState
 import dev.nirang.client.registration.DeviceRegistrationManager
@@ -20,6 +21,8 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     private var bridge: NirangBridge? = null
+    private var interactionSound: InteractionSound? = null
+    private var feedbackChannel: MethodChannel? = null
     private var pendingServerId: String? = null
     private var pendingResult: MethodChannel.Result? = null
     private var pendingTileConnection = false
@@ -65,6 +68,25 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         bridge = NirangBridge(this, flutterEngine, ::requestVpnPermission)
+        interactionSound = runCatching { InteractionSound(this) }.getOrNull()
+        feedbackChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dev.nirang.client/feedback").also { channel ->
+            channel.setMethodCallHandler { call, result ->
+                if (call.method == "play") {
+                    // Feedback never delays or fails the action that requested it.
+                    if (NativeSettings(this).feedbackMode == "sound") {
+                        runCatching { interactionSound?.play() }
+                    }
+                    result.success(null)
+                } else if (call.method == "playNavigation") {
+                    if (NativeSettings(this).feedbackMode != "off") {
+                        runCatching { interactionSound?.playNavigation() }
+                    }
+                    result.success(null)
+                } else {
+                    result.notImplemented()
+                }
+            }
+        }
     }
 
     override fun onDestroy() {
@@ -75,6 +97,10 @@ class MainActivity : FlutterActivity() {
         }
         bridge?.dispose()
         bridge = null
+        feedbackChannel?.setMethodCallHandler(null)
+        feedbackChannel = null
+        interactionSound?.release()
+        interactionSound = null
         super.onDestroy()
     }
 

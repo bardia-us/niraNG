@@ -1,20 +1,26 @@
 import 'package:flutter/material.dart';
 
 import 'glass_surface.dart';
+import 'menu_activity.dart';
 
 Future<T?> showNirangDialog<T>({
   required BuildContext context,
   required WidgetBuilder builder,
   bool barrierDismissible = true,
   Color barrierColor = Colors.transparent,
+  VoidCallback? onShown,
 }) => showGeneralDialog<T>(
   context: context,
   barrierDismissible: barrierDismissible,
   barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
   barrierColor: barrierColor,
   transitionDuration: const Duration(milliseconds: 130),
-  pageBuilder: (dialogContext, _, _) =>
-      _PrimedDialogEntrance(child: builder(dialogContext)),
+  pageBuilder: (dialogContext, _, _) => MenuActivityScope(
+    child: _PrimedDialogEntrance(
+      onShown: onShown,
+      child: builder(dialogContext),
+    ),
+  ),
   transitionBuilder: (context, animation, secondaryAnimation, child) {
     // Keep the route painted while opening so LiquidGlass can register its
     // geometry before the first visible frame. Only the exit uses the route
@@ -28,9 +34,10 @@ Future<T?> showNirangDialog<T>({
 );
 
 class _PrimedDialogEntrance extends StatefulWidget {
-  const _PrimedDialogEntrance({required this.child});
+  const _PrimedDialogEntrance({required this.child, this.onShown});
 
   final Widget child;
+  final VoidCallback? onShown;
 
   @override
   State<_PrimedDialogEntrance> createState() => _PrimedDialogEntranceState();
@@ -52,6 +59,9 @@ class _PrimedDialogEntranceState extends State<_PrimedDialogEntrance> {
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted) return;
     setState(() => _glassReady = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) widget.onShown?.call();
+    });
   }
 
   @override
@@ -69,6 +79,7 @@ class NirangAlertDialog extends StatelessWidget {
     this.content,
     this.actions = const [],
     this.contentPadding = const EdgeInsets.fromLTRB(22, 14, 22, 8),
+    this.scrollContent = true,
   });
 
   final Widget? icon;
@@ -76,17 +87,19 @@ class NirangAlertDialog extends StatelessWidget {
   final Widget? content;
   final List<Widget> actions;
   final EdgeInsetsGeometry contentPadding;
+  final bool scrollContent;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final maxHeight = MediaQuery.sizeOf(context).height * .78;
+    final maxHeight = MediaQuery.sizeOf(context).height * .86;
     return Dialog(
       elevation: 0,
       backgroundColor: Colors.transparent,
       surfaceTintColor: Colors.transparent,
       insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
       child: GlassSurface(
+        messageSurface: true,
         radius: 28,
         blur: GlassSurface.liquidBlur,
         child: ConstrainedBox(
@@ -124,15 +137,29 @@ class NirangAlertDialog extends StatelessWidget {
                 ),
               if (content != null)
                 Flexible(
-                  child: SingleChildScrollView(
-                    padding: contentPadding,
-                    child: DefaultTextStyle(
-                      style: theme.textTheme.bodyMedium!.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                      child: content!,
-                    ),
-                  ),
+                  child: scrollContent
+                      ? SingleChildScrollView(
+                          // The app's bouncing list physics can move even a
+                          // zero-extent form. Clamp here: only real overflow
+                          // scrolls, including when the keyboard takes space.
+                          physics: const ClampingScrollPhysics(),
+                          padding: contentPadding,
+                          child: DefaultTextStyle(
+                            style: theme.textTheme.bodyMedium!.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                            child: content!,
+                          ),
+                        )
+                      : Padding(
+                          padding: contentPadding,
+                          child: DefaultTextStyle(
+                            style: theme.textTheme.bodyMedium!.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                            child: content!,
+                          ),
+                        ),
                 ),
               if (actions.isNotEmpty)
                 Padding(
