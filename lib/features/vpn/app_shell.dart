@@ -74,6 +74,15 @@ class _AppShellState extends ConsumerState<AppShell> {
     _activatePage(value);
   }
 
+  bool _isPageVisible(int index) {
+    if (!_pageController.hasClients) return index == _index;
+    final page = _pageController.page;
+    // PageView uses full-width pages. Keep BOTH partially visible pages live,
+    // including the intermediate page when Home -> Settings skips a tab.
+    // Read current scroll metrics, not _index (which changes before animation).
+    return page == null ? index == _index : (page - index).abs() < 1;
+  }
+
   void _activatePage(int value) {
     NirangDiagnostics.currentFeature = const [
       'home',
@@ -379,6 +388,7 @@ class _AppShellState extends ConsumerState<AppShell> {
                               key: ValueKey(index),
                               child: glass.GlassMotionSync(
                                 motion: _pageController,
+                                shouldRefresh: () => _isPageVisible(index),
                                 child: IgnorePointer(
                                   ignoring: index != _index,
                                   child: pages[index],

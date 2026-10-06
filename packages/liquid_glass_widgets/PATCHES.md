@@ -63,3 +63,23 @@ The upstream precache loader can report errors yet complete normally. niraNG
 uses this to select the shader-free fallback after failure/timeout instead of
 mistaking initialization completion for a usable premium renderer. Material
 settings, rendering algorithms and shaders remain the sandbox recipe.
+
+## Visible-page motion and shared trigger backdrops (2026-10-07)
+
+`GlassMotionSync.shouldRefresh` is an optional per-motion predicate. niraNG
+uses the live fractional page offset to keep both intersecting pages refreshed
+before paint, while avoiding traversal of invisible retained pages. Hidden
+Offstage descendants are also skipped. No material settings or shaders change.
+
+`GlassMenu.useGlassTriggerFade` defaults to false to retain plain-trigger
+behavior. niraNG opts in for materialize-aware GlassIconButton triggers: the
+outer Opacity is removed because the backdrop group's safety check excludes
+even fully opaque RenderOpacity ancestors. The existing material visibility
+channel fades glass; its content channel retains the previous combined fade.
+Hidden trigger semantics are excluded explicitly. Keyboard focus rings fade
+through paint alpha rather than a new save-layer, and return on menu close.
+
+Tests reproduce the former group exclusion, hidden-tree traversal and focus/
+semantics regressions. Widget tests establish eligibility, not actual GPU
+pass count or device FPS. See docs/performance/2026-10-07-glass-motion.md in
+the host project for deferred profiling and light-mode blur follow-up.

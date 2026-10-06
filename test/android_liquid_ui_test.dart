@@ -9,21 +9,158 @@ import 'package:nirang/core/widgets/glass_surface.dart';
 import 'package:nirang/core/widgets/liquid_controls.dart';
 import 'package:nirang/core/widgets/live_liquid_glass.dart';
 import 'package:nirang/core/update_checker.dart';
+import 'package:nirang/core/theme/app_theme.dart';
 import 'package:nirang/features/vpn/app_controller.dart';
 
 class _Controller extends AppController {
-  _Controller({this.feedbackMode = 'haptic'});
+  _Controller({this.feedbackMode = 'haptic', this.performanceMode = false});
   final String feedbackMode;
+  final bool performanceMode;
   @override
   Future<AppSnapshot> build() async => AppSnapshot(
     settings: NativeSettings(
       feedbackMode: feedbackMode,
-      performanceMode: false,
+      performanceMode: performanceMode,
     ),
   );
 }
 
 void main() {
+  for (final (brightness, performanceMode) in [
+    (Brightness.light, false),
+    (Brightness.light, true),
+    (Brightness.dark, false),
+    (Brightness.dark, true),
+  ]) {
+    testWidgets(
+      'server actions fit the compact row as a circle ($brightness, performance=$performanceMode)',
+      (tester) async {
+        liveGlassReadyListenable.value = true;
+        var selected = 0;
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              appControllerProvider.overrideWith(
+                () => _Controller(
+                  feedbackMode: 'off',
+                  performanceMode: performanceMode,
+                ),
+              ),
+            ],
+            child: MaterialApp(
+              theme: brightness == Brightness.dark
+                  ? (performanceMode ? AppTheme.darkPerformance : AppTheme.dark)
+                  : (performanceMode
+                        ? AppTheme.lightPerformance
+                        : AppTheme.light),
+              home: Scaffold(
+                body: glass.GlassBackdropGroup(
+                  child: Center(
+                    child: ListTile(
+                      title: const Text('Server'),
+                      subtitle: const Text('VLESS TCP'),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text('120 ms'),
+                          const SizedBox(width: 10),
+                          LiquidActionMenu<int>(
+                            serverActions: true,
+                            tooltip: 'Server actions',
+                            fallback: const Text('Fallback'),
+                            onSelected: (_) => selected++,
+                            items: const [
+                              LiquidActionItem(
+                                value: 1,
+                                label: 'Select server',
+                                icon: Icons.check,
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final button = tester.widget<glass.GlassButton>(
+          find.byType(glass.GlassButton),
+        );
+        expect(button.width, button.height);
+        expect(button.shape, isA<glass.LiquidOval>());
+        expect(button.stretch, 0);
+        expect(button.interactionScale, 1);
+        expect(button.useOwnLayer, isTrue);
+        expect(button.quality, glass.GlassQuality.premium);
+        final lens = find.descendant(
+          of: find.byType(glass.GlassButton),
+          matching: find.byType(glass.AdaptiveGlass),
+        );
+        final lensSize = tester.getSize(lens);
+        expect(
+          lensSize.width,
+          closeTo(lensSize.height, .01),
+          reason: 'Compact server rows must not flatten the actual glass lens',
+        );
+        expect(lensSize.width, lessThanOrEqualTo(44));
+        expect(lensSize, const Size(40, 40));
+        final menu = tester.widget<glass.GlassMenu>(
+          find.byType(glass.GlassMenu),
+        );
+        expect(menu.settings!.effectiveBlur, greaterThanOrEqualTo(6));
+        expect(menu.settings!.effectiveFrost, 0);
+        await tester.tap(find.byTooltip('Server actions'));
+        await tester.pumpAndSettle();
+        expect(find.text('Select server'), findsOneWidget);
+        await tester.tap(find.text('Select server'));
+        await tester.pumpAndSettle();
+        expect(selected, 1);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+  for (final performanceMode in [false, true]) {
+    test(
+      'light panels use continuous blur without sharp ghost rows (performance=$performanceMode)',
+      () {
+        final settings = liquidSurfaceSettings(
+          Brightness.light,
+          performanceMode: performanceMode,
+        );
+        expect(settings.effectiveBlur, greaterThanOrEqualTo(6));
+        expect(settings.effectiveFrost, 0);
+        expect(settings.blurWeight, 1);
+        expect(settings.frostClamp, 0);
+        final control = liquidControlSettings(
+          Brightness.light,
+          performanceMode: performanceMode,
+        );
+        // The fix must not change the approved button or curved lens recipe.
+        expect(settings.glassColor, control.glassColor);
+        expect(settings.bodyMode, control.bodyMode);
+        expect(settings.lensModel, control.lensModel);
+        expect(settings.thickness, control.thickness);
+        expect(settings.refractiveIndex, control.refractiveIndex);
+        expect(settings.rimLight, control.rimLight);
+        expect(control.effectiveFrost, greaterThan(0));
+        expect(control.blur, 0);
+        expect(
+          liquidMessageSettings(
+            Brightness.light,
+            performanceMode: performanceMode,
+          ),
+          settings,
+        );
+        if (!performanceMode) {
+          expect(GlassSurface.settingsFor(Brightness.light), settings);
+        }
+      },
+    );
+  }
   test(
     'large dark message material narrows highlights without smoking the body or changing controls',
     () {
@@ -303,9 +440,11 @@ void main() {
   testWidgets('this build carries genuine bilingual release notes offline', (
     tester,
   ) async {
-    final notes = await const GitHubUpdateChecker().releaseNotes('1.2.0');
+    final notes = await const GitHubUpdateChecker().releaseNotes('1.2.1');
     expect(notes.english, contains('Liquid Glass'));
-    expect(notes.persian, contains('لرزش'));
+    expect(notes.persian, contains('بلور پیوسته'));
+    expect(notes.english, contains('1.2.1'));
+    expect(notes.english, contains('stay circular'));
     expect(notes.english, isNot(contains('## فارسی')));
   });
 }

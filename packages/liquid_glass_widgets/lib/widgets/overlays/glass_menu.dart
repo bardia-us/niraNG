@@ -105,6 +105,11 @@ class GlassMenu extends StatefulWidget {
   final Widget Function(BuildContext context, VoidCallback toggleMenu)?
       triggerBuilder;
 
+  /// Fade a materialize-aware glass trigger through its material instead of
+  /// an enclosing Opacity layer. Keeps shared backdrop reads available.
+  /// Leave false for plain triggers that do not consume GlassMaterializeScope.
+  final bool useGlassTriggerFade;
+
   /// The list of items to display in the menu.
   ///
   /// Typically contains [GlassMenuItem] and [GlassMenuDivider].
@@ -301,6 +306,7 @@ class GlassMenu extends StatefulWidget {
     super.key,
     this.trigger,
     this.triggerBuilder,
+    this.useGlassTriggerFade = false,
     required this.items,
     this.menuAlignment,
     this.autoAdjustToScreen = false,

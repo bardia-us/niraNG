@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as glass;
 import 'package:nirang/core/interaction_feedback.dart';
 import 'package:nirang/core/localization/app_strings.dart';
 import 'package:nirang/core/platform/native_models.dart';
@@ -17,6 +18,9 @@ import 'package:nirang/core/registration/device_registration.dart';
 import 'package:nirang/core/update_checker.dart';
 import 'package:nirang/features/vpn/app_controller.dart';
 import 'package:nirang/features/vpn/app_shell.dart';
+import 'package:nirang/features/vpn/home_screen.dart';
+import 'package:nirang/features/servers/servers_screen.dart';
+import 'package:nirang/features/settings/settings_screen.dart';
 
 class _NavigationController extends AppController {
   _NavigationController({this.feedbackMode = 'off'});
@@ -73,6 +77,49 @@ Future<void> _mountShell(
 }
 
 void main() {
+  testWidgets('pager refreshes only glass on intersecting retained pages', (
+    tester,
+  ) async {
+    await _mountShell(tester);
+    await tester.tap(find.text('Servers').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Settings').last);
+    await tester.pumpAndSettle();
+    glass.GlassMotionSync syncFor(Type page) =>
+        tester.widget<glass.GlassMotionSync>(
+          find.ancestor(
+            of: find.byType(page, skipOffstage: false),
+            matching: find.byType(glass.GlassMotionSync, skipOffstage: false),
+          ),
+        );
+    expect(syncFor(HomeScreen).shouldRefresh?.call(), isFalse);
+    expect(syncFor(ServersScreen).shouldRefresh?.call(), isFalse);
+    expect(syncFor(SettingsScreen).shouldRefresh?.call(), isTrue);
+    await tester.tap(find.text('Servers').last);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 80));
+    expect(syncFor(HomeScreen).shouldRefresh?.call(), isFalse);
+    expect(syncFor(ServersScreen).shouldRefresh?.call(), isTrue);
+    expect(syncFor(SettingsScreen).shouldRefresh?.call(), isTrue);
+    await tester.pumpAndSettle();
+    expect(syncFor(ServersScreen).shouldRefresh?.call(), isTrue);
+    expect(syncFor(SettingsScreen).shouldRefresh?.call(), isFalse);
+    await tester.tap(find.text('Home').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Settings').last);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 40));
+    expect(syncFor(HomeScreen).shouldRefresh?.call(), isTrue);
+    expect(syncFor(ServersScreen).shouldRefresh?.call(), isTrue);
+    expect(syncFor(SettingsScreen).shouldRefresh?.call(), isFalse);
+    await tester.pump(const Duration(milliseconds: 40));
+    expect(syncFor(HomeScreen).shouldRefresh?.call(), isFalse);
+    expect(syncFor(ServersScreen).shouldRefresh?.call(), isTrue);
+    expect(syncFor(SettingsScreen).shouldRefresh?.call(), isTrue);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('startup GitHub request closes its client at seven seconds', (
     tester,
   ) async {

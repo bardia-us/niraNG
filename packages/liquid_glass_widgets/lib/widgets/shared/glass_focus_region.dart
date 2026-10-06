@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import '../../src/renderer/glass_materialize_scope.dart';
 import 'glass_focus_ring_painter.dart';
 
 /// A shared accessibility and focus region for interactive glass widgets.
@@ -322,7 +323,10 @@ class _GlassFocusRegionState extends State<GlassFocusRegion> {
   ///
   /// Shared between interactive and observe mode to eliminate duplication.
   Widget _buildRing(bool isFocused, Widget child) {
-    if (!isFocused || widget.shape == null) return child;
+    final progress = (GlassMaterializeScope.maybeOf(context)?.glassProgress ?? 1.0)
+        .clamp(0.0, 1.0);
+    if (!isFocused || widget.shape == null || progress == 0.0) return child;
+    final color = CupertinoColors.activeBlue.resolveFrom(context);
     return Stack(
       clipBehavior: Clip.none,
       children: [
@@ -331,7 +335,7 @@ class _GlassFocusRegionState extends State<GlassFocusRegion> {
           child: IgnorePointer(
             child: CustomPaint(
               painter: GlassFocusRingPainter(
-                color: CupertinoColors.activeBlue.resolveFrom(context),
+                color: color.withValues(alpha: color.a * progress),
                 shape: widget.shape!,
               ),
             ),

@@ -50,22 +50,23 @@ glass.LiquidGlassSettings liquidSurfaceSettings(
   bool performanceMode = false,
 }) {
   var settings = liquidSettings(brightness);
-  settings = _performanceOptics(settings, performanceMode);
+  settings = _performanceOptics(settings, performanceMode).copyWith(
+    // One continuous native Gaussian feeds the optical shader in both themes.
+    // Replace the interleaved frost/ghost path, which preserves sharp detail;
+    // do not stack another blur pass or change the small-control material.
+    frost: 0,
+    blur: performanceMode ? 6 : 8,
+    frostClamp: 0,
+  );
   if (brightness == ui.Brightness.dark) {
     settings = settings.copyWith(
       bodyMode: glass.GlassBodyMode.clear,
       // Neutral transmission without washing the entire dark canvas grey.
       glassColor: const ui.Color(0x0FFFFFFF),
-      // Use upstream's continuous native Gaussian path for dark panels.
-      // The interleaved frost/ghost path deliberately preserves sharp detail.
-      // Here one blur pass replaces it, not a second stacked blur.
-      frost: 0,
-      blur: performanceMode ? 6 : 8,
-      frostClamp: 0,
       rimShadeEnds: .2,
     );
   }
-  // Light optics and all lens/rim/motion settings stay unchanged.
+  // Light tint and all lens/rim/motion settings stay unchanged.
   return settings;
 }
 

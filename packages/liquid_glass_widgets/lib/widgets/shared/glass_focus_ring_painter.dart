@@ -47,7 +47,7 @@ class GlassFocusRingPainter extends CustomPainter {
     canvas.drawPath(
       path,
       Paint()
-        ..color = color.withValues(alpha: 0.12)
+        ..color = color.withValues(alpha: color.a * 0.12)
         ..style = PaintingStyle.stroke
         ..strokeWidth = _outerGlowWidth
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4.0),
@@ -57,7 +57,7 @@ class GlassFocusRingPainter extends CustomPainter {
     canvas.drawPath(
       path,
       Paint()
-        ..color = color.withValues(alpha: 0.25)
+        ..color = color.withValues(alpha: color.a * 0.25)
         ..style = PaintingStyle.stroke
         ..strokeWidth = _glowWidth
         ..strokeCap = StrokeCap.round,
@@ -67,7 +67,7 @@ class GlassFocusRingPainter extends CustomPainter {
     canvas.drawPath(
       path,
       Paint()
-        ..color = color.withValues(alpha: 0.85)
+        ..color = color.withValues(alpha: color.a * 0.85)
         ..style = PaintingStyle.stroke
         ..strokeWidth = _ringWidth
         ..strokeCap = StrokeCap.round,

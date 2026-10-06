@@ -225,6 +225,7 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
                                                       _Latency(server: server),
                                                       const SizedBox(width: 10),
                                                       LiquidActionMenu<String>(
+                                                        serverActions: true,
                                                         tooltip: context.s(
                                                           'serverActions',
                                                         ),

@@ -353,6 +353,26 @@ class _GlassMenuState extends State<GlassMenu> with TickerProviderStateMixin {
         // a pinned cluster dissolving across a route transition sits inside
         // this wrapper and never saw its fade.
         final outer = GlassMaterializeScope.maybeOf(context);
+        final materializedTrigger = GlassMaterializeScope(
+          glassProgress: triggerOpacity * (outer?.glassProgress ?? 1.0),
+          // Preserve the old combined content fade: the removed enclosing
+          // Opacity contributed another triggerOpacity, but not glass blur.
+          contentOpacity: triggerOpacity *
+              (widget.useGlassTriggerFade ? triggerOpacity : 1.0) *
+              (outer?.contentOpacity ?? 1.0),
+          contentSigma: outer?.contentSigma ?? 0.0,
+          child: ExcludeSemantics(
+            // Opacity(0) previously hid the whole trigger from accessibility.
+            excluding: widget.useGlassTriggerFade &&
+                (triggerOpacity == 0.0 ||
+                    outer?.glassProgress == 0.0 ||
+                    outer?.contentOpacity == 0.0),
+            child: IgnorePointer(
+              ignoring: isMenuBlocking,
+              child: triggerChild,
+            ),
+          ),
+        );
 
         return Stack(
           clipBehavior: Clip.none,
@@ -368,19 +388,11 @@ class _GlassMenuState extends State<GlassMenu> with TickerProviderStateMixin {
                   onPointerMove: _handleTriggerPointerMove,
                   onPointerUp: _handleTriggerPointerUp,
                   onPointerCancel: _handleTriggerPointerCancel,
-                  child: Opacity(
+                  child: widget.useGlassTriggerFade
+                      ? materializedTrigger
+                      : Opacity(
                     opacity: triggerOpacity,
-                    child: GlassMaterializeScope(
-                      glassProgress:
-                          triggerOpacity * (outer?.glassProgress ?? 1.0),
-                      contentOpacity:
-                          triggerOpacity * (outer?.contentOpacity ?? 1.0),
-                      contentSigma: outer?.contentSigma ?? 0.0,
-                      child: IgnorePointer(
-                        ignoring: isMenuBlocking,
-                        child: triggerChild,
-                      ),
-                    ),
+                    child: materializedTrigger,
                   ),
                 ),
               ),
