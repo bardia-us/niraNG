@@ -1,88 +1,96 @@
-# niraNG
+<p align="center">
+  <img src="assets/branding/nirang-mark.png" width="96" alt="niraNG">
+</p>
 
-کلاینت اختصاصی و مینیمال Xray برای Android با Flutter، Kotlin و `VpnService`.
+<h1 align="center">niraNG</h1>
 
-## امکانات
+<p align="center">
+  کلاینت اندروید Xray با رابط Liquid Glass، اتصال VPN و پراکسی محلی
+  <br>
+  An Android Xray client with Liquid Glass UI, VPN and local proxy support
+</p>
 
-- ✅ اتصال واقعی VLESS، VMess و Trojan با Xray-core
-- ✅ حالت VPN و Proxy-only
-- ✅ پراکسی SOCKS محلی روی پورت پیش‌فرض `10808` در هر دو حالت
-- ✅ تست تأخیر واقعی از مسیر Proxy با concurrency قابل تنظیم
-- ✅ Subscription خصوصی، مصرف اشتراک و Auto Update
-- ✅ Local DNS، FakeDNS، Remote DoH و Domain Strategy
-- ✅ Routing ساده و معتبر: Global، Bypass LAN و Custom
-- ✅ تعویض هوشمند Server بدون درخواست دوباره مجوز VPN
-- ✅ Foreground notification با Action قطع اتصال
-- ✅ رابط انگلیسی/فارسی، RTL/LTR و System/Light/Dark
-- ✅ رابط شیشه‌ای سبک با Blur محدود و بدون Blur دائمی روی لیست‌ها
-- ✅ حذف محلی Server و بازیابی Serverهای حذف‌شده
-- ✅ نمایش اطلاعات فنی Server بدون Raw config یا Credentials
+<p align="center">
+  <a href="https://github.com/bardia-us/niraNG/releases/latest">دانلود اندروید · Android</a>
+  &nbsp;|&nbsp;
+  <a href="https://github.com/bardia-us/niraN/releases/latest">دانلود ویندوز · Windows</a>
+  &nbsp;|&nbsp;
+  <a href="#english">English</a>
+</p>
 
-## امنیت Configها
+## دانلود اندروید
 
-niraNG عمداً قابلیت Import، Edit، Copy، Export یا Share کردن Raw config را
-ارائه نمی‌کند. URL اشتراک و لینک خصوصی تلگرام داخل سورس عمومی قرار ندارند و
-URL اشتراک دیگر داخل APK تزریق نمی‌شود. Subscription اصلی فقط در محیط backend
-Device Registry با `NIRANG_SUBSCRIPTION_UPSTREAM` تنظیم می‌شود. اطلاعات تلگرام
-همچنان در زمان Build از تنظیمات خصوصی تزریق می‌شوند:
+**اگر معماری گوشی را نمی‌دانید، نسخهٔ Universal را بگیرید.** این فایل بزرگ‌تر است و هر سه معماری پشتیبانی‌شده را در خود دارد.
 
-```properties
-NIRANG_TELEGRAM_URL=https://t.me/private-invite
-NIRANG_TELEGRAM_CONTACT=@contact
-```
+| نسخه | مناسب برای | دانلود |
+| --- | --- | --- |
+| **Universal** | ARM64، ARM32 و x86-64 در یک فایل | [APK](https://github.com/bardia-us/niraNG/releases/download/v1.2.1/niraNG-v1.2.1-universal.apk) |
+| **arm64-v8a** | بیشتر گوشی‌های جدید با اندروید ۶۴بیتی ARM | [APK](https://github.com/bardia-us/niraNG/releases/download/v1.2.1/niraNG-v1.2.1-arm64-v8a.apk) |
+| **armeabi-v7a** | دستگاه‌های ARM با اندروید ۳۲بیتی | [APK](https://github.com/bardia-us/niraNG/releases/download/v1.2.1/niraNG-v1.2.1-armeabi-v7a.apk) |
+| **x86_64** | دستگاه‌ها و شبیه‌سازهای x86-64؛ نه بیشتر گوشی‌ها | [APK](https://github.com/bardia-us/niraNG/releases/download/v1.2.1/niraNG-v1.2.1-x86_64.apk) |
 
-مقادیر تلگرام داخل APK نهایی وجود خواهند داشت؛ کلاینت موبایل نمی‌تواند در برابر
-Reverse engineering محرمانگی کامل آن‌ها را تضمین کند. راهنمای deployment و
-migration رجیستری در `server/apiniraN/DEPLOYMENT.md` قرار دارد.
+نیازمند **Android 7.0 یا جدیدتر** و یکی از معماری‌های بالا است. Universal به معنی پشتیبانی از تمام نسخه‌ها و دستگاه‌های اندروید نیست.
 
-## امضای Release
+لینک‌های جدول مربوط به **v1.2.1** هستند؛ برای انتشارهای بعدی همیشه [صفحهٔ آخرین نسخه](https://github.com/bardia-us/niraNG/releases/latest) را بررسی کنید.
 
-فایل‌های `android/key.properties` و `android/keystore/*.jks` عمداً توسط Git
-نادیده گرفته می‌شوند. برای Build قابل به‌روزرسانی باید یک keystore ثابت و امن
-نگه دارید؛ از دست رفتن آن مانع نصب نسخه‌های بعدی به‌عنوان Update می‌شود.
+## نسخهٔ ویندوز: niraN
 
-## Build و تست
+**niraN** نسخهٔ ویندوز این خانواده است؛ برنامهٔ اندروید با نام **niraNG** منتشر می‌شود. فایل‌ها و نسخه‌های این دو برنامه جدا هستند.
 
-### انتخاب APK / Choosing an APK
+| پلتفرم | برنامه | دریافت |
+| --- | --- | --- |
+| Android | niraNG | [آخرین APKها](https://github.com/bardia-us/niraNG/releases/latest) |
+| Windows x64 | niraN | [Setup و نسخهٔ Portable](https://github.com/bardia-us/niraN/releases/latest) |
 
-- `arm64-v8a`: گوشی‌های ARM شصت‌وچهار‌بیتی؛ مناسب بیشتر گوشی‌های جدید.
-- `armeabi-v7a`: دستگاه‌های ARM سی‌ودو‌بیتی.
-- `x86_64`: دستگاه یا شبیه‌ساز x86 شصت‌وچهار‌بیتی؛ نسخهٔ همگانی نیست.
-- `universal`: هر سه معماری در یک APK بزرگ‌تر؛ اگر معماری دستگاه را نمی‌دانید این فایل را بگیرید.
+[صفحهٔ پروژهٔ niraN برای ویندوز](https://github.com/bardia-us/niraN)
 
-The universal APK contains ARM64, ARM32 and x86-64 native libraries. Android
-selects the compatible library; it is not an x86 APK renamed as universal.
-All builds require Android 7.0/API 24 or newer and a supported ABI.
-Starting with 1.2.0, every output uses the same installation version code
-(`4000 + base build`) so universal and split APKs can update each other.
-The API/What's New base build number remains unchanged.
+## امکانات niraNG
 
-```powershell
-flutter analyze
-flutter test
-flutter build apk --release --split-per-abi
-# Build and name all four signed artifacts:
-.\tool\build_release.ps1
-```
+- **اتصال و مدیریت سرورها:** Xray-core، پروتکل‌های VLESS، VMess و Trojan، تست TCP و تأخیر واقعی، مرتب‌سازی و تعویض سرور.
+- **VPN و پراکسی محلی:** حالت VPN و Proxy-only، با SOCKS محلی روی پورت پیش‌فرض `10808`.
+- **اشتراک:** دریافت و به‌روزرسانی اشتراک مدیریت‌شده، نمایش مصرف و مقدار باقی‌مانده.
+- **شبکه و TLS:** تنظیمات DNS و Routing، بای‌پس شبکهٔ محلی و تنظیمات CDN/TLS، از جمله ECH برای TLS.
+- **ظاهر و حرکت:** Liquid Glass، انیمیشن‌های نرم، تم روشن/تاریک، رنگ‌های مختلف و بازخورد صدا یا لرزش.
+- **Performance Mode:** ظاهر سبک‌تر و مات، بدون شیدر و بلور گلس؛ مناسب دستگاه‌هایی که افکت‌های کامل روی آن‌ها سنگین است.
+- **زبان و ابزارها:** فارسی و انگلیسی، پشتیبانی راست‌به‌چپ، انتخاب و کپی متن لاگ، اطلاعات فنی سرورها و قطع اتصال از اعلان.
 
-خروجی‌ها در مسیر زیر ساخته می‌شوند:
+## شروع و به‌روزرسانی
 
-```text
-build/releases/v<version>/niraNG-v<version>-arm64-v8a.apk
-build/releases/v<version>/niraNG-v<version>-armeabi-v7a.apk
-build/releases/v<version>/niraNG-v<version>-x86_64.apk
-build/releases/v<version>/niraNG-v<version>-universal.apk
-```
+1. APK مناسب را از همین مخزن دانلود و نصب کنید.
+2. برای **به‌روزرسانی، نسخهٔ جدید را روی برنامهٔ فعلی نصب کنید**؛ نیازی به حذف برنامه و از دست دادن تنظیمات نیست.
+3. پس از تأیید دسترسی، یک سرور انتخاب کنید و **Connect** را بزنید. در حالت VPN، درخواست مجوز VPN اندروید را تأیید کنید.
+4. اگر حرکت صفحه‌ها روی گوشی سنگین است، **Performance Mode** را از تنظیمات روشن کنید.
 
-## Native core
+این برنامه برای اشتراک مدیریت‌شده طراحی شده و واردکردن یا اشتراک‌گذاری کانفیگ خام را ارائه نمی‌کند. لینک تلگرام برنامه از داخل تنظیمات در دسترس است.
 
-پروژه از `AndroidLibXrayLite v26.8.28` استفاده می‌کند. کتابخانه فعلی برای
-`arm64-v8a`، `armeabi-v7a` و `x86_64` موجود است. مجوزهای اجزای ثالث در
-[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) ثبت شده‌اند.
+## چند نکتهٔ کاربردی
 
-## نکته Google Play Protect
+- **APK نصب نمی‌شود؟** معماری فایل و نسخهٔ اندروید را بررسی کنید. نسخهٔ x86_64 جایگزین ARM نیست؛ در صورت تردید Universal را انتخاب کنید. برای به‌روزرسانی هم امضای نصب قبلی باید با فایل جدید سازگار باشد.
+- **ظاهر Performance متفاوت است؟** بله؛ مات‌شدن پنل‌ها و حذف گلس در این حالت عمدی است. حالت عادی افکت کامل را نگه می‌دارد.
+- **گزارش مشکل:** مدل گوشی، نسخهٔ اندروید، نسخهٔ برنامه و مراحل بازتولید را در [Issues](https://github.com/bardia-us/niraNG/issues) بنویسید. لینک اشتراک، UUID، رمز و کانفیگ خام را در گزارش عمومی نگذارید.
 
-APKهای Release با کلید اختصاصی niraNG امضا می‌شوند. با این حال APKهای
-Sideload شده ممکن است تا زمانی که Developer/Package در Google Play سابقه و
-اعتبار کافی پیدا کند هشدار Play Protect نمایش دهند. امضا برای Update امن ضروری
-است، اما به‌تنهایی تضمین حذف هشدار Play Protect نیست.
+---
+
+## English
+
+**niraNG** is the Android app in the niraN family. It combines Xray connectivity with a Liquid Glass interface, light/dark themes and a lightweight Performance Mode.
+
+### Download
+
+- [Latest Android release](https://github.com/bardia-us/niraNG/releases/latest): choose **Universal** if you are unsure about your device architecture.
+- **arm64-v8a** is for 64-bit ARM Android; **armeabi-v7a** is for 32-bit ARM Android.
+- **x86_64** is for compatible x86-64 devices and emulators, not a universal phone APK.
+- Android **7.0+** and a supported architecture are required.
+- Looking for Windows? [niraN for Windows x64](https://github.com/bardia-us/niraN) offers [Setup and Portable downloads](https://github.com/bardia-us/niraN/releases/latest).
+
+### Features and use
+
+VLESS, VMess and Trojan through Xray; VPN and local SOCKS proxy; managed subscriptions and usage information; latency testing and sorting; DNS/routing and CDN/TLS settings; Persian/English UI; sound/haptic feedback; selectable logs.
+
+Install updates **over the existing app** to keep your settings. Select a server, tap **Connect**, and approve Android's VPN permission when using VPN mode. Enable **Performance Mode** for a simpler, matte interface without glass shaders or blur.
+
+The app uses managed subscriptions and does not offer raw configuration import or sharing. Report issues with your device model, Android/app versions and reproduction steps; never include credentials or private subscription links.
+
+---
+
+مجوزها و اطلاعیه‌های اجزای ثالث · [Third-party notices](THIRD_PARTY_NOTICES.md)
