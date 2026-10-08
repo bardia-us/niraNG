@@ -59,7 +59,28 @@ class ServerInformationScreen extends ConsumerWidget {
                     ],
                   ),
                 ),
-                if (server.selected) Chip(label: Text(context.s('selected'))),
+                if (server.selected) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    key: const ValueKey('selected-profile-badge'),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.secondaryContainer,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      context.s('selected'),
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSecondaryContainer,
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

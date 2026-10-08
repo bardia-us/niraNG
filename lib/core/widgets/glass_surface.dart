@@ -58,6 +58,10 @@ class GlassSurface extends ConsumerWidget {
     final theme = Theme.of(context);
     final performance = ref.watch(performanceModeProvider);
     final reduced = MediaQuery.highContrastOf(context);
+    final visible = (visibility * GlassVisibilityScope.maybeOf(context)).clamp(
+      0.0,
+      1.0,
+    );
     final settings = messageSurface
         ? liquidMessageSettings(theme.brightness, performanceMode: performance)
         : liquidSurfaceSettings(theme.brightness, performanceMode: performance);
@@ -73,7 +77,10 @@ class GlassSurface extends ConsumerWidget {
             quality: glass.GlassQuality.premium,
             allowElevation: false,
             settings: settings.copyWith(
-              visibility: visibility * GlassVisibilityScope.maybeOf(context),
+              // AdaptiveGlass removes its optical subtree at exactly zero.
+              // Keep it painting below visible precision while dialogs prime,
+              // so the first visible frame already has backdrop geometry.
+              visibility: visible.clamp(.000001, 1.0),
             ),
             shape: glass.LiquidRoundedRectangle(borderRadius: radius),
             child: glass.InheritedLiquidGlass(
@@ -84,11 +91,14 @@ class GlassSurface extends ConsumerWidget {
             ),
           );
         }
-        return FrostedSurface(
-          radius: radius,
-          opaque: reduced,
-          sigma: performance ? 8 : 12,
-          child: content,
+        return Opacity(
+          opacity: visible,
+          child: FrostedSurface(
+            radius: radius,
+            opaque: reduced,
+            sigma: performance ? 8 : 12,
+            child: content,
+          ),
         );
       },
     );

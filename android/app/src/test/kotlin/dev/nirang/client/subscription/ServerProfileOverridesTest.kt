@@ -7,6 +7,15 @@ import org.junit.Test
 
 class ServerProfileOverridesTest {
     @Test
+    fun `bundled core advanced fingerprints survive profile edits and reload`() {
+        listOf("randomizednoalpn", "hellofirefox_148", "hellosafari_26_3", "hellochrome_120_pq", "hellogolang").forEach { fingerprint ->
+            val source = server()
+            val saved = ServerProfileOverrides().updated(source, mapOf("fp" to fingerprint))
+            assertEquals(fingerprint, ServerProfileOverrides.fromJson(saved.toJson()).apply(listOf(source)).single().parameters["fp"])
+        }
+    }
+
+    @Test
     fun `persisted edit reapplies after subscription reload preserving source credentials ids and order`() {
         val source = server(parameters = mapOf("host" to "cdn.example.com", "path" to "/ws", "fp" to "chrome"))
         val updated = ServerProfileOverrides().updated(source, mapOf("fp" to "unsafe", "fm" to "{\"tcp\":[]}"))

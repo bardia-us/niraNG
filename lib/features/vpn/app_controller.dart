@@ -282,11 +282,15 @@ class AppController extends AsyncNotifier<AppSnapshot> {
   }
 
   Future<void> connect() {
-    _playInteractionFeedback();
-    return _operationGuard.run('connect', _connect);
+    return _operationGuard.run(
+      'connect',
+      _connect,
+      cooldownGroup: 'connection',
+    );
   }
 
   Future<void> _connect() async {
+    _playInteractionFeedback();
     final selected = _current?.selectedServer;
     if (selected == null) {
       _showNotice(
@@ -333,12 +337,17 @@ class AppController extends AsyncNotifier<AppSnapshot> {
   }
 
   Future<void> disconnect() {
-    _playInteractionFeedback();
-    return _operationGuard.run('disconnect', NirangNative.disconnect);
+    return _operationGuard.run('disconnect', () async {
+      _playInteractionFeedback();
+      await NirangNative.disconnect();
+    }, cooldownGroup: 'connection');
   }
 
-  Future<void> restartService() =>
-      _operationGuard.run('restartService', NirangNative.restartService);
+  Future<void> restartService() => _operationGuard.run(
+    'restartService',
+    NirangNative.restartService,
+    cooldownGroup: 'connection',
+  );
 
   Future<String> requestQuickSettingsTile() =>
       NirangNative.requestQuickSettingsTile();

@@ -97,58 +97,73 @@ class _LiquidActionMenuState<T> extends ConsumerState<LiquidActionMenu<T>> {
           ),
           quality: glass.GlassQuality.premium,
           triggerBuilder: (context, toggle) {
-            final trigger = Tooltip(
-              message: widget.tooltip,
-              child: widget.serverActions
-                  ? LayoutBuilder(
-                      builder: (context, constraints) {
-                        // Dense ListTile + compact visual density caps trailing
-                        // height at 40. Fit both axes, not only the requested height,
-                        // or a nominal 44x44 lens is painted as a flattened 44x40 oval.
-                        final side = math.min(
-                          44.0,
-                          math.min(constraints.maxWidth, constraints.maxHeight),
-                        );
-                        return glass.GlassButton.custom(
-                          onTap: toggle,
-                          label: widget.tooltip,
-                          width: side,
-                          height: side,
-                          shape: const glass.LiquidOval(),
-                          stretch: 0,
-                          interactionScale: 1,
-                          isStationary: true,
-                          useOwnLayer: true,
-                          settings: liquidControlSettings(
-                            theme.brightness,
-                            performanceMode: performance,
-                          ),
-                          quality: glass.GlassQuality.premium,
-                          child: IconTheme(
-                            data: IconThemeData(
-                              size: 22,
-                              color: theme.colorScheme.onSurface,
+            final trigger = _ControlDragBoundary(
+              child: Tooltip(
+                message: widget.tooltip,
+                child: widget.serverActions
+                    ? LayoutBuilder(
+                        builder: (context, constraints) {
+                          // Dense ListTile + compact visual density caps trailing
+                          // height at 40. Fit both axes, not only the requested height,
+                          // or a nominal 44x44 lens is painted as a flattened 44x40 oval.
+                          final side = math.min(
+                            44.0,
+                            math.min(
+                              constraints.maxWidth,
+                              constraints.maxHeight,
                             ),
-                            child: widget.icon,
-                          ),
-                        );
-                      },
-                    )
-                  : glass.GlassIconButton(
-                      icon: widget.icon,
-                      onPressed: toggle,
-                      semanticLabel: widget.tooltip,
-                      size: 44,
-                      // A BackdropGroup is not a geometry/render layer. Standalone
-                      // row triggers must provision one; nested triggers need their
-                      // own lens to retain the requested raised optical control.
-                      useOwnLayer: true,
-                      settings: liquidControlSettings(
-                        theme.brightness,
-                        performanceMode: performance,
+                          );
+                          return glass.GlassButton.custom(
+                            onTap: toggle,
+                            label: widget.tooltip,
+                            width: side,
+                            height: side,
+                            shape: const glass.LiquidOval(),
+                            stretch: 0,
+                            interactionScale: 1,
+                            isStationary: true,
+                            useOwnLayer: true,
+                            settings:
+                                liquidServerControlSettings(
+                                  theme.brightness,
+                                  performanceMode: performance,
+                                ).copyWith(
+                                  // A downward-offset preset shadow lengthens the
+                                  // silhouette of a 40px control. Keep the real lens
+                                  // and rim lighting, not an asymmetric outer halo.
+                                  shadow: const [],
+                                  shadowElevation: 0,
+                                  rimShadeEnds: .35,
+                                ),
+                            quality: performance
+                                ? glass.GlassQuality.standard
+                                : glass.GlassQuality.premium,
+                            child: IconTheme(
+                              data: IconThemeData(
+                                size: 22,
+                                color: theme.colorScheme.onSurface,
+                              ),
+                              child: widget.icon,
+                            ),
+                          );
+                        },
+                      )
+                    : glass.GlassIconButton(
+                        icon: widget.icon,
+                        onPressed: toggle,
+                        semanticLabel: widget.tooltip,
+                        size: 44,
+                        // A BackdropGroup is not a geometry/render layer. Standalone
+                        // row triggers must provision one; nested triggers need their
+                        // own lens to retain the requested raised optical control.
+                        useOwnLayer: true,
+                        settings: liquidControlSettings(
+                          theme.brightness,
+                          performanceMode: performance,
+                        ),
+                        quality: glass.GlassQuality.premium,
                       ),
-                      quality: glass.GlassQuality.premium,
-                    ),
+              ),
             );
             return widget.triggerDecorator?.call(trigger) ?? trigger;
           },
@@ -200,41 +215,63 @@ class LiquidConnectButton extends ConsumerWidget {
     }
     return ValueListenableBuilder<bool>(
       valueListenable: liveGlassReadyListenable,
-      builder: (context, ready, _) => glass.GlassButton.custom(
-        onTap: onPressed ?? () {},
-        enabled: onPressed != null,
-        useOwnLayer: true,
-        height: 46,
-        width: null,
-        shape: const glass.LiquidRoundedRectangle(borderRadius: 18),
-        settings: liquidControlSettings(
-          theme.brightness,
-          performanceMode: ref.watch(performanceModeProvider),
-        ),
-        quality: ready
-            ? glass.GlassQuality.premium
-            : glass.GlassQuality.minimal,
-        stretch: .25,
-        interactionScale: 1.04,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              icon,
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: theme.textTheme.labelLarge?.copyWith(
-                  color: theme.colorScheme.onSurface,
+      builder: (context, ready, _) => _ControlDragBoundary(
+        child: glass.GlassButton.custom(
+          onTap: onPressed ?? () {},
+          enabled: onPressed != null,
+          useOwnLayer: true,
+          height: 46,
+          width: null,
+          shape: const glass.LiquidRoundedRectangle(borderRadius: 18),
+          settings: liquidControlSettings(
+            theme.brightness,
+            performanceMode: ref.watch(performanceModeProvider),
+          ),
+          quality: ready
+              ? glass.GlassQuality.premium
+              : glass.GlassQuality.minimal,
+          stretch: .25,
+          interactionScale: 1.04,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                icon,
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: theme.colorScheme.onSurface,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
     );
   }
+}
+
+/// Claim drags on an elastic control without swallowing taps. Upstream tracks
+/// deformation with raw pointer events, which alone do not win Flutter's gesture
+/// arena against a surrounding list or pager. The control keeps those events;
+/// its existing inner tap recognizer still handles a tap normally.
+class _ControlDragBoundary extends StatelessWidget {
+  const _ControlDragBoundary({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    behavior: HitTestBehavior.opaque,
+    excludeFromSemantics: true,
+    // Match Scrollable's axis recognizers/slop. Pan's larger slop would let
+    // the outer scrollable claim the gesture first on a straight drag.
+    onHorizontalDragUpdate: (_) {},
+    onVerticalDragUpdate: (_) {},
+    child: child,
+  );
 }
 
 class ConnectionShield extends StatelessWidget {

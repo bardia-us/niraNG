@@ -111,7 +111,29 @@ void main() {
         expect(button.stretch, 0);
         expect(button.interactionScale, 1);
         expect(button.useOwnLayer, isTrue);
-        expect(button.quality, glass.GlassQuality.premium);
+        expect(
+          button.quality,
+          performanceMode
+              ? glass.GlassQuality.standard
+              : glass.GlassQuality.premium,
+        );
+        if (performanceMode) {
+          expect(button.settings!.effectiveBlur, greaterThan(0));
+          expect(button.settings!.frost, 0);
+          expect(button.settings!.saturation, 1);
+          expect(button.settings!.thickness, lessThan(32));
+          expect(button.settings!.lightIntensity, greaterThan(0));
+          expect(button.settings!.glassColor.a, greaterThan(0));
+          expect(button.settings!.glassColor.a, lessThan(1));
+        } else {
+          expect(button.settings!.effectiveBlur, 0);
+          expect(button.settings!.frost, 14);
+          expect(button.settings!.thickness, 32);
+          expect(button.settings!.lensModel, glass.GlassLensModel.spherical);
+        }
+        expect(button.settings!.shadow, isEmpty);
+        expect(button.settings!.shadowElevation, 0);
+        expect(button.settings!.rimShadeEnds, .35);
         final lens = find.descendant(
           of: find.byType(glass.GlassButton),
           matching: find.byType(glass.AdaptiveGlass),
@@ -124,9 +146,24 @@ void main() {
         );
         expect(lensSize.width, lessThanOrEqualTo(44));
         expect(lensSize, const Size(40, 40));
+        final press = await tester.startGesture(tester.getCenter(lens));
+        await press.moveBy(const Offset(0, 25));
+        await tester.pump(const Duration(milliseconds: 100));
+        final box = tester.renderObject<RenderBox>(lens);
+        final origin = box.localToGlobal(Offset.zero);
+        final horizontal = box.localToGlobal(Offset(box.size.width, 0));
+        final vertical = box.localToGlobal(Offset(0, box.size.height));
+        expect(
+          (horizontal - origin).distance,
+          closeTo((vertical - origin).distance, .01),
+          reason: 'Actual painted bounds must stay circular during a hold/drag',
+        );
+        await press.up();
+        await tester.pumpAndSettle();
         final menu = tester.widget<glass.GlassMenu>(
           find.byType(glass.GlassMenu),
         );
+        expect(menu.quality, glass.GlassQuality.premium);
         expect(menu.settings!.effectiveBlur, greaterThanOrEqualTo(6));
         expect(menu.settings!.effectiveFrost, 0);
         await tester.tap(find.byTooltip('Server actions'));
@@ -147,6 +184,60 @@ void main() {
       },
     );
   }
+  testWidgets('performance simplification stays local to server row controls', (
+    tester,
+  ) async {
+    liveGlassReadyListenable.value = true;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _Controller(performanceMode: true, feedbackMode: 'off'),
+          ),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: Column(
+              children: [
+                LiquidActionMenu<int>(
+                  tooltip: 'Other actions',
+                  fallback: const Text('Fallback'),
+                  onSelected: (_) {},
+                  items: const [
+                    LiquidActionItem(
+                      value: 1,
+                      label: 'Action',
+                      icon: Icons.copy,
+                    ),
+                  ],
+                ),
+                LiquidConnectButton(
+                  label: 'Connect',
+                  icon: const Icon(Icons.play_arrow),
+                  onPressed: () {},
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final action = tester.widget<glass.GlassIconButton>(
+      find.byType(glass.GlassIconButton),
+    );
+    expect(action.quality, glass.GlassQuality.premium);
+    final connect = tester.widget<glass.GlassButton>(
+      find.descendant(
+        of: find.byType(LiquidConnectButton),
+        matching: find.byType(glass.GlassButton),
+      ),
+    );
+    expect(connect.quality, glass.GlassQuality.premium);
+    expect(connect.stretch, greaterThan(0));
+    expect(connect.interactionScale, greaterThan(1));
+    expect(tester.takeException(), isNull);
+  });
   for (final performanceMode in [false, true]) {
     test(
       'light panels use continuous blur without sharp ghost rows (performance=$performanceMode)',

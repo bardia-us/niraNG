@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart' show kTouchSlop;
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as glass;
@@ -28,6 +29,7 @@ class ServersScreen extends ConsumerStatefulWidget {
 
 class _ServersScreenState extends ConsumerState<ServersScreen> {
   final _headerKey = GlobalKey();
+  final _scrollController = ScrollController();
   Rect? _menuAnchor;
   ServerInfo? _serverActionsTarget;
 
@@ -38,7 +40,11 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
     setState(() => _menuAnchor = globalAnchor.shift(-origin));
   }
 
-  bool _handleHeaderScroll(ScrollNotification notification) => false;
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -75,8 +81,11 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
                 Positioned.fill(
                   child: RepaintBoundary(
                     child: glass.GlassBackdropGroup(
-                      child: NotificationListener<ScrollNotification>(
-                        onNotification: _handleHeaderScroll,
+                      child: glass.GlassMotionSync(
+                        // Cached rows translate during scroll without painting
+                        // their own optical layer. Refresh its coordinates for
+                        // this paint, not the post-composition fallback frame.
+                        motion: _scrollController,
                         child: app.servers.isEmpty
                             ? Padding(
                                 padding: EdgeInsets.only(
@@ -85,6 +94,7 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
                                 child: _EmptyServers(app: app),
                               )
                             : ReorderableListView.builder(
+                                scrollController: _scrollController,
                                 scrollCacheExtent:
                                     const ScrollCacheExtent.pixels(360),
                                 buildDefaultDragHandles: false,
@@ -176,6 +186,13 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
                                               child: Material(
                                                 type: MaterialType.transparency,
                                                 child: ListTile(
+                                                  minLeadingWidth: 26,
+                                                  horizontalTitleGap: 12,
+                                                  contentPadding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 12,
+                                                        vertical: 1,
+                                                      ),
                                                   splashColor: Theme.of(context)
                                                       .colorScheme
                                                       .primary
@@ -204,6 +221,9 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
                                                               .textTheme
                                                               .bodyLarge
                                                               ?.copyWith(
+                                                                fontSize: 15,
+                                                                letterSpacing:
+                                                                    0,
                                                                 fontWeight:
                                                                     FontWeight
                                                                         .w600,
@@ -330,48 +350,53 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
           top: chromeTop + 6,
           left: 8,
           right: 8,
-          child: _ServersGlassHeader(
-            key: _headerKey,
-            height: headerHeight,
-            serverCount: app.servers.length,
-            isPinging: app.isPinging,
-            isRefreshing: app.isRefreshing,
-            reducedEffects: view.performanceMode,
-            onMenu: _openMenu,
-            items: [
-              LiquidActionItem(
-                value: _ServerPageAction.restart,
-                label: context.s('restartService'),
-                icon: Icons.restart_alt_rounded,
-                enabled: app.connection.isConnected,
+          // Optical transparency is not input transparency: the complete fixed
+          // header owns pointer hits, including empty space between its controls.
+          child: Listener(
+            behavior: HitTestBehavior.opaque,
+            child: _ServersGlassHeader(
+              key: _headerKey,
+              height: headerHeight,
+              serverCount: app.servers.length,
+              isPinging: app.isPinging,
+              isRefreshing: app.isRefreshing,
+              reducedEffects: view.performanceMode,
+              onMenu: _openMenu,
+              items: [
+                LiquidActionItem(
+                  value: _ServerPageAction.restart,
+                  label: context.s('restartService'),
+                  icon: Icons.restart_alt_rounded,
+                  enabled: app.connection.isConnected,
+                ),
+                LiquidActionItem(
+                  value: _ServerPageAction.sort,
+                  label: context.s('sortByTestResults'),
+                  icon: Icons.sort_rounded,
+                  enabled: app.servers.isNotEmpty,
+                ),
+                LiquidActionItem(
+                  value: _ServerPageAction.tcpDelay,
+                  label: context.s('testTcpDelays'),
+                  icon: Icons.cable_rounded,
+                  enabled: app.servers.isNotEmpty && !app.isPinging,
+                ),
+                LiquidActionItem(
+                  value: _ServerPageAction.realDelay,
+                  label: context.s('testRealDelays'),
+                  icon: Icons.network_ping_rounded,
+                  enabled: app.servers.isNotEmpty && !app.isPinging,
+                ),
+                LiquidActionItem(
+                  value: _ServerPageAction.refresh,
+                  label: context.s('refresh'),
+                  icon: Icons.sync_rounded,
+                  enabled: !app.isRefreshing,
+                ),
+              ],
+              onSelected: (action) => unawaited(
+                _performServerPageAction(context, controller, action),
               ),
-              LiquidActionItem(
-                value: _ServerPageAction.sort,
-                label: context.s('sortByTestResults'),
-                icon: Icons.sort_rounded,
-                enabled: app.servers.isNotEmpty,
-              ),
-              LiquidActionItem(
-                value: _ServerPageAction.tcpDelay,
-                label: context.s('testTcpDelays'),
-                icon: Icons.cable_rounded,
-                enabled: app.servers.isNotEmpty && !app.isPinging,
-              ),
-              LiquidActionItem(
-                value: _ServerPageAction.realDelay,
-                label: context.s('testRealDelays'),
-                icon: Icons.network_ping_rounded,
-                enabled: app.servers.isNotEmpty && !app.isPinging,
-              ),
-              LiquidActionItem(
-                value: _ServerPageAction.refresh,
-                label: context.s('refresh'),
-                icon: Icons.sync_rounded,
-                enabled: !app.isRefreshing,
-              ),
-            ],
-            onSelected: (action) => unawaited(
-              _performServerPageAction(context, controller, action),
             ),
           ),
         ),
@@ -661,12 +686,67 @@ class _PressScale extends StatefulWidget {
   State<_PressScale> createState() => _PressScaleState();
 }
 
-class _PressScaleState extends State<_PressScale> {
+class _PressScaleState extends State<_PressScale>
+    with SingleTickerProviderStateMixin {
+  late final _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 70),
+    reverseDuration: const Duration(milliseconds: 125),
+  );
+  late final _motion = CurvedAnimation(
+    parent: _controller,
+    curve: Curves.easeOut,
+    reverseCurve: Curves.easeOutBack,
+  );
   bool _pressed = false;
+  int? _pressPointer;
+  Offset? _pressOrigin;
+
+  void _pointerDown(PointerDownEvent event) {
+    if (_pressPointer != null) return;
+    _pressPointer = event.pointer;
+    _pressOrigin = event.position;
+    _setPressed(true);
+  }
+
+  void _pointerMove(PointerMoveEvent event) {
+    if (event.pointer != _pressPointer || _pressOrigin == null) return;
+    if ((event.position - _pressOrigin!).distance > kTouchSlop) {
+      // A real scroll must not carry the row's tap deformation until finger-up.
+      // The row and its optical coordinates return together during the drag.
+      _setPressed(false);
+    }
+  }
+
+  void _pointerEnd(PointerEvent event) {
+    if (event.pointer != _pressPointer) return;
+    _pressPointer = null;
+    _pressOrigin = null;
+    _setPressed(false);
+  }
 
   void _setPressed(bool value) {
     if (!widget.enabled || _pressed == value) return;
-    setState(() => _pressed = value);
+    _pressed = value;
+    value ? _controller.forward() : _controller.reverse();
+  }
+
+  @override
+  void didUpdateWidget(covariant _PressScale oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.enabled) {
+      _pressed = false;
+      _pressPointer = null;
+      _pressOrigin = null;
+      _controller.value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _motion.dispose();
+    _controller.dispose();
+    super.dispose();
   }
 
   @override
@@ -676,18 +756,19 @@ class _PressScaleState extends State<_PressScale> {
       return widget.child;
     }
     return Listener(
-      onPointerDown: (_) => _setPressed(true),
-      onPointerUp: (_) => _setPressed(false),
-      onPointerCancel: (_) => _setPressed(false),
-      child: AnimatedScale(
-        scale: _pressed ? .982 : 1,
-        duration: Duration(milliseconds: _pressed ? 70 : 125),
-        curve: _pressed ? Curves.easeOut : Curves.easeOutBack,
-        child: AnimatedSlide(
-          offset: _pressed ? const Offset(0, .012) : Offset.zero,
-          duration: Duration(milliseconds: _pressed ? 70 : 125),
-          curve: Curves.easeOutCubic,
-          child: widget.child,
+      onPointerDown: _pointerDown,
+      onPointerMove: _pointerMove,
+      onPointerUp: _pointerEnd,
+      onPointerCancel: _pointerEnd,
+      child: AnimatedBuilder(
+        animation: _motion,
+        child: glass.GlassMotionSync(motion: _motion, child: widget.child),
+        builder: (context, child) => Transform.scale(
+          scale: 1 - .018 * _motion.value,
+          child: FractionalTranslation(
+            translation: Offset(0, .012 * _motion.value),
+            child: child,
+          ),
         ),
       ),
     );

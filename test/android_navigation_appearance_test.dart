@@ -77,6 +77,35 @@ Future<void> _mountShell(
 }
 
 void main() {
+  testWidgets(
+    'released page reaches destination without a long settling tail',
+    (tester) async {
+      await _mountShell(tester);
+      final pager = tester.widget<PageView>(find.byType(PageView));
+      final physics = pager.physics!;
+      final simulation = physics.createBallisticSimulation(
+        FixedScrollMetrics(
+          minScrollExtent: 0,
+          maxScrollExtent: 800,
+          pixels: 320,
+          viewportDimension: 400,
+          axisDirection: AxisDirection.right,
+          devicePixelRatio: 3,
+        ),
+        0,
+      )!;
+      var previous = 320.0;
+      for (var frame = 1; frame <= 48; frame++) {
+        final position = simulation.x(frame / 120);
+        expect(position, greaterThanOrEqualTo(previous));
+        expect(position, lessThanOrEqualTo(400));
+        previous = position;
+      }
+      expect(simulation.x(.4), closeTo(400, .06));
+      expect(physics.minFlingDistance, 32);
+      expect(physics.minFlingVelocity, 650);
+    },
+  );
   testWidgets('pager refreshes only glass on intersecting retained pages', (
     tester,
   ) async {

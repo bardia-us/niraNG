@@ -168,6 +168,8 @@ class _NirangRegistrationBootstrapState
     theme: AppTheme.light,
     darkTheme: AppTheme.dark,
     themeMode: ThemeMode.system,
+    builder: (context, child) =>
+        MediaQuery.withNoTextScaling(child: child ?? const SizedBox.shrink()),
     supportedLocales: AppStrings.supportedLocales,
     localizationsDelegates: const [
       AppStrings.delegate,

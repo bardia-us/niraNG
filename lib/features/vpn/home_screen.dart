@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as glass;
 
 import '../../core/formatters.dart';
 import '../../core/localization/app_strings.dart';
@@ -11,11 +12,30 @@ import '../../core/widgets/glass_surface.dart';
 import '../../core/widgets/liquid_controls.dart';
 import 'app_controller.dart';
 
-class HomeScreen extends ConsumerWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  final _scrollController = ScrollController();
+  final _layoutMotion = ValueNotifier<int>(0);
+  late final _opticalMotion = Listenable.merge([
+    _scrollController,
+    _layoutMotion,
+  ]);
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    _layoutMotion.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final view = ref.watch(
       appControllerProvider.select((value) {
         final app = value.asData?.value;
@@ -40,30 +60,44 @@ class HomeScreen extends ConsumerWidget {
       edgeOffset: MediaQuery.paddingOf(context).top + 6,
       displacement: 28,
       onRefresh: controller.refreshSubscription,
-      child: ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: EdgeInsets.fromLTRB(
-          16,
-          MediaQuery.paddingOf(context).top + 6,
-          16,
-          24,
-        ),
-        children: [
-          _ConnectionCard(
-            app: app,
-            controller: controller,
-            reducedEffects: MediaQuery.disableAnimationsOf(context),
-          ),
-          if (app.subscriptionError != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              app.subscriptionError!,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
+      child: NotificationListener<SizeChangedLayoutNotification>(
+        onNotification: (_) {
+          // SizeTransition moves the usage panel without changing scroll offset.
+          // Refresh only optical paint after layout, never rebuild from here.
+          _layoutMotion.value++;
+          return false;
+        },
+        child: glass.GlassMotionSync(
+          motion: _opticalMotion,
+          child: ListView(
+            controller: _scrollController,
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: EdgeInsets.fromLTRB(
+              16,
+              MediaQuery.paddingOf(context).top + 6,
+              16,
+              24,
             ),
-          ],
-          const SizedBox(height: 12),
-          _SubscriptionSection(usage: app.usage),
-        ],
+            children: [
+              SizeChangedLayoutNotifier(
+                child: _ConnectionCard(
+                  app: app,
+                  controller: controller,
+                  reducedEffects: MediaQuery.disableAnimationsOf(context),
+                ),
+              ),
+              if (app.subscriptionError != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  app.subscriptionError!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ],
+              const SizedBox(height: 12),
+              _SubscriptionSection(usage: app.usage),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -96,6 +130,8 @@ class _ConnectionCard extends StatelessWidget {
         : publicIp;
     return GlassSurface(
       padding: const EdgeInsets.all(16),
+      // Restart animates its own layout extent. Everything below follows that
+      // extent, instead of jumping inside an independently animated clip.
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -238,39 +274,63 @@ class _ConnectionAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (connection.isConnected) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          LiquidConnectButton(
-            onPressed: () => _perform(context, controller.disconnect),
-            icon: const Icon(Icons.stop_rounded, size: 18),
-            label: context.s('disconnect'),
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        LiquidConnectButton(
+          onPressed: connection.isConnected
+              ? () => _perform(context, controller.disconnect)
+              : connection.canConnect
+              ? () => _perform(context, controller.connect)
+              : null,
+          icon: connection.isConnected
+              ? const Icon(Icons.stop_rounded, size: 18)
+              : connection.isBusy
+              ? const SizedBox.square(
+                  dimension: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.play_arrow_rounded, size: 19),
+          label: context.s(
+            connection.isConnected
+                ? 'disconnect'
+                : connection.isBusy
+                ? connection.state
+                : 'connect',
           ),
-          const SizedBox(height: 5),
-          OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(
-              visualDensity: VisualDensity.compact,
-              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
-            ),
-            onPressed: () => _perform(context, controller.restartService),
-            icon: const Icon(Icons.restart_alt_rounded, size: 17),
-            label: Text(context.s('restartService')),
+        ),
+        AnimatedSwitcher(
+          duration: Duration(milliseconds: reduceMotion ? 0 : 360),
+          reverseDuration: Duration(milliseconds: reduceMotion ? 0 : 300),
+          switchInCurve: Curves.easeInOutCubic,
+          switchOutCurve: Curves.easeInOutCubic,
+          transitionBuilder: (child, animation) => SizeTransition(
+            sizeFactor: animation,
+            alignment: Alignment.topCenter,
+            child: FadeTransition(opacity: animation, child: child),
           ),
-        ],
-      );
-    }
-    return LiquidConnectButton(
-      onPressed: connection.canConnect
-          ? () => _perform(context, controller.connect)
-          : null,
-      icon: connection.isBusy
-          ? const SizedBox.square(
-              dimension: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : const Icon(Icons.play_arrow_rounded, size: 19),
-      label: context.s(connection.isBusy ? connection.state : 'connect'),
+          child: connection.isConnected
+              ? Padding(
+                  key: const ValueKey('restart-visible'),
+                  padding: const EdgeInsets.only(top: 5),
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 11,
+                        vertical: 7,
+                      ),
+                    ),
+                    onPressed: () =>
+                        _perform(context, controller.restartService),
+                    icon: const Icon(Icons.restart_alt_rounded, size: 17),
+                    label: Text(context.s('restartService')),
+                  ),
+                )
+              : const SizedBox.shrink(key: ValueKey('restart-hidden')),
+        ),
+      ],
     );
   }
 }

@@ -16,6 +16,7 @@ class _RenderTrackedProbe extends RenderProxyBox
     with TransformTrackingRenderObjectMixin {
   int paints = 0;
   int visits = 0;
+  Offset? lastPaintOrigin;
   @override
   void visitChildren(RenderObjectVisitor visitor) {
     visits++;
@@ -27,11 +28,95 @@ class _RenderTrackedProbe extends RenderProxyBox
   @override
   void paint(PaintingContext context, Offset offset) {
     paints++;
+    lastPaintOrigin = localToGlobal(Offset.zero);
     super.paint(context, offset);
   }
 }
 
 void main() {
+  testWidgets(
+    'cached scrolling lens paints at its new position in the same frame',
+    (tester) async {
+      final scroll = ScrollController();
+      addTearDown(scroll.dispose);
+      final key = GlobalKey();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: glass.GlassMotionSync(
+              motion: scroll,
+              child: SingleChildScrollView(
+                controller: scroll,
+                child: Column(
+                  children: [
+                    const SizedBox(height: 100),
+                    RepaintBoundary(child: _TrackedProbe(key: key)),
+                    const SizedBox(height: 1200),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final probe =
+          key.currentContext!.findRenderObject() as _RenderTrackedProbe;
+      for (final offset in [17.0, 38.5, 6.0, 52.0]) {
+        final before = probe.lastPaintOrigin!;
+        scroll.jumpTo(offset);
+        await tester.pump();
+        expect(
+          probe.lastPaintOrigin,
+          probe.localToGlobal(Offset.zero),
+          reason: 'The optical paint must not trail the viewport by one frame',
+        );
+        expect(probe.lastPaintOrigin, isNot(before));
+        final currentPaints = probe.paints;
+        await tester.pump();
+        expect(
+          probe.paints,
+          currentPaints,
+          reason:
+              'A lens painted at the current transform must not request a redundant trailing repaint',
+        );
+      }
+      await tester.pumpWidget(const SizedBox());
+      expect(tester.takeException(), isNull);
+    },
+  );
+  testWidgets(
+    'a cached lens without a motion notifier still refreshes after translation',
+    (tester) async {
+      final motion = ValueNotifier<double>(0);
+      addTearDown(motion.dispose);
+      final key = GlobalKey();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Center(
+            child: AnimatedBuilder(
+              animation: motion,
+              child: RepaintBoundary(child: _TrackedProbe(key: key)),
+              builder: (_, child) => Transform.translate(
+                offset: Offset(0, motion.value),
+                child: child,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final probe =
+          key.currentContext!.findRenderObject() as _RenderTrackedProbe;
+      final before = probe.paints;
+      motion.value = 19.5;
+      await tester.pump();
+      await tester.pump();
+      expect(probe.paints, greaterThan(before));
+      expect(probe.lastPaintOrigin, probe.localToGlobal(Offset.zero));
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
   testWidgets('invisible retained glass skips the motion tree walk', (
     tester,
   ) async {

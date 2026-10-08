@@ -17,6 +17,7 @@ glass.LiquidGlassSettings liquidSettings(ui.Brightness brightness) =>
           blur: 0,
           blurWeight: 1,
           frostWeight: 1,
+          backdropZoom: 1.035,
           // Use upstream's curved Snell bevel and actual normal-driven light
           // lobes, rather than only the thin-prism band/hairline preset.
           lensModel: glass.GlassLensModel.spherical,
@@ -28,6 +29,31 @@ glass.LiquidGlassSettings liquidControlSettings(
   ui.Brightness brightness, {
   bool performanceMode = false,
 }) => _performanceOptics(liquidSettings(brightness), performanceMode);
+
+/// Tiny scrolling controls can use the upstream 2D material in performance mode.
+/// Menus and focal controls continue to use [liquidControlSettings].
+glass.LiquidGlassSettings liquidServerControlSettings(
+  ui.Brightness brightness, {
+  bool performanceMode = false,
+}) {
+  final settings = liquidControlSettings(
+    brightness,
+    performanceMode: performanceMode,
+  );
+  if (!performanceMode) return settings;
+  return settings.copyWith(
+    // Match upstream's premium-to-standard calibration, with neutral
+    // saturation and a narrower blur instead of the wide interleaved frost.
+    blur: settings.frost * .25,
+    frost: 0,
+    saturation: 1,
+    thickness: settings.thickness * .4,
+    lightIntensity: const glass.LiquidGlassSettings().lightIntensity * .6,
+    rimLight: 0,
+    shadow: const [],
+    shadowElevation: 0,
+  );
+}
 
 glass.LiquidGlassSettings _performanceOptics(
   glass.LiquidGlassSettings settings,

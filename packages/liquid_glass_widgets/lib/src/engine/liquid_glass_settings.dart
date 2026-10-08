@@ -126,6 +126,7 @@ class LiquidGlassSettings {
     this.rimShadeEnds = 0.2,
     this.rimLight = 0.0,
     this.lensModel = GlassLensModel.spherical,
+    this.backdropZoom = 1.0,
     this.backerColor,
     this.platformViewFallbackColor,
     this.platformViewMode = PlatformViewGlassMode.fallbackColor,
@@ -167,6 +168,7 @@ class LiquidGlassSettings {
     this.rimShadeEnds = 0.2,
     this.rimLight = 0.0,
     this.lensModel = GlassLensModel.spherical,
+    this.backdropZoom = 1.0,
     this.backerColor,
     this.platformViewFallbackColor,
     this.platformViewMode = PlatformViewGlassMode.fallbackColor,
@@ -743,6 +745,7 @@ class LiquidGlassSettings {
         rimShadeEnds: rimShadeEnds,
         rimLight: rimLight,
         lensModel: lensModel,
+        backdropZoom: backdropZoom,
         backerColor: backerColor,
         platformViewFallbackColor: platformViewFallbackColor,
         platformViewMode: platformViewMode,
@@ -807,6 +810,14 @@ class LiquidGlassSettings {
   /// `Glass.clear` (direct alpha-composite tint without luminance normalization).
   final GlassBodyMode bodyMode;
 
+  /// Premium-only backdrop magnification about the glass layer's centre.
+  /// Does not scale its geometry, foreground content or optical rim. 1 is
+  /// unchanged; larger values sample a smaller backdrop region (magnification).
+  final double backdropZoom;
+
+  double get effectiveBackdropZoom =>
+      1 + (backdropZoom.clamp(1.0, 1.25) - 1) * visibility.clamp(0.0, 1.0);
+
   /// The effective saturation taking visibility into account.
   double get effectiveSaturation => 1 + (saturation - 1) * visibility;
 
@@ -861,6 +872,7 @@ class LiquidGlassSettings {
         rimShadeEnds: lerpDouble(a.rimShadeEnds, b.rimShadeEnds, t)!,
         rimLight: lerpDouble(a.rimLight, b.rimLight, t)!,
         lensModel: t < 0.5 ? a.lensModel : b.lensModel,
+        backdropZoom: lerpDouble(a.backdropZoom, b.backdropZoom, t)!,
         // Lerp the color so the backer fades smoothly (from/to transparent when
         // one side is null), rather than popping at the midpoint.
         backerColor: Color.lerp(a.backerColor, b.backerColor, t),
@@ -915,6 +927,7 @@ class LiquidGlassSettings {
     double? rimShadeEnds,
     double? rimLight,
     GlassLensModel? lensModel,
+    double? backdropZoom,
     Color? backerColor,
     Color? platformViewFallbackColor,
     PlatformViewGlassMode? platformViewMode,
@@ -951,6 +964,7 @@ class LiquidGlassSettings {
         rimShadeEnds: rimShadeEnds ?? this.rimShadeEnds,
         rimLight: rimLight ?? this.rimLight,
         lensModel: lensModel ?? this.lensModel,
+        backdropZoom: backdropZoom ?? this.backdropZoom,
         backerColor: backerColor ?? this.backerColor,
         platformViewFallbackColor:
             platformViewFallbackColor ?? this.platformViewFallbackColor,
@@ -993,6 +1007,7 @@ class LiquidGlassSettings {
         other.rimShadeEnds == rimShadeEnds &&
         other.rimLight == rimLight &&
         other.lensModel == lensModel &&
+        other.backdropZoom == backdropZoom &&
         other.backerColor == backerColor &&
         other.platformViewFallbackColor == platformViewFallbackColor &&
         other.platformViewMode == platformViewMode &&
@@ -1031,6 +1046,7 @@ class LiquidGlassSettings {
         rimShadeEnds,
         rimLight,
         lensModel,
+        backdropZoom,
         backerColor,
         platformViewFallbackColor,
         platformViewMode,

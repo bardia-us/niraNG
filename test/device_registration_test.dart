@@ -8,6 +8,26 @@ import 'package:nirang/core/localization/app_strings.dart';
 import 'package:nirang/features/registration/registration_bootstrap.dart';
 
 void main() {
+  testWidgets('registration screens retain standard font size', (tester) async {
+    tester.platformDispatcher.textScaleFactorTestValue = 1.8;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await tester.pumpWidget(
+      ProviderScope(
+        child: NirangRegistrationBootstrap(
+          coordinator: _FakeCoordinator(),
+          prepareApp: () async {},
+          child: const MaterialApp(home: Text('HOME_READY')),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final app = find.byType(MaterialApp);
+    final navigator = find.descendant(
+      of: app,
+      matching: find.byType(Navigator),
+    );
+    expect(MediaQuery.textScalerOf(tester.element(navigator)).scale(16), 16);
+  });
   testWidgets(
     'a successful local preload cannot bypass a later administrator denial',
     (tester) async {

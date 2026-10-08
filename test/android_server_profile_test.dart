@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nirang/core/localization/app_strings.dart';
 import 'package:nirang/core/platform/native_models.dart';
 import 'package:nirang/features/servers/server_information_screen.dart';
+import 'package:nirang/features/servers/server_profile_settings_screen.dart';
+import 'package:nirang/features/servers/tls_profile_choices.dart';
 import 'package:nirang/features/vpn/app_controller.dart';
 
 const _control = MethodChannel('dev.nirang.client/control');
@@ -30,6 +32,43 @@ Map<String, Object?> _profile({String security = 'TLS'}) => {
 };
 
 void main() {
+  testWidgets('advanced bundled fingerprints are selectable without typing', (
+    tester,
+  ) async {
+    final profile = _profile()..['fingerprint'] = 'hellochrome_133';
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          localizationsDelegates: const [
+            AppStrings.delegate,
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          supportedLocales: AppStrings.supportedLocales,
+          home: ServerProfileSettingsScreen(
+            server: ServerInfo.fromMap(profile),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final dropdown = tester.widget<DropdownButtonFormField<String>>(
+      find.byKey(const ValueKey('profile-fp')),
+    );
+    final button = tester.widget<DropdownButton<String>>(
+      find.descendant(
+        of: find.byKey(const ValueKey('profile-fp')),
+        matching: find.byType(DropdownButton<String>),
+      ),
+    );
+    expect(
+      button.items!.map((item) => item.value),
+      containsAll(profileAdvancedFingerprints),
+    );
+    expect(dropdown.initialValue, 'hellochrome_133');
+    expect(find.byKey(const ValueKey('profile-custom-fp')), findsNothing);
+  });
   setUp(() {
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
@@ -71,7 +110,8 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('edit-server-profile')));
       await tester.pumpAndSettle();
       expect(find.text('FinalMask JSON'), findsOneWidget);
-      expect(find.byType(TextField), findsNWidgets(5));
+      expect(find.byType(DropdownButtonFormField<String>), findsOneWidget);
+      expect(find.byType(TextField), findsNWidgets(4));
       final fields = tester
           .widgetList<TextField>(find.byType(TextField))
           .toList();
@@ -79,7 +119,6 @@ void main() {
         fields.map((field) => field.controller!.text),
         containsAll([
           'origin.example.com',
-          'chrome',
           'TLS_AES_128_GCM_SHA256',
           '{"tcp":[]}',
           'h2,http/1.1',
@@ -150,10 +189,15 @@ void main() {
       );
       await tester.tap(find.byKey(const ValueKey('edit-server-profile')));
       await tester.pumpAndSettle();
-      await tester.enterText(
-        find.byKey(const ValueKey('profile-fp')),
-        'unsafe',
+      await tester.tap(find.byKey(const ValueKey('profile-fp')));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('unsafe'),
+        180,
+        scrollable: find.byType(Scrollable).last,
       );
+      await tester.tap(find.text('unsafe').last);
+      await tester.pumpAndSettle();
       await tester.scrollUntilVisible(
         find.byKey(const ValueKey('save-server-profile')),
         250,
@@ -176,11 +220,41 @@ void main() {
       await tester.pumpAndSettle();
       expect(
         tester
-            .widget<TextFormField>(find.byKey(const ValueKey('profile-fp')))
-            .controller!
-            .text,
+            .widget<DropdownButtonFormField<String>>(
+              find.byKey(const ValueKey('profile-fp')),
+            )
+            .initialValue,
         'unsafe',
       );
+    },
+  );
+
+  testWidgets(
+    'imported REALITY unsafe fingerprint can be corrected without crashing',
+    (tester) async {
+      final profile = _profile(security: 'Reality')..['fingerprint'] = 'unsafe';
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            localizationsDelegates: const [
+              AppStrings.delegate,
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+            supportedLocales: AppStrings.supportedLocales,
+            home: ServerInformationScreen(server: ServerInfo.fromMap(profile)),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('edit-server-profile')));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(const ValueKey('profile-custom-fp')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('save-server-profile')));
+      await tester.pumpAndSettle();
+      expect(find.text('Choose a supported fingerprint'), findsOneWidget);
     },
   );
 
@@ -206,7 +280,10 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('edit-server-profile')));
       await tester.pumpAndSettle();
-      expect(find.byType(TextField), findsNWidgets(2));
+      expect(find.byType(TextField), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('profile-fp')));
+      await tester.pumpAndSettle();
+      expect(find.text('unsafe'), findsNothing);
       expect(find.byKey(const ValueKey('profile-fm')), findsNothing);
       expect(find.byKey(const ValueKey('profile-cs')), findsNothing);
       expect(find.byKey(const ValueKey('profile-alpn')), findsNothing);
@@ -283,8 +360,8 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('edit-server-profile')));
       await tester.pumpAndSettle();
       await tester.enterText(
-        find.byKey(const ValueKey('profile-fp')),
-        'invented',
+        find.byKey(const ValueKey('profile-sni')),
+        'edited.example.com',
       );
       await tester.scrollUntilVisible(
         find.byKey(const ValueKey('save-server-profile')),
@@ -296,10 +373,10 @@ void main() {
       expect(find.text('Profile could not be saved'), findsOneWidget);
       expect(
         tester
-            .widget<TextFormField>(find.byKey(const ValueKey('profile-fp')))
+            .widget<TextFormField>(find.byKey(const ValueKey('profile-sni')))
             .controller!
             .text,
-        'invented',
+        'edited.example.com',
       );
       expect(
         tester
@@ -309,6 +386,173 @@ void main() {
             .onPressed,
         isNotNull,
       );
+    },
+  );
+
+  testWidgets(
+    'ALPN selection keeps imported custom protocols when toggling a standard option',
+    (tester) async {
+      final profile = _profile()..['alpn'] = 'custom/1,h2';
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            localizationsDelegates: const [
+              AppStrings.delegate,
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+            supportedLocales: AppStrings.supportedLocales,
+            home: ServerInformationScreen(server: ServerInfo.fromMap(profile)),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('edit-server-profile')));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('profile-alpn')),
+        200,
+        scrollable: find.byType(Scrollable).last,
+      );
+      await tester.tap(find.byKey(const ValueKey('profile-alpn')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('http/1.1').last);
+      await tester.tap(find.byKey(const ValueKey('apply-profile-choices')));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<TextFormField>(find.byKey(const ValueKey('profile-alpn')))
+            .controller!
+            .text,
+        'custom/1,h2,http/1.1',
+      );
+    },
+  );
+
+  testWidgets(
+    'editing SNI does not normalize untouched imported advanced values',
+    (tester) async {
+      final profile = _profile()
+        ..['fingerprint'] = 'future-fingerprint'
+        ..['cipherSuites'] = '  FUTURE_CIPHER  '
+        ..['alpn'] = ' custom/1 ,h2 '
+        ..['finalMask'] = ' {"future":{"option":true}} ';
+      Map<dynamic, dynamic>? submitted;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(_control, (call) async {
+            if (call.method == 'initialize') {
+              return {
+                'servers': [profile],
+              };
+            }
+            if (call.method == 'updateServerProfile') {
+              submitted = (call.arguments as Map)['values'] as Map;
+              return [profile];
+            }
+            throw StateError('Unexpected native call ${call.method}');
+          });
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            localizationsDelegates: const [
+              AppStrings.delegate,
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+            supportedLocales: AppStrings.supportedLocales,
+            home: ServerInformationScreen(server: ServerInfo.fromMap(profile)),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('edit-server-profile')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('profile-sni')),
+        'edited.example.com',
+      );
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('save-server-profile')),
+        250,
+        scrollable: find.byType(Scrollable).last,
+      );
+      await tester.tap(find.byKey(const ValueKey('save-server-profile')));
+      await tester.pumpAndSettle();
+      expect(submitted, {'sni': 'edited.example.com'});
+    },
+  );
+
+  testWidgets(
+    'confirming an untouched ALPN selection preserves imported spacing and duplicates',
+    (tester) async {
+      final profile = _profile()..['alpn'] = ' custom/1 ,h2,h2 ';
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            localizationsDelegates: const [
+              AppStrings.delegate,
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+            supportedLocales: AppStrings.supportedLocales,
+            home: ServerInformationScreen(server: ServerInfo.fromMap(profile)),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('edit-server-profile')));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('profile-alpn')),
+        200,
+        scrollable: find.byType(Scrollable).last,
+      );
+      await tester.tap(find.byKey(const ValueKey('profile-alpn')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('apply-profile-choices')));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<TextFormField>(find.byKey(const ValueKey('profile-alpn')))
+            .controller!
+            .text,
+        ' custom/1 ,h2,h2 ',
+      );
+    },
+  );
+
+  testWidgets(
+    'selected information header keeps compact badge within narrow Persian layout',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 700);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final profile = _profile()
+        ..['name'] = 'نام طولانی سرور انتخاب‌شده برای اتصال';
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            locale: const Locale('fa'),
+            localizationsDelegates: const [
+              AppStrings.delegate,
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+            supportedLocales: AppStrings.supportedLocales,
+            home: ServerInformationScreen(server: ServerInfo.fromMap(profile)),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final badge = find.byKey(const ValueKey('selected-profile-badge'));
+      expect(badge, findsOneWidget);
+      expect(tester.getSize(badge).height, lessThanOrEqualTo(30));
+      expect(tester.takeException(), isNull);
     },
   );
 }

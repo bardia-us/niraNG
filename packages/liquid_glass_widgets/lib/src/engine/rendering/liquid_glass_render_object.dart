@@ -618,6 +618,7 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
               max(settings.blurWeight, 0.0),
             ]);
           })
+          ..setFloat(45, settings.effectiveBackdropZoom)
           ..setImageSampler(
             1,
             geometryImage,
@@ -793,6 +794,7 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
       })
       // Slot 0: captured background image (replaces the BackdropFilter read).
       ..setImageSampler(0, capture)
+      ..setFloat(45, settings.effectiveBackdropZoom)
       ..setImageSampler(1, geometryImage!, filterQuality: FilterQuality.medium);
 
     // Draw the capture path: no BackdropFilterLayer needed — draw directly

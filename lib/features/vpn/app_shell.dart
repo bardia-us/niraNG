@@ -368,9 +368,10 @@ class _AppShellState extends ConsumerState<AppShell> {
           ),
         ),
       ),
-      bottomNavigationBar: GlassSurface(
-        radius: 0,
-        showShadow: false,
+      // NavigationBar owns the bottom safe padding. One continuous, rim-free
+      // material covers both it and Android's transparent system buttons.
+      bottomNavigationBar: FrostedSurface(
+        sigma: shellState.performanceMode ? 8 : 12,
         child: navigationBar,
       ),
     );
@@ -586,6 +587,18 @@ class _TabScrollPhysics extends PageScrollPhysics {
   _TabScrollPhysics applyTo(ScrollPhysics? ancestor) =>
       _TabScrollPhysics(parent: buildParent(ancestor));
 
+  // A critically damped page spring settles without the long overdamped
+  // list-scroll tail. Keep drag position/velocity continuous; never jump to
+  // the destination to conceal the final pixels.
+  static final _pageSpring = SpringDescription.withDampingRatio(
+    mass: .5,
+    stiffness: 300,
+    ratio: 1,
+  );
+
+  @override
+  SpringDescription get spring => _pageSpring;
+
   @override
   double get minFlingVelocity => 650;
 
@@ -593,7 +606,7 @@ class _TabScrollPhysics extends PageScrollPhysics {
   double get minFlingDistance => 32;
 
   @override
-  double get dragStartDistanceMotionThreshold => 28;
+  double get dragStartDistanceMotionThreshold => 18;
 }
 
 class _RetainedPage extends StatefulWidget {

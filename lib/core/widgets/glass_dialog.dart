@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as glass;
 
 import 'glass_surface.dart';
 import 'menu_activity.dart';
@@ -14,7 +15,9 @@ Future<T?> showNirangDialog<T>({
   barrierDismissible: barrierDismissible,
   barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
   barrierColor: barrierColor,
-  transitionDuration: const Duration(milliseconds: 130),
+  transitionDuration: MediaQuery.disableAnimationsOf(context)
+      ? Duration.zero
+      : const Duration(milliseconds: 130),
   pageBuilder: (dialogContext, _, _) => MenuActivityScope(
     child: _PrimedDialogEntrance(
       onShown: onShown,
@@ -43,31 +46,89 @@ class _PrimedDialogEntrance extends StatefulWidget {
   State<_PrimedDialogEntrance> createState() => _PrimedDialogEntranceState();
 }
 
-class _PrimedDialogEntranceState extends State<_PrimedDialogEntrance> {
+class _PrimedDialogEntranceState extends State<_PrimedDialogEntrance>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _entrance = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 220),
+  );
   bool _glassReady = false;
+  bool _shown = false;
 
   @override
   void initState() {
     super.initState();
+    _entrance.addStatusListener(_onEntranceStatus);
     _primeGlass();
   }
 
   Future<void> _primeGlass() async {
     // LiquidGlass needs a completed paint to create its shape/backdrop layer.
-    // Paint the final geometry invisibly, then reveal that same widget instance.
+    // Paint its geometry invisibly, then animate that same widget instance.
     await WidgetsBinding.instance.endOfFrame;
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted) return;
     setState(() => _glassReady = true);
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _entrance.value = 1;
+    } else {
+      _entrance.forward();
+    }
+  }
+
+  void _onEntranceStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed || _shown) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) widget.onShown?.call();
+      if (!mounted || _shown || ModalRoute.of(context)?.isCurrent != true) {
+        return;
+      }
+      _shown = true;
+      widget.onShown?.call();
     });
   }
 
   @override
-  Widget build(BuildContext context) => GlassVisibilityScope(
-    visibility: _glassReady ? 1 : 0,
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_glassReady && MediaQuery.disableAnimationsOf(context)) {
+      _entrance.value = 1;
+    }
+  }
+
+  @override
+  void dispose() {
+    _entrance.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: _entrance,
     child: widget.child,
+    builder: (context, child) {
+      final reducedMotion = MediaQuery.disableAnimationsOf(context);
+      final progress = _entrance.value;
+      final visibility = const Interval(
+        0,
+        .5,
+        curve: Curves.easeOut,
+      ).transform(progress);
+      return IgnorePointer(
+        ignoring: !_glassReady,
+        child: ExcludeSemantics(
+          excluding: !_glassReady,
+          child: GlassVisibilityScope(
+            visibility: visibility,
+            child: Transform.scale(
+              scale: reducedMotion
+                  ? 1
+                  : .94 + .06 * Curves.easeOutCubic.transform(progress),
+              child: glass.GlassMotionSync(motion: _entrance, child: child!),
+            ),
+          ),
+        ),
+      );
+    },
   );
 }
 

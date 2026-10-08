@@ -19,10 +19,8 @@ class NirangScrollBehavior extends MaterialScrollBehavior {
     Widget child,
     ScrollableDetails details,
   ) {
-    if (reducedEffects) return child;
-    return StretchingOverscrollIndicator(
-      axisDirection: details.direction,
-      child: child,
-    );
+    // BouncingScrollPhysics already provides edge feedback. Stretching the
+    // compositor as well deforms circular lenses and their backdrop mapping.
+    return child;
   }
 }

@@ -142,6 +142,10 @@ uniform float uLensModel;
 // it, which texelAt() takes back out.
 uniform vec4 uFrost;
 
+// Slot 45: optional body magnification. Identity by default. Keep geometry and
+// the outer optical hairline at their real positions; enlarge only the backdrop.
+uniform float uBackdropZoom;
+
 uniform sampler2D uBackgroundTexture;
 uniform sampler2D uGeometryTexture;
 
@@ -475,6 +479,14 @@ void main() {
         displacement.y = -displacement.y;
     #endif
 
+    vec2 zoomDeltaPhysical = (uGeometryOffset + 0.5 * uGeometrySize - fragCoord)
+                          * (1.0 - 1.0 / max(1.0, uBackdropZoom)) * (1.0 - hairline);
+    vec2 zoomDelta = zoomDeltaPhysical;
+    #ifdef LGR_GLES_FLIP_SAMPLE_Y
+        zoomDelta.y = -zoomDelta.y;
+    #endif
+    screenUV += zoomDelta * invTexSize;
+
     // ── Concave horizontal pinch ──────────────────────────────────────────────
     // iOS 26 indicator pills make the bar content behind the left/right edges
     // appear slightly compressed inward — as if the pill is a convex lens
@@ -604,10 +616,10 @@ void main() {
     if (uFrost.x > 0.0) {
         // The frosted, lensed body; the hairline keeps the sharp sample just
         // outside the shape that it was given above.
-        vec2 p = fragCoord + uCaptureOffset + lensDisplacement;
+        vec2 p = fragCoord + uCaptureOffset + zoomDeltaPhysical + lensDisplacement;
         vec2 inward = normalXY / max(length(normalXY), 1e-4)
                     * max(0.0, 4.0 * dprScale - rimDist);
-        vec2 q = fragCoord + uCaptureOffset - inward;
+        vec2 q = fragCoord + uCaptureOffset + zoomDeltaPhysical - inward;
         vec3 frost = frostAt(p, q, invTexSize);
         refractColor.rgb = mix(frost, refractColor.rgb, hairline);
         // A frostWeight leaves its weight in the backdrop's alpha; only

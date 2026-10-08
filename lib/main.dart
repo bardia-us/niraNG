@@ -133,14 +133,16 @@ class NirangApp extends ConsumerWidget {
             statusBarIconBrightness: dark ? Brightness.light : Brightness.dark,
             statusBarBrightness: dark ? Brightness.dark : Brightness.light,
             systemStatusBarContrastEnforced: false,
-            systemNavigationBarColor: theme.colorScheme.surface,
-            systemNavigationBarDividerColor: theme.colorScheme.outlineVariant,
+            systemNavigationBarColor: Colors.transparent,
+            systemNavigationBarDividerColor: Colors.transparent,
             systemNavigationBarIconBrightness: dark
                 ? Brightness.light
                 : Brightness.dark,
             systemNavigationBarContrastEnforced: false,
           ),
-          child: child ?? const SizedBox.shrink(),
+          child: MediaQuery.withNoTextScaling(
+            child: child ?? const SizedBox.shrink(),
+          ),
         );
       },
       home: const AppShell(),

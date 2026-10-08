@@ -7,6 +7,7 @@ import '../../core/widgets/glass_dialog.dart';
 import '../../core/widgets/choice_dialog_options.dart';
 import '../../core/widgets/update_dialog.dart';
 import '../../core/widgets/telegram_mark.dart';
+import '../../core/widgets/status_toast.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/platform/native_models.dart';
 import '../../core/platform/nirang_native.dart';
@@ -938,9 +939,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       final release = await const GitHubUpdateChecker().check(currentVersion);
       if (!context.mounted) return;
       if (!release.updateAvailable) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(context.s('upToDate'))));
+        showSuccessToast(context, context.s('upToDate'));
         return;
       }
       await showUpdateOptionsDialog(context, release);
