@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/localization/app_strings.dart';
 import '../../core/platform/native_models.dart';
 import '../../core/widgets/country_flag_badge.dart';
+import '../../core/widgets/server_name_text.dart';
 import 'server_profile_settings_screen.dart';
 import '../vpn/app_controller.dart';
 
@@ -47,8 +48,10 @@ class ServerInformationScreen extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
+                      ServerNameText(
                         server.name,
+                        maxLines: null,
+                        overflow: TextOverflow.clip,
                         style: Theme.of(context).textTheme.titleMedium
                             ?.copyWith(fontWeight: FontWeight.w700),
                       ),

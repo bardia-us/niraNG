@@ -6,11 +6,12 @@ class NirangScrollBehavior extends MaterialScrollBehavior {
   final bool reducedEffects;
 
   @override
-  ScrollPhysics getScrollPhysics(BuildContext context) => BouncingScrollPhysics(
-    decelerationRate: reducedEffects
-        ? ScrollDecelerationRate.fast
-        : ScrollDecelerationRate.normal,
-    parent: const AlwaysScrollableScrollPhysics(),
+  ScrollPhysics getScrollPhysics(
+    BuildContext context,
+  ) => const BouncingScrollPhysics(
+    // Performance Mode saves rendering work, not the user's scroll momentum.
+    decelerationRate: ScrollDecelerationRate.normal,
+    parent: AlwaysScrollableScrollPhysics(),
   );
 
   @override

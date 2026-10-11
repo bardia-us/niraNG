@@ -1,5 +1,6 @@
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter/scheduler.dart';
 
 import '../engine/internal/transform_tracking_repaint_boundary_mixin.dart';
 
@@ -56,6 +57,12 @@ class _RenderGlassMotionSync extends RenderProxyBox {
   void attach(PipelineOwner owner) {
     super.attach(owner);
     _motion.addListener(_onMotion);
+    // The first scene establishes final screen/compositor transforms. Prime
+    // optical paint once after that scene, rather than waiting for a user's
+    // first scroll to refresh those coordinates. No periodic ticker is used.
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (attached) _onMotion();
+    });
   }
 
   @override

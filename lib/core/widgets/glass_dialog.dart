@@ -163,76 +163,83 @@ class NirangAlertDialog extends StatelessWidget {
         messageSurface: true,
         radius: 28,
         blur: GlassSurface.liquidBlur,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: 560, maxHeight: maxHeight),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (icon != null) ...[
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(22, 20, 22, 4),
-                  child: IconTheme(
-                    data: IconThemeData(
-                      color: theme.colorScheme.secondary,
-                      size: 28,
+        child: ListTileTheme.merge(
+          // ListTile's InkWell uses this same shape for splash and highlight,
+          // including radio choices and switches inside settings dialogs.
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: 560, maxHeight: maxHeight),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (icon != null) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(22, 20, 22, 4),
+                    child: IconTheme(
+                      data: IconThemeData(
+                        color: theme.colorScheme.secondary,
+                        size: 28,
+                      ),
+                      child: Center(child: icon),
                     ),
-                    child: Center(child: icon),
                   ),
-                ),
+                ],
+                if (title != null)
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      22,
+                      icon == null ? 20 : 8,
+                      22,
+                      0,
+                    ),
+                    child: DefaultTextStyle(
+                      style: theme.textTheme.headlineSmall!.copyWith(
+                        color: theme.colorScheme.onSurface,
+                      ),
+                      child: title!,
+                    ),
+                  ),
+                if (content != null)
+                  Flexible(
+                    child: scrollContent
+                        ? SingleChildScrollView(
+                            // The app's bouncing list physics can move even a
+                            // zero-extent form. Clamp here: only real overflow
+                            // scrolls, including when the keyboard takes space.
+                            physics: const ClampingScrollPhysics(),
+                            padding: contentPadding,
+                            child: DefaultTextStyle(
+                              style: theme.textTheme.bodyMedium!.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                              child: content!,
+                            ),
+                          )
+                        : Padding(
+                            padding: contentPadding,
+                            child: DefaultTextStyle(
+                              style: theme.textTheme.bodyMedium!.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                              child: content!,
+                            ),
+                          ),
+                  ),
+                if (actions.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
+                    child: OverflowBar(
+                      alignment: MainAxisAlignment.end,
+                      spacing: 8,
+                      overflowSpacing: 6,
+                      children: actions,
+                    ),
+                  ),
               ],
-              if (title != null)
-                Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    22,
-                    icon == null ? 20 : 8,
-                    22,
-                    0,
-                  ),
-                  child: DefaultTextStyle(
-                    style: theme.textTheme.headlineSmall!.copyWith(
-                      color: theme.colorScheme.onSurface,
-                    ),
-                    child: title!,
-                  ),
-                ),
-              if (content != null)
-                Flexible(
-                  child: scrollContent
-                      ? SingleChildScrollView(
-                          // The app's bouncing list physics can move even a
-                          // zero-extent form. Clamp here: only real overflow
-                          // scrolls, including when the keyboard takes space.
-                          physics: const ClampingScrollPhysics(),
-                          padding: contentPadding,
-                          child: DefaultTextStyle(
-                            style: theme.textTheme.bodyMedium!.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                            child: content!,
-                          ),
-                        )
-                      : Padding(
-                          padding: contentPadding,
-                          child: DefaultTextStyle(
-                            style: theme.textTheme.bodyMedium!.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                            child: content!,
-                          ),
-                        ),
-                ),
-              if (actions.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
-                  child: OverflowBar(
-                    alignment: MainAxisAlignment.end,
-                    spacing: 8,
-                    overflowSpacing: 6,
-                    children: actions,
-                  ),
-                ),
-            ],
+            ),
           ),
         ),
       ),

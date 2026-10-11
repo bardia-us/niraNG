@@ -8,7 +8,8 @@ import '../../features/vpn/app_controller.dart';
 import 'live_liquid_glass.dart';
 
 /// Shared upstream material. Legacy hints preserve source compatibility, not
-/// different optical recipes: all premium surfaces use the approved preset.
+/// different optical recipes: normal mode uses the approved preset, while
+/// Performance Mode uses opaque surfaces without any optical passes.
 class GlassSurface extends ConsumerWidget {
   static const liquidBlur = 2.4;
   static const liquidSaturation = 1.4;
@@ -63,12 +64,18 @@ class GlassSurface extends ConsumerWidget {
       1.0,
     );
     final settings = messageSurface
-        ? liquidMessageSettings(theme.brightness, performanceMode: performance)
-        : liquidSurfaceSettings(theme.brightness, performanceMode: performance);
+        ? liquidMessageSettings(theme.brightness)
+        : liquidSurfaceSettings(theme.brightness);
     final content = Material(
       type: MaterialType.transparency,
       child: Padding(padding: padding ?? EdgeInsets.zero, child: child),
     );
+    if (performance) {
+      return Opacity(
+        opacity: visible,
+        child: FrostedSurface(radius: radius, opaque: true, child: content),
+      );
+    }
     return ValueListenableBuilder<bool>(
       valueListenable: liveGlassReadyListenable,
       builder: (context, ready, _) {
@@ -77,9 +84,6 @@ class GlassSurface extends ConsumerWidget {
             quality: glass.GlassQuality.premium,
             allowElevation: false,
             settings: settings.copyWith(
-              // AdaptiveGlass removes its optical subtree at exactly zero.
-              // Keep it painting below visible precision while dialogs prime,
-              // so the first visible frame already has backdrop geometry.
               visibility: visible.clamp(.000001, 1.0),
             ),
             shape: glass.LiquidRoundedRectangle(borderRadius: radius),
@@ -96,7 +100,7 @@ class GlassSurface extends ConsumerWidget {
           child: FrostedSurface(
             radius: radius,
             opaque: reduced,
-            sigma: performance ? 8 : 12,
+            sigma: 12,
             child: content,
           ),
         );
@@ -106,7 +110,7 @@ class GlassSurface extends ConsumerWidget {
 }
 
 /// Ordinary translucency, never presented as optical refraction.
-class FrostedSurface extends StatelessWidget {
+class FrostedSurface extends ConsumerWidget {
   const FrostedSurface({
     required this.child,
     this.radius = 0,
@@ -121,17 +125,18 @@ class FrostedSurface extends StatelessWidget {
   final double sigma;
   final double? tintAlpha;
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final solid = opaque || ref.watch(performanceModeProvider);
     final surface = ColoredBox(
       color: scheme.surfaceContainerHigh.withValues(
-        alpha: opaque ? 1 : (tintAlpha ?? .76).clamp(0, 1),
+        alpha: solid ? 1 : (tintAlpha ?? .76).clamp(0, 1),
       ),
       child: Material(type: MaterialType.transparency, child: child),
     );
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius),
-      child: opaque
+      child: solid
           ? surface
           : BackdropFilter(
               filter: ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),

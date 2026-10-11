@@ -8,6 +8,7 @@ import '../../core/platform/native_models.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/user_facing_error.dart';
 import '../../core/widgets/country_flag_badge.dart';
+import '../../core/widgets/server_name_text.dart';
 import '../../core/widgets/glass_surface.dart';
 import '../../core/widgets/liquid_controls.dart';
 import 'app_controller.dart';
@@ -69,6 +70,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         },
         child: glass.GlassMotionSync(
           motion: _opticalMotion,
+          shouldRefresh: () => !ref.read(performanceModeProvider),
           child: ListView(
             controller: _scrollController,
             physics: const AlwaysScrollableScrollPhysics(),
@@ -76,7 +78,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               16,
               MediaQuery.paddingOf(context).top + 6,
               16,
-              24,
+              MediaQuery.paddingOf(context).bottom + 24,
             ),
             children: [
               SizeChangedLayoutNotifier(
@@ -206,8 +208,8 @@ class _ConnectionCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        displayServerName(selected.name),
+                      ServerNameText(
+                        selected.name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.titleMedium

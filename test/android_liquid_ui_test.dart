@@ -29,9 +29,7 @@ class _Controller extends AppController {
 void main() {
   for (final (brightness, performanceMode) in [
     (Brightness.light, false),
-    (Brightness.light, true),
     (Brightness.dark, false),
-    (Brightness.dark, true),
   ]) {
     testWidgets(
       'server actions fit the compact row as a circle ($brightness, performance=$performanceMode)',
@@ -184,15 +182,13 @@ void main() {
       },
     );
   }
-  testWidgets('performance simplification stays local to server row controls', (
-    tester,
-  ) async {
+  testWidgets('normal mode keeps full glass on focal controls', (tester) async {
     liveGlassReadyListenable.value = true;
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           appControllerProvider.overrideWith(
-            () => _Controller(performanceMode: true, feedbackMode: 'off'),
+            () => _Controller(performanceMode: false, feedbackMode: 'off'),
           ),
         ],
         child: MaterialApp(

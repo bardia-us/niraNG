@@ -178,11 +178,18 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    final navGlass = find.ancestor(
-      of: find.byType(NavigationBar),
-      matching: find.byType(FrostedSurface),
+    // Only the floating capsule has material. Android's safe area has no
+    // extra optical layer or divider.
+    final nav = find.byType(NavigationBar);
+    expect(tester.getBottomLeft(nav).dy, 570);
+    final material = tester.widget<FrostedSurface>(
+      find.ancestor(of: nav, matching: find.byType(FrostedSurface)).first,
     );
-    expect(tester.getBottomLeft(navGlass).dy, closeTo(600, .01));
+    expect(material.radius, 36);
+    expect(
+      find.descendant(of: nav, matching: find.byType(BackdropFilter)),
+      findsNothing,
+    );
     final region = tester.widget<AnnotatedRegion<SystemUiOverlayStyle>>(
       find.byType(AnnotatedRegion<SystemUiOverlayStyle>).first,
     );

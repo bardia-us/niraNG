@@ -1,14 +1,15 @@
 package dev.nirang.client.settings
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.net.Uri
 import android.os.Build
 import dev.nirang.client.BuildConfig
 import java.net.Inet6Address
 import java.net.InetAddress
 
-class NativeSettings(context: Context) {
-    private val prefs = context.getSharedPreferences("nirang_settings", Context.MODE_PRIVATE)
+class NativeSettings internal constructor(private val prefs: SharedPreferences) {
+    constructor(context: Context) : this(context.getSharedPreferences("nirang_settings", Context.MODE_PRIVATE))
 
     init {
         migrateInstallDefaults()
@@ -21,10 +22,13 @@ class NativeSettings(context: Context) {
         else -> "global"
     }
     val customDomains: String get() = safeString("customDomains", "").takeIf(::validDomainRules) ?: ""
+    val localBypassMode: String get() = safeString("localBypassMode", "auto").takeIf(ALLOWED_LOCAL_BYPASS::contains) ?: "auto"
     val customIps: String get() = safeString("customIps", "").takeIf(::validIpRules) ?: ""
     val enableLocalDns: Boolean get() = safeBoolean("enableLocalDns", true)
     val enableFakeDns: Boolean get() = safeBoolean("enableFakeDns", false)
-    val remoteDns: String get() = safeString("remoteDns", DEFAULT_REMOTE_DNS).takeIf(::validDnsResolvers) ?: DEFAULT_REMOTE_DNS
+    val remoteDns: String get() = DnsResolverAddress.normalizeList(
+        safeString("remoteDns", DEFAULT_REMOTE_DNS).takeIf(::validDnsResolvers) ?: DEFAULT_REMOTE_DNS,
+    )
     val directDnsEnabled: Boolean get() = safeBoolean("directDnsEnabled", FRESH_INSTALL_DEFAULTS.directDnsEnabled)
     val directDns: String get() = safeString("directDns", FRESH_INSTALL_DEFAULTS.directDns).takeIf { it.isEmpty() || validDnsResolvers(it) } ?: FRESH_INSTALL_DEFAULTS.directDns
     val vpnDns: String get() = safeString("vpnDns", DEFAULT_VPN_DNS).takeIf(::validIpAddress) ?: DEFAULT_VPN_DNS
@@ -71,6 +75,7 @@ class NativeSettings(context: Context) {
     fun toMap(): Map<String, Any?> = mapOf(
         "connectionMode" to connectionMode,
         "routingMode" to routingMode,
+        "localBypassMode" to localBypassMode,
         "customDomains" to customDomains,
         "customIps" to customIps,
         "enableLocalDns" to enableLocalDns,
@@ -134,6 +139,10 @@ class NativeSettings(context: Context) {
             require(it in ALLOWED_ROUTING) { "Unsupported routing mode" }
             strings["routingMode"] = it
         }
+        values["localBypassMode"]?.toString()?.let {
+            require(it in ALLOWED_LOCAL_BYPASS) { "Unsupported local bypass mode" }
+            strings["localBypassMode"] = it
+        }
         values["customDomains"]?.toString()?.let {
             require(validDomainRules(it)) { "Custom domain rules are invalid or too large" }
             strings["customDomains"] = it.trim()
@@ -144,7 +153,7 @@ class NativeSettings(context: Context) {
         }
         values["remoteDns"]?.toString()?.trim()?.let {
             require(validDnsResolvers(it)) { "Remote DNS resolvers are invalid" }
-            strings["remoteDns"] = it
+            strings["remoteDns"] = DnsResolverAddress.normalizeList(it)
         }
         values["directDns"]?.toString()?.trim()?.let {
             require(it.isEmpty() || validDnsResolvers(it)) { "Direct DNS resolvers are invalid" }
@@ -302,8 +311,20 @@ class NativeSettings(context: Context) {
     }
 
     fun resetAll(): Map<String, Any?> {
-        check(prefs.edit().clear().commit()) { "Settings could not be reset" }
-        migrateInstallDefaults()
+        // Reminder history belongs to this installation, not user preferences.
+        val historyKeys = setOf("telegramNever", "telegramSecondShown",
+            "telegramFirstSession", "telegramLastShown")
+        val history = prefs.all.filterKeys { it in historyKeys }
+        val editor = prefs.edit().clear()
+        history.forEach { (key, value) ->
+            when (value) {
+                is Boolean -> editor.putBoolean(key, value)
+                is String -> editor.putString(key, value)
+                is Long -> editor.putLong(key, value)
+            }
+        }
+        check(editor.commit()) { "Settings could not be reset" }
+        migrateInstallDefaults(forceFreshProfile = true)
         return toMap()
     }
 
@@ -336,11 +357,12 @@ class NativeSettings(context: Context) {
         editor.apply()
     }
 
-    private fun migrateInstallDefaults() = synchronized(DEFAULTS_MIGRATION_LOCK) {
+    private fun migrateInstallDefaults(forceFreshProfile: Boolean = false) = synchronized(DEFAULTS_MIGRATION_LOCK) {
         val schemaVersion = runCatching { prefs.getInt(DEFAULTS_SCHEMA_KEY, 0) }.getOrDefault(0)
         if (schemaVersion >= DEFAULTS_SCHEMA_VERSION) return@synchronized
 
-        val existingState = schemaVersion > 0 || prefs.all.keys.any { it != DEFAULTS_SCHEMA_KEY }
+        val existingState = !forceFreshProfile &&
+            (schemaVersion > 0 || prefs.all.keys.any { it != DEFAULTS_SCHEMA_KEY })
         val defaults = InstallDefaults.forExistingState(existingState)
         val editor = prefs.edit()
         if (!prefs.contains("routingMode")) editor.putString("routingMode", defaults.routingMode)
@@ -354,6 +376,18 @@ class NativeSettings(context: Context) {
         if (!prefs.contains("muxConcurrency")) editor.putInt("muxConcurrency", defaults.muxConcurrency)
         if (!prefs.contains("muxXudpConcurrency")) editor.putInt("muxXudpConcurrency", defaults.muxXudpConcurrency)
         if (!prefs.contains("muxQuicHandling")) editor.putString("muxQuicHandling", defaults.muxQuicHandling)
+        // Materialize the agreed profile only for an empty install/reset.
+        // Existing schemas and explicit user values are never reset on update.
+        if (!existingState) {
+            editor.putBoolean("enableLocalDns", true)
+                .putBoolean("enableFakeDns", false)
+                .putString("remoteDns", DEFAULT_REMOTE_DNS)
+                .putString("vpnDns", DEFAULT_VPN_DNS)
+                .putBoolean("sniffingEnabled", true)
+                .putBoolean("preferIpv6", false)
+                .putBoolean("fragmentEnabled", false)
+                .putInt("vpnMtu", 1500)
+        }
         editor.putInt(DEFAULTS_SCHEMA_KEY, DEFAULTS_SCHEMA_VERSION).commit()
     }
 
@@ -407,6 +441,7 @@ class NativeSettings(context: Context) {
         private const val DEFAULT_IP_CHECK = "https://api.ip.sb/geoip"
         private val ALLOWED_CONNECTION_MODES = setOf("vpn", "proxy")
         private val ALLOWED_ROUTING = setOf("global", "bypassIran", "custom")
+        private val ALLOWED_LOCAL_BYPASS = setOf("auto", "bypass", "proxy")
         private val ALLOWED_DOMAIN_STRATEGIES = setOf("AsIs", "IPIfNonMatch", "IPOnDemand")
         private val ALLOWED_INTERVALS = setOf(6, 12, 24)
         private val ALLOWED_PING_CONCURRENCY = setOf(4, 8, 16, 32)

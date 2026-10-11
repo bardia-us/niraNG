@@ -8,6 +8,7 @@ import '../../core/widgets/choice_dialog_options.dart';
 import '../../core/widgets/update_dialog.dart';
 import '../../core/widgets/telegram_mark.dart';
 import '../../core/widgets/status_toast.dart';
+import '../../core/widgets/live_liquid_glass.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/platform/native_models.dart';
 import '../../core/platform/nirang_native.dart';
@@ -27,6 +28,32 @@ class SettingsScreen extends ConsumerStatefulWidget {
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final GlobalKey _backdropKey = GlobalKey();
   bool _checkingUpdates = false;
+  bool _changingPerformance = false;
+
+  Future<void> _changePerformance(bool enabled) async {
+    if (_changingPerformance) return;
+    setState(() => _changingPerformance = true);
+    try {
+      await _perform(context, () async {
+        if (!enabled && !liveGlassReadyListenable.value) {
+          // Paint feedback while the whole app is still shader-free. Never
+          // switch the optimistic settings state before loading the shaders.
+          await WidgetsBinding.instance.endOfFrame;
+          if (!mounted) return;
+          await ref.read(liveGlassPreparationProvider)();
+          if (!mounted) return;
+        }
+        await ref.read(appControllerProvider.notifier).updateSettings({
+          'performanceMode': enabled,
+          'performanceModePrompted': true,
+        });
+        // Keep the indicator through the first frame of the restored visuals.
+        if (mounted) await WidgetsBinding.instance.endOfFrame;
+      });
+    } finally {
+      if (mounted) setState(() => _changingPerformance = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -58,7 +85,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       child: ListView(
         padding: EdgeInsets.only(
           top: MediaQuery.paddingOf(context).top,
-          bottom: 24,
+          bottom: MediaQuery.paddingOf(context).bottom + 24,
         ),
         children: [
           _SettingsExpansion(
@@ -388,6 +415,30 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   subtitle: Text(context.s('customRuleHint')),
                   onTap: () => _editCustomRules(context, controller, settings),
                 ),
+              ListTile(
+                leading: const Icon(Icons.lan_outlined),
+                title: Text(context.s('localBypass')),
+                subtitle: Text(
+                  context.s(switch (settings.localBypassMode) {
+                    'bypass' => 'localBypassDirect',
+                    'proxy' => 'localBypassProxy',
+                    _ => 'localBypassAuto',
+                  }),
+                ),
+                onTap: () => _chooseValue(
+                  context,
+                  title: context.s('localBypass'),
+                  current: settings.localBypassMode,
+                  values: {
+                    'auto': context.s('localBypassAuto'),
+                    'bypass': context.s('localBypassDirect'),
+                    'proxy': context.s('localBypassProxy'),
+                  },
+                  descriptions: {'proxy': context.s('localBypassHint')},
+                  onSelected: (value) =>
+                      controller.updateSettings({'localBypassMode': value}),
+                ),
+              ),
             ],
           ),
           _SettingsExpansion(
@@ -630,17 +681,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
               ),
               SwitchListTile(
-                secondary: const Icon(Icons.bolt_rounded),
+                secondary: _changingPerformance
+                    ? const SizedBox.square(
+                        dimension: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.bolt_rounded),
                 title: Text(context.s('performanceMode')),
-                subtitle: Text(context.s('performanceModeSummary')),
-                value: settings.performanceMode,
-                onChanged: (value) => _perform(
-                  context,
-                  () => controller.updateSettings({
-                    'performanceMode': value,
-                    'performanceModePrompted': true,
-                  }),
+                subtitle: Text(
+                  context.s(
+                    _changingPerformance
+                        ? 'preparingVisualEffects'
+                        : 'performanceModeSummary',
+                  ),
                 ),
+                value: settings.performanceMode,
+                onChanged: _changingPerformance ? null : _changePerformance,
               ),
               SwitchListTile(
                 secondary: const Icon(Icons.power_settings_new_rounded),

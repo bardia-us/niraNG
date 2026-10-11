@@ -30,6 +30,7 @@ class _NavigationController extends AppController {
   @override
   Future<AppSnapshot> build() async => AppSnapshot(
     settings: NativeSettings(
+      performanceMode: false,
       performanceModePrompted: true,
       feedbackMode: feedbackMode,
     ),
@@ -453,6 +454,10 @@ void main() {
           )
           .last,
     );
+    // A newly visible title can have only its top pixels inside the viewport.
+    // Put its full tap target above the reserved floating dock before tapping.
+    await tester.drag(find.byType(SettingsScreen), const Offset(0, -100));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Theme & Appearance'));
     await tester.pumpAndSettle();
     final setting = find.text('Dark background');

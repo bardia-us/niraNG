@@ -69,12 +69,18 @@ class RenderGlassBackdropGroupBoundary extends RenderProxyBox {
   /// Adds [member]. The others repaint, since whether they share depends on
   /// how many there are.
   void join(RenderObject member) {
-    if (_members.add(member)) _repaintMembers();
+    final wasShared = _members.length >= 2;
+    if (_members.add(member) && wasShared != (_members.length >= 2)) {
+      _repaintMembers();
+    }
   }
 
   /// Removes [member], and repaints the others.
   void leave(RenderObject member) {
-    if (_members.remove(member)) _repaintMembers();
+    final wasShared = _members.length >= 2;
+    if (_members.remove(member) && wasShared != (_members.length >= 2)) {
+      _repaintMembers();
+    }
   }
 
   // Joins and leaves happen while painting, where marking another render

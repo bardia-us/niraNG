@@ -494,7 +494,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('server glass keeps localized blur at a lower performance cost', (
+  testWidgets('server menus preserve actions when performance removes blur', (
     tester,
   ) async {
     late _FakeAppController controller;
@@ -517,14 +517,6 @@ void main() {
       of: find.text('Servers (2)'),
       matching: find.byType(GlassSurface),
     );
-    final fullEffectsSigma = tester
-        .widget<FrostedSurface>(
-          find.descendant(
-            of: headerSurface,
-            matching: find.byType(FrostedSurface),
-          ),
-        )
-        .sigma;
     expect(
       find.descendant(of: headerSurface, matching: find.byType(BackdropFilter)),
       findsOneWidget,
@@ -533,16 +525,14 @@ void main() {
       final frost = tester.widget<FrostedSurface>(
         find.descendant(of: surface, matching: find.byType(FrostedSurface)),
       );
-      expect(frost.opaque, isFalse);
-      expect(frost.sigma, greaterThan(0));
-      expect(frost.sigma, lessThan(fullEffectsSigma));
+      expect(frost.opaque, isTrue);
       final filter = find.descendant(
         of: surface,
         matching: find.byType(BackdropFilter),
       );
-      expect(filter, findsOneWidget);
+      expect(filter, findsNothing);
       expect(
-        find.ancestor(of: filter, matching: find.byType(ClipRRect)),
+        find.descendant(of: surface, matching: find.byType(ClipRRect)),
         findsWidgets,
       );
     }

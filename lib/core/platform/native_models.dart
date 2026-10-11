@@ -196,20 +196,21 @@ class NativeSettings {
   const NativeSettings({
     this.connectionMode = 'vpn',
     this.routingMode = 'bypassIran',
+    this.localBypassMode = 'auto',
     this.customDomains = '',
     this.customIps = '',
     this.enableLocalDns = true,
     this.enableFakeDns = false,
     this.remoteDns = 'https://dns.google/dns-query',
-    this.directDnsEnabled = true,
-    this.directDns = '178.22.122.100',
+    this.directDnsEnabled = false,
+    this.directDns = '',
     this.vpnDns = '1.1.1.1',
     this.vpnInterfaceAddress = '10.10.14.1/30',
     this.localSocksPort = 10808,
     this.realPingConcurrency = 16,
     this.domainStrategy = 'AsIs',
     this.sniffingEnabled = true,
-    this.routeOnly = true,
+    this.routeOnly = false,
     this.blockQuic = false,
     this.muxEnabled = false,
     this.muxConcurrency = 8,
@@ -251,20 +252,25 @@ class NativeSettings {
   factory NativeSettings.fromMap(Map<dynamic, dynamic> map) => NativeSettings(
     connectionMode: '${map['connectionMode'] ?? 'vpn'}',
     routingMode: '${map['routingMode'] ?? 'bypassIran'}',
+    localBypassMode: _choice(map['localBypassMode'], const {
+      'auto',
+      'bypass',
+      'proxy',
+    }, 'auto'),
     customDomains: '${map['customDomains'] ?? ''}',
     customIps: '${map['customIps'] ?? ''}',
     enableLocalDns: map['enableLocalDns'] != false,
     enableFakeDns: map['enableFakeDns'] == true,
     remoteDns: '${map['remoteDns'] ?? 'https://dns.google/dns-query'}',
-    directDnsEnabled: map['directDnsEnabled'] != false,
-    directDns: '${map['directDns'] ?? '178.22.122.100'}',
+    directDnsEnabled: map['directDnsEnabled'] == true,
+    directDns: '${map['directDns'] ?? ''}',
     vpnDns: '${map['vpnDns'] ?? '1.1.1.1'}',
     vpnInterfaceAddress: '${map['vpnInterfaceAddress'] ?? '10.10.14.1/30'}',
     localSocksPort: _int(map['localSocksPort']) ?? 10808,
     realPingConcurrency: _int(map['realPingConcurrency']) ?? 16,
     domainStrategy: '${map['domainStrategy'] ?? 'AsIs'}',
     sniffingEnabled: map['sniffingEnabled'] != false,
-    routeOnly: map['routeOnly'] != false,
+    routeOnly: map['routeOnly'] == true,
     blockQuic: map['blockQuic'] == true,
     muxEnabled: map['muxEnabled'] == true,
     muxConcurrency: _int(map['muxConcurrency']) ?? 8,
@@ -307,6 +313,7 @@ class NativeSettings {
 
   final String connectionMode;
   final String routingMode;
+  final String localBypassMode;
   final String customDomains;
   final String customIps;
   final bool enableLocalDns;
@@ -369,6 +376,11 @@ class NativeSettings {
     return NativeSettings(
       connectionMode: stringValue('connectionMode', connectionMode),
       routingMode: stringValue('routingMode', routingMode),
+      localBypassMode: _choice(values['localBypassMode'], const {
+        'auto',
+        'bypass',
+        'proxy',
+      }, localBypassMode),
       customDomains: stringValue('customDomains', customDomains),
       customIps: stringValue('customIps', customIps),
       enableLocalDns: boolValue('enableLocalDns', enableLocalDns),

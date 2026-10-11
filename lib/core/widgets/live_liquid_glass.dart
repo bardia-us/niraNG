@@ -1,10 +1,16 @@
 import 'dart:async';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as glass;
 
 final liveGlassReadyListenable = ValueNotifier<bool>(false);
 Future<void>? _preparation;
+// Asset loading is an external asynchronous boundary, shared by startup and
+// the settings transition.
+final liveGlassPreparationProvider = Provider<Future<void> Function()>(
+  (_) => prepareLiveGlass,
+);
 glass.LiquidGlassSettings liquidSettings(ui.Brightness brightness) =>
     (brightness == ui.Brightness.dark
             ? glass.LiquidGlassSettings.ios27Dark

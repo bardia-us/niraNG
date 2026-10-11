@@ -22,7 +22,8 @@ class AppStrings {
       'startupDevice': 'Preparing your device',
       'startupAccess': 'Checking device access',
       'startupSettings': 'Loading saved settings',
-      'startupNetworkWait': 'Waiting for the access server. This may take longer on a slow network.',
+      'startupNetworkWait':
+          'Waiting for the access server. This may take longer on a slow network.',
       'serverProfileSettings': 'Profile CDN / TLS settings',
       'profileSave': 'Save profile',
       'profileSaved': 'Profile saved',
@@ -32,10 +33,14 @@ class AppStrings {
       'profileCustom': 'Custom',
       'profileInvalidFingerprint': 'Choose a supported fingerprint',
       'profileChoiceHint': 'Untouched imported values are preserved.',
-      'profileSelectionHint': 'Select one or more. Empty uses the core default.',
-      'profileCipherHint': 'Overrides apply to standard TLS 1.0–1.2 (unsafe fingerprint). TLS 1.3 and browser fingerprints use core defaults.',
-      'profileReconnectHint': 'Changes apply on the next connection or service restart.',
-      'profileTlsOnlyHint': 'Reality supports SNI and fingerprint here. TLS-only options are preserved but cannot be edited.',
+      'profileSelectionHint':
+          'Select one or more. Empty uses the core default.',
+      'profileCipherHint':
+          'Overrides apply to standard TLS 1.0–1.2 (unsafe fingerprint). TLS 1.3 and browser fingerprints use core defaults.',
+      'profileReconnectHint':
+          'Changes apply on the next connection or service restart.',
+      'profileTlsOnlyHint':
+          'Reality supports SNI and fingerprint here. TLS-only options are preserved but cannot be edited.',
       'fingerprint': 'Fingerprint',
       'cipherSuites': 'Cipher suites',
       'finalMask': 'FinalMask JSON',
@@ -91,6 +96,11 @@ class AppStrings {
       'protocol': 'Protocol',
       'transport': 'Transport',
       'routing': 'Routing',
+      'localBypass': 'Local network / localhost',
+      'localBypassAuto': 'Automatic (direct local access)',
+      'localBypassDirect': 'Bypass proxy',
+      'localBypassProxy': 'Use proxy',
+      'localBypassHint': 'Controls private IPs and local names, independently of Iran bypass. Through proxy, local addresses refer to the server’s network and may be unreachable.',
       'dns': 'DNS',
       'name': 'Name',
       'security': 'Security',
@@ -132,8 +142,9 @@ class AppStrings {
       'light': 'Light',
       'dark': 'Dark',
       'performanceMode': 'Performance Mode',
+      'preparingVisualEffects': 'Preparing visual effects…',
       'performanceModeSummary':
-          'Reduce blur and heavy visual effects while keeping lightweight animations.',
+          'Opaque surfaces without Liquid Glass or blur; lightweight animations remain.',
       'language': 'Language',
       'english': 'English',
       'persian': 'فارسی',
@@ -259,7 +270,7 @@ class AppStrings {
       'updateCheckFailed':
           'Could not reach GitHub. Check your connection and try again.',
       'performanceModeDialogBody':
-          'If your device is older or the interface feels slow, Performance Mode can reduce visual effects and animations to improve responsiveness and battery usage.',
+          'Performance Mode replaces Liquid Glass and blur with opaque surfaces to reduce GPU work. Layout, actions and lightweight animations stay available.',
       'enable': 'Enable',
       'keepFullEffects': 'Keep full effects',
       'hours6': '6 hours',
@@ -336,7 +347,8 @@ class AppStrings {
       'startupDevice': 'در حال آماده‌سازی دستگاه',
       'startupAccess': 'در حال بررسی دسترسی دستگاه',
       'startupSettings': 'در حال بارگذاری تنظیمات ذخیره‌شده',
-      'startupNetworkWait': 'منتظر پاسخ سرور دسترسی هستیم؛ روی اینترنت کند ممکن است بیشتر طول بکشد.',
+      'startupNetworkWait':
+          'منتظر پاسخ سرور دسترسی هستیم؛ روی اینترنت کند ممکن است بیشتر طول بکشد.',
       'serverProfileSettings': 'تنظیمات CDN / TLS پروفایل',
       'profileSave': 'ذخیره پروفایل',
       'profileSaved': 'پروفایل ذخیره شد',
@@ -346,10 +358,14 @@ class AppStrings {
       'profileCustom': 'سفارشی',
       'profileInvalidFingerprint': 'اثر انگشت پشتیبانی‌شده انتخاب کن',
       'profileChoiceHint': 'مقادیر واردشده بدون ویرایش حفظ می‌شوند.',
-      'profileSelectionHint': 'یک یا چند گزینه انتخاب کن. حالت خالی از پیش‌فرض هسته استفاده می‌کند.',
-      'profileCipherHint': 'تغییر رمزنگاری برای TLS معمولی نسخه ۱ تا ۱٫۲ با اثر انگشت unsafe است. TLS ۱٫۳ و اثر انگشت مرورگر از پیش‌فرض هسته استفاده می‌کنند.',
-      'profileReconnectHint': 'تغییرات با اتصال بعدی یا ری‌استارت سرویس اعمال می‌شوند.',
-      'profileTlsOnlyHint': 'اینجا برای Reality فقط SNI و اثرانگشت قابل ویرایش است. گزینه‌های مخصوص TLS حفظ می‌شوند.',
+      'profileSelectionHint':
+          'یک یا چند گزینه انتخاب کن. حالت خالی از پیش‌فرض هسته استفاده می‌کند.',
+      'profileCipherHint':
+          'تغییر رمزنگاری برای TLS معمولی نسخه ۱ تا ۱٫۲ با اثر انگشت unsafe است. TLS ۱٫۳ و اثر انگشت مرورگر از پیش‌فرض هسته استفاده می‌کنند.',
+      'profileReconnectHint':
+          'تغییرات با اتصال بعدی یا ری‌استارت سرویس اعمال می‌شوند.',
+      'profileTlsOnlyHint':
+          'اینجا برای Reality فقط SNI و اثرانگشت قابل ویرایش است. گزینه‌های مخصوص TLS حفظ می‌شوند.',
       'fingerprint': 'اثر انگشت',
       'cipherSuites': 'مجموعه رمزنگاری',
       'finalMask': 'FinalMask JSON',
@@ -405,6 +421,11 @@ class AppStrings {
       'protocol': 'پروتکل',
       'transport': 'انتقال',
       'routing': 'مسیریابی',
+      'localBypass': 'شبکهٔ محلی / localhost',
+      'localBypassAuto': 'خودکار (دسترسی مستقیم محلی)',
+      'localBypassDirect': 'عبور مستقیم، بدون پروکسی',
+      'localBypassProxy': 'عبور از پروکسی',
+      'localBypassHint': 'برای IP خصوصی و نام‌های محلی، مستقل از بای‌پس ایران. در حالت پروکسی، آدرس محلی به شبکهٔ سرور اشاره می‌کند و ممکن است در دسترس نباشد.',
       'dns': 'DNS',
       'name': 'نام',
       'security': 'امنیت',
@@ -446,8 +467,9 @@ class AppStrings {
       'light': 'روشن',
       'dark': 'تیره',
       'performanceMode': 'حالت عملکرد',
+      'preparingVisualEffects': 'در حال آماده‌سازی جلوه‌ها…',
       'performanceModeSummary':
-          'کاهش محوشدگی و جلوه‌های سنگین با حفظ حرکت‌های سبک و روان.',
+          'سطح‌های مات بدون لیکوئید گلس و بلور، با حفظ انیمیشن‌های سبک.',
       'language': 'زبان',
       'english': 'English',
       'persian': 'فارسی',
@@ -569,7 +591,7 @@ class AppStrings {
       'updateCheckFailed':
           'ارتباط با GitHub ممکن نشد. اتصال اینترنت را بررسی و دوباره تلاش کنید.',
       'performanceModeDialogBody':
-          'اگر دستگاه شما قدیمی است یا رابط کاربری کند به نظر می‌رسد، حالت عملکرد با کاهش جلوه‌ها و حرکت‌ها پاسخ‌گویی و مصرف باتری را بهتر می‌کند.',
+          'حالت عملکرد، لیکوئید گلس و بلور را با سطح‌های مات جایگزین می‌کند تا کار GPU کمتر شود. چیدمان، دکمه‌ها و انیمیشن‌های سبک حفظ می‌شوند.',
       'enable': 'فعال‌سازی',
       'keepFullEffects': 'حفظ جلوه‌های کامل',
       'hours6': '۶ ساعت',

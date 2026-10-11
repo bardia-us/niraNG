@@ -112,7 +112,7 @@ class GitHubUpdateChecker {
   Future<BilingualReleaseNotes> releaseNotes(String version) async {
     // This APK has not necessarily been published yet; its own notes should
     // remain available offline, without displaying another release's notes.
-    if (version == '1.2.0' || version == '1.2.1') {
+    if (version == '1.2.0' || version == '1.2.1' || version == '1.2.2') {
       return parseBilingualReleaseNotes(
         await rootBundle.loadString('assets/release_notes/$version.md'),
       );

@@ -7,11 +7,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as glass;
 
 import '../../core/localization/app_strings.dart';
-import '../../core/formatters.dart';
 import '../../core/platform/native_models.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/user_facing_error.dart';
 import '../../core/widgets/country_flag_badge.dart';
+import '../../core/widgets/server_name_text.dart';
 import '../../core/widgets/glass_surface.dart';
 import '../../core/widgets/glass_dialog.dart';
 import '../../core/widgets/liquid_controls.dart';
@@ -86,6 +86,7 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
                         // their own optical layer. Refresh its coordinates for
                         // this paint, not the post-composition fallback frame.
                         motion: _scrollController,
+                        shouldRefresh: () => !view.performanceMode,
                         child: app.servers.isEmpty
                             ? Padding(
                                 padding: EdgeInsets.only(
@@ -103,7 +104,7 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
                                   8,
                                   chromeTop + headerHeight + 16,
                                   8,
-                                  16,
+                                  MediaQuery.paddingOf(context).bottom + 16,
                                 ),
                                 onReorderItem: (oldIndex, newIndex) {
                                   unawaited(
@@ -212,10 +213,8 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
                                                       ),
                                                       const SizedBox(width: 8),
                                                       Expanded(
-                                                        child: Text(
-                                                          displayServerName(
-                                                            server.name,
-                                                          ),
+                                                        child: ServerNameText(
+                                                          server.name,
                                                           maxLines: 1,
                                                           style: Theme.of(context)
                                                               .textTheme
@@ -249,13 +248,15 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
                                                       LiquidActionMenu<String>(
                                                         serverActions: true,
                                                         triggerDecorator:
-                                                            (trigger) =>
-                                                                HeaderExcludedControl(
-                                                                  headerKey:
-                                                                      _headerKey,
-                                                                  child:
-                                                                      trigger,
-                                                                ),
+                                                            (
+                                                              trigger,
+                                                            ) => view.performanceMode
+                                                            ? trigger
+                                                            : HeaderExcludedControl(
+                                                                headerKey:
+                                                                    _headerKey,
+                                                                child: trigger,
+                                                              ),
                                                         tooltip: context.s(
                                                           'serverActions',
                                                         ),
@@ -846,6 +847,7 @@ class _ServersGlassHeaderState extends State<_ServersGlassHeader> {
                 ),
               ),
               LiquidActionMenu<_ServerPageAction>(
+                reuseParentGlass: true,
                 tooltip: context.s('serverPageActions'),
                 icon: const Icon(Icons.sort_rounded),
                 items: widget.items,
@@ -947,6 +949,9 @@ class _ServerPageActionsPopoverState extends State<_ServerPageActionsPopover>
           top: widget.top,
           width: widget.width,
           child: SafeArea(
+            // The anchor already includes the status/app-bar inset. Applying
+            // it again pushes the fallback/performance menu into the list.
+            top: false,
             child: GlassSurface(
               key: const ValueKey('server-page-actions-surface'),
               radius: 26,

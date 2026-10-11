@@ -2,6 +2,7 @@ package dev.nirang.client.xray
 
 import dev.nirang.client.model.ServerRecord
 import dev.nirang.client.settings.NativeSettings
+import dev.nirang.client.settings.DnsResolverAddress
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -90,7 +91,9 @@ object XrayConfigBuilder {
             put(JSONObject().apply {
                 put("tag", "dns-out")
                 put("protocol", "dns")
-                put("settings", JSONObject().apply { put("nonIPQuery", "skip") })
+                // Match v2rayNG/PattNG's core policy: A/AAAA use built-in DNS;
+                // other types get an empty response. Legacy `skip` forwards
+                // them directly to physical DNS instead of the selected DoH.
             })
             put(JSONObject().apply {
                 put("tag", "direct")
@@ -114,6 +117,7 @@ object XrayConfigBuilder {
                 includeTun = includeTun,
                 iranCidrs = iranCidrs,
                 blockQuic = settings?.blockQuic == true,
+                localBypassMode = settings?.localBypassMode ?: "auto",
             ),
         )
     }
@@ -129,7 +133,7 @@ object XrayConfigBuilder {
             put("destOverride", JSONArray(overrides))
             put(
                 "routeOnly",
-                sniffingEnabled && ((settings?.routeOnly ?: false) || settings?.routingMode == "bypassIran"),
+                sniffingEnabled && (settings?.routeOnly ?: false),
             )
         }
         if (includeTun) {
@@ -408,6 +412,7 @@ object XrayConfigBuilder {
         customDomains = settings?.customDomains.orEmpty(),
         fakeDns = settings?.enableLocalDns == true && settings.enableFakeDns,
         enableIpv6 = settings?.enableIpv6 == true,
+        bypassLocal = settings?.localBypassMode != "proxy",
     )
 
     internal fun buildDnsSettings(
@@ -418,9 +423,11 @@ object XrayConfigBuilder {
         customDomains: String,
         fakeDns: Boolean,
         enableIpv6: Boolean,
+        bypassLocal: Boolean = true,
     ): JSONObject = JSONObject().apply {
         val servers = remoteDns
             .let(::splitRules)
+            .map(DnsResolverAddress::normalize)
             .distinct()
             .ifEmpty { listOf("localhost") }
             .mapTo(mutableListOf<Any>()) { it }
@@ -432,7 +439,7 @@ object XrayConfigBuilder {
         if (directDnsEnabled && directDns.isNotBlank() && directDomains.isNotEmpty()) {
             splitRules(directDns).asReversed().forEach { resolver ->
                 servers.add(0, JSONObject().apply {
-                    put("address", asDirectDnsAddress(resolver))
+                    put("address", asDirectDnsAddress(DnsResolverAddress.normalize(resolver)))
                     put("domains", JSONArray(directDomains))
                     put("skipFallback", true)
                 })
@@ -441,13 +448,14 @@ object XrayConfigBuilder {
         if (fakeDns) servers.add(0, "fakedns")
         // Local names belong to the physical network's resolver. A failed local
         // answer must never fall through to remote DNS or a synthetic FakeDNS IP.
-        servers.add(0, JSONObject().apply {
+        if (bypassLocal) servers.add(0, JSONObject().apply {
             put("address", "localhost")
             put("domains", JSONArray(LOCAL_DOMAINS))
             put("skipFallback", true)
             put("finalQuery", true)
         })
         put("servers", JSONArray(servers))
+        put("tag", "remote-dns")
         put("queryStrategy", if (enableIpv6) "UseIP" else "UseIPv4")
     }
 
@@ -486,15 +494,27 @@ object XrayConfigBuilder {
         includeTun: Boolean = true,
         iranCidrs: List<String> = emptyList(),
         blockQuic: Boolean = false,
+        localBypassMode: String = "auto",
     ): JSONObject = JSONObject().apply {
         require(routingMode in setOf("global", "bypassIran", "custom")) { "Unsupported routing mode" }
+        require(localBypassMode in setOf("auto", "bypass", "proxy")) { "Unsupported local bypass mode" }
         require(domainStrategy in setOf("AsIs", "IPIfNonMatch", "IPOnDemand")) { "Unsupported domain strategy" }
         put("domainStrategy", domainStrategy)
         put("rules", JSONArray().apply {
+            // Internal DNS queries must not inherit website/LAN bypass rules.
+            // Explicit +local resolvers still bypass routing by core design.
+            put(JSONObject().apply {
+                put("type", "field")
+                put("inboundTag", JSONArray().put("remote-dns"))
+                put("outboundTag", "proxy")
+            })
             // Conditions inside an Xray rule are ANDed. Keep IPs and names in
             // separate rules so raw LAN IPs and local names each bypass proxy.
-            putRoutingRule("direct", PRIVATE_IPS, emptyList())
-            putRoutingRule("direct", emptyList(), LOCAL_DOMAINS)
+            // Auto retains the historical LAN bypass. Explicit proxy rules
+            // also outrank custom/Iran bypass, so the control cannot be fake.
+            val localOutbound = if (localBypassMode == "proxy") "proxy" else "direct"
+            putRoutingRule(localOutbound, PRIVATE_IPS, emptyList())
+            putRoutingRule(localOutbound, emptyList(), LOCAL_DOMAINS)
             if (blockQuic) {
                 put(JSONObject().apply {
                     put("type", "field")

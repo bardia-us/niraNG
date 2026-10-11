@@ -196,10 +196,10 @@ void main() {
     expect(current.merge(stalePoll).received, 2300);
   });
 
-  test('presentation strips only a leading country flag from server names', () {
+  test('presentation promotes the first country flag from any position', () {
     expect(displayServerName('🇳🇱 2-bardia'), '2-bardia');
     expect(displayServerName('🇺🇸-edge'), 'edge');
-    expect(displayServerName('Server 🇸🇪 inside'), 'Server 🇸🇪 inside');
+    expect(displayServerName('Server 🇸🇪 inside'), 'Server inside');
   });
 
   test('server metadata keeps only masked credential fields', () {
@@ -387,9 +387,9 @@ void main() {
     expect(settings.domainStrategy, 'AsIs');
     expect(settings.routingMode, 'bypassIran');
     expect(settings.enableIpv6, isTrue);
-    expect(settings.directDnsEnabled, isTrue);
-    expect(settings.directDns, '178.22.122.100');
-    expect(settings.routeOnly, isTrue);
+    expect(settings.directDnsEnabled, isFalse);
+    expect(settings.directDns, isEmpty);
+    expect(settings.routeOnly, isFalse);
     expect(settings.muxEnabled, isFalse);
   });
 

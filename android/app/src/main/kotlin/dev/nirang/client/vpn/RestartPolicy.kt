@@ -4,6 +4,7 @@ object RestartPolicy {
     private val restartRequiredKeys = setOf(
         "connectionMode",
         "routingMode",
+        "localBypassMode",
         "customDomains",
         "customIps",
         "domainStrategy",

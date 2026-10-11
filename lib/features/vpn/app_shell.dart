@@ -14,6 +14,7 @@ import '../../core/registration/device_registration.dart';
 import '../../core/user_facing_error.dart';
 import '../../core/widgets/glass_dialog.dart';
 import '../../core/widgets/glass_surface.dart';
+import '../../core/widgets/clay_surface.dart';
 import '../../core/widgets/menu_activity.dart';
 import '../../core/widgets/release_notes_markdown.dart';
 import '../../core/widgets/update_dialog.dart';
@@ -271,6 +272,9 @@ class _AppShellState extends ConsumerState<AppShell> {
     const pages = [HomeScreen(), ServersScreen(), SettingsScreen()];
     final theme = Theme.of(context);
     final navigationBar = NavigationBar(
+      height: 72,
+      indicatorColor: Colors.transparent,
+      overlayColor: const WidgetStatePropertyAll(Colors.transparent),
       backgroundColor: Colors.transparent,
       elevation: 0,
       selectedIndex: _index,
@@ -278,28 +282,38 @@ class _AppShellState extends ConsumerState<AppShell> {
       destinations: [
         _ElasticDestination(
           child: NavigationDestination(
-            icon: const Icon(Icons.home_outlined, size: 28),
-            selectedIcon: const Icon(Icons.home_rounded, size: 28),
+            icon: const ClayNavigationIcon(Icons.home_outlined),
+            selectedIcon: const ClayNavigationIcon(
+              Icons.home_rounded,
+              selected: true,
+            ),
             label: context.s('home'),
           ),
         ),
         _ElasticDestination(
           child: NavigationDestination(
-            icon: const Icon(Icons.dns_outlined, size: 28),
-            selectedIcon: const Icon(Icons.dns_rounded, size: 28),
+            icon: const ClayNavigationIcon(Icons.dns_outlined),
+            selectedIcon: const ClayNavigationIcon(
+              Icons.dns_rounded,
+              selected: true,
+            ),
             label: context.s('servers'),
           ),
         ),
         _ElasticDestination(
           child: NavigationDestination(
-            icon: const Icon(Icons.settings_outlined, size: 28),
-            selectedIcon: const Icon(Icons.settings_rounded, size: 28),
+            icon: const ClayNavigationIcon(Icons.settings_outlined),
+            selectedIcon: const ClayNavigationIcon(
+              Icons.settings_rounded,
+              selected: true,
+            ),
             label: context.s('settings'),
           ),
         ),
       ],
     );
     return Scaffold(
+      extendBody: true,
       extendBodyBehindAppBar: true,
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
@@ -352,7 +366,9 @@ class _AppShellState extends ConsumerState<AppShell> {
                               key: ValueKey(index),
                               child: glass.GlassMotionSync(
                                 motion: _pageController,
-                                shouldRefresh: () => _isPageVisible(index),
+                                shouldRefresh: () =>
+                                    !shellState.performanceMode &&
+                                    _isPageVisible(index),
                                 child: IgnorePointer(
                                   ignoring: index != _index,
                                   child: pages[index],
@@ -368,11 +384,23 @@ class _AppShellState extends ConsumerState<AppShell> {
           ),
         ),
       ),
-      // NavigationBar owns the bottom safe padding. One continuous, rim-free
-      // material covers both it and Android's transparent system buttons.
-      bottomNavigationBar: FrostedSurface(
-        sigma: shellState.performanceMode ? 8 : 12,
-        child: navigationBar,
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
+          child: Align(
+            heightFactor: 1,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: FrostedSurface(
+                radius: 36,
+                sigma: 8,
+                tintAlpha: theme.brightness == Brightness.dark ? .45 : .64,
+                child: navigationBar,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -636,24 +664,67 @@ class _ElasticDestination extends StatefulWidget {
 
 class _ElasticDestinationState extends State<_ElasticDestination> {
   bool _pressed = false;
+  Offset _origin = Offset.zero;
+  Offset _drag = Offset.zero;
+  void _stretch(Offset value) {
+    setState(
+      () => _drag = Offset(
+        value.dx.clamp(-10.0, 10.0),
+        value.dy.clamp(-8.0, 8.0),
+      ),
+    );
+  }
+
+  void _release() {
+    setState(() {
+      _pressed = false;
+      _drag = Offset.zero;
+    });
+  }
+
   void _press(bool value) {
     if (_pressed != value) setState(() => _pressed = value);
   }
 
   @override
   Widget build(BuildContext context) => Listener(
-    onPointerDown: (_) => _press(true),
-    onPointerUp: (_) => _press(false),
-    onPointerCancel: (_) => _press(false),
-    child: AnimatedScale(
-      scale: _pressed ? .94 : 1,
-      duration:
-          (MediaQuery.disableAnimationsOf(context) ||
-              MediaQuery.highContrastOf(context))
-          ? Duration.zero
-          : Duration(milliseconds: _pressed ? 90 : 260),
-      curve: _pressed ? Curves.easeOutCubic : Curves.elasticOut,
-      child: widget.child,
+    onPointerDown: (event) {
+      _origin = event.position;
+      _press(true);
+    },
+    onPointerUp: (_) => _release(),
+    onPointerCancel: (_) => _release(),
+    child: GestureDetector(
+      // Winning a drag cancels NavigationDestination's tap recognizer.
+      onPanStart: (details) => _stretch(details.globalPosition - _origin),
+      onPanUpdate: (details) => _stretch(_drag + details.delta),
+      onPanEnd: (_) => _release(),
+      onPanCancel: _release,
+      child: AnimatedContainer(
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : Duration(milliseconds: _pressed ? 65 : 240),
+        curve: _pressed ? Curves.easeOutCubic : Curves.elasticOut,
+        transformAlignment: Alignment.center,
+        transform: Matrix4.identity()
+          ..translateByDouble(_drag.dx * .45, _drag.dy * .45, 0, 1)
+          ..scaleByDouble(
+            1 + _drag.dx.abs() * .004,
+            1 + _drag.dy.abs() * .004,
+            1,
+            1,
+          ),
+        child: AnimatedScale(
+          scale: _pressed ? .94 : 1,
+          duration:
+              (MediaQuery.disableAnimationsOf(context) ||
+                  MediaQuery.highContrastOf(context))
+              ? Duration.zero
+              : Duration(milliseconds: _pressed ? 90 : 260),
+          curve: _pressed ? Curves.easeOutCubic : Curves.elasticOut,
+          child: ClayPress(pressed: _pressed, child: widget.child),
+        ),
+      ),
     ),
   );
 }
@@ -686,20 +757,19 @@ class _TransientStatusBanner extends ConsumerWidget {
     return PositionedDirectional(
       start: 16,
       end: 16,
-      bottom: 12,
+      bottom: MediaQuery.paddingOf(context).bottom + 12,
       child: IgnorePointer(
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 180),
           child: notice == null
               ? const SizedBox.shrink()
-              : Material(
+              : ClaySurface(
                   key: ValueKey(notice.id),
                   color: Color.alphaBlend(
                     color.withValues(alpha: .14),
                     scheme.surfaceContainerHigh,
                   ),
-                  elevation: 2,
-                  borderRadius: BorderRadius.circular(13),
+                  radius: 18,
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 14,

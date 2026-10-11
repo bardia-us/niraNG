@@ -14,7 +14,7 @@ import 'package:nirang/features/vpn/app_controller.dart';
 class _Controller extends AppController {
   @override
   Future<AppSnapshot> build() async => const AppSnapshot(
-    settings: NativeSettings(performanceMode: true, feedbackMode: 'off'),
+    settings: NativeSettings(performanceMode: false, feedbackMode: 'off'),
   );
 }
 
@@ -105,7 +105,7 @@ void main() {
     }
   });
   testWidgets(
-    'performance mode keeps spring menu and registers overlay until closed',
+    'normal mode keeps spring menu and registers overlay until closed',
     (tester) async {
       liveGlassReadyListenable.value = true;
       await tester.pumpWidget(
@@ -181,7 +181,7 @@ void main() {
     },
   );
   testWidgets(
-    'performance mode keeps elastic connect control instead of static replacement',
+    'normal mode keeps elastic connect control instead of static replacement',
     (tester) async {
       await tester.pumpWidget(
         ProviderScope(

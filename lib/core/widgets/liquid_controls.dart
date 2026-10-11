@@ -30,6 +30,7 @@ class LiquidActionMenu<T> extends ConsumerStatefulWidget {
     required this.fallback,
     this.icon = const Icon(Icons.more_vert_rounded),
     this.serverActions = false,
+    this.reuseParentGlass = false,
     this.triggerDecorator,
     super.key,
   });
@@ -38,6 +39,11 @@ class LiquidActionMenu<T> extends ConsumerStatefulWidget {
   final String tooltip;
   final Widget fallback, icon;
   final bool serverActions;
+
+  /// A control on an optical panel uses the panel's computed backdrop and
+  /// upstream vibrancy/rim, rather than refracting the same glass twice.
+  /// Standalone controls and popup overlays retain independent premium optics.
+  final bool reuseParentGlass;
   // Decorate only the anchored control; the popup lives in its own overlay.
   final Widget Function(Widget trigger)? triggerDecorator;
   @override
@@ -67,6 +73,30 @@ class _LiquidActionMenuState<T> extends ConsumerState<LiquidActionMenu<T>> {
     final performance = ref.watch(performanceModeProvider);
     final reduced = MediaQuery.highContrastOf(context);
     final theme = Theme.of(context);
+    if (performance) {
+      final trigger = LayoutBuilder(
+        builder: (context, constraints) {
+          final side = math.min(
+            44.0,
+            math.min(constraints.maxWidth, constraints.maxHeight),
+          );
+          return Align(
+            widthFactor: 1,
+            heightFactor: 1,
+            child: SizedBox.square(
+              dimension: side,
+              child: Material(
+                color: theme.colorScheme.surfaceContainerHigh,
+                shape: const CircleBorder(),
+                clipBehavior: Clip.antiAlias,
+                child: _ControlDragBoundary(child: widget.fallback),
+              ),
+            ),
+          );
+        },
+      );
+      return widget.triggerDecorator?.call(trigger) ?? trigger;
+    }
     final feedbackMode = ref.watch(
       appControllerProvider.select(
         (value) => value.asData?.value.settings.feedbackMode ?? 'haptic',
@@ -97,6 +127,14 @@ class _LiquidActionMenuState<T> extends ConsumerState<LiquidActionMenu<T>> {
           ),
           quality: glass.GlassQuality.premium,
           triggerBuilder: (context, toggle) {
+            final reuseHost =
+                widget.reuseParentGlass &&
+                (context
+                        .dependOnInheritedWidgetOfExactType<
+                          glass.InheritedLiquidGlass
+                        >()
+                        ?.avoidsRefraction ??
+                    false);
             final trigger = _ControlDragBoundary(
               child: Tooltip(
                 message: widget.tooltip,
@@ -135,9 +173,7 @@ class _LiquidActionMenuState<T> extends ConsumerState<LiquidActionMenu<T>> {
                                   shadowElevation: 0,
                                   rimShadeEnds: .35,
                                 ),
-                            quality: performance
-                                ? glass.GlassQuality.standard
-                                : glass.GlassQuality.premium,
+                            quality: glass.GlassQuality.premium,
                             child: IconTheme(
                               data: IconThemeData(
                                 size: 22,
@@ -153,14 +189,10 @@ class _LiquidActionMenuState<T> extends ConsumerState<LiquidActionMenu<T>> {
                         onPressed: toggle,
                         semanticLabel: widget.tooltip,
                         size: 44,
-                        // A BackdropGroup is not a geometry/render layer. Standalone
-                        // row triggers must provision one; nested triggers need their
-                        // own lens to retain the requested raised optical control.
-                        useOwnLayer: true,
-                        settings: liquidControlSettings(
-                          theme.brightness,
-                          performanceMode: performance,
-                        ),
+                        // Only an actual optical host can supply the nested
+                        // vibrancy path. BackdropGroup alone is not such a host.
+                        useOwnLayer: !reuseHost,
+                        settings: liquidControlSettings(theme.brightness),
                         quality: glass.GlassQuality.premium,
                       ),
               ),
@@ -206,6 +238,33 @@ class LiquidConnectButton extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final performance = ref.watch(performanceModeProvider);
+    if (performance) {
+      return _ControlDragBoundary(
+        child: SizedBox(
+          height: 46,
+          child: FilledButton.tonalIcon(
+            onPressed: onPressed,
+            icon: icon,
+            label: Text(label),
+            style: FilledButton.styleFrom(
+              foregroundColor: theme.colorScheme.onSurface,
+              backgroundColor: theme.colorScheme.surfaceContainerHigh,
+              side: BorderSide(
+                color: theme.colorScheme.onSurface.withValues(alpha: .22),
+              ),
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              minimumSize: const Size(0, 46),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     if (MediaQuery.highContrastOf(context)) {
       return FilledButton.icon(
         onPressed: onPressed,
@@ -223,10 +282,7 @@ class LiquidConnectButton extends ConsumerWidget {
           height: 46,
           width: null,
           shape: const glass.LiquidRoundedRectangle(borderRadius: 18),
-          settings: liquidControlSettings(
-            theme.brightness,
-            performanceMode: ref.watch(performanceModeProvider),
-          ),
+          settings: liquidControlSettings(theme.brightness),
           quality: ready
               ? glass.GlassQuality.premium
               : glass.GlassQuality.minimal,

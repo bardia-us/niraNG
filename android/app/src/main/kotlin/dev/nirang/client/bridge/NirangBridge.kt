@@ -31,6 +31,7 @@ import dev.nirang.client.vpn.ConnectionStore
 import dev.nirang.client.vpn.NirangVpnService
 import dev.nirang.client.vpn.NirangTileService
 import dev.nirang.client.vpn.RestartPolicy
+import dev.nirang.client.vpn.ServerSelection
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
@@ -330,15 +331,15 @@ class NirangBridge(
         val connection = ConnectionStore.snapshot()
         val activeId = connection["serverId"] as? String
         val state = ConnectionStore.state()
-        if (activeId != null && activeId != id && state in ACTIVE_CONNECTION_STATES) {
-            NirangVpnService.switchServer(activity, server.id)
-            SafeLog.info(activity, "Server switch queued")
-        } else {
-            repository.select(id)
-            SafeLog.info(activity, "Server selected")
-        }
-        // While connected, selection remains on the verified active server.
-        // The service emits the new selection only after Xray starts it.
+        val requiresSwitch = activeId != null && activeId != id && state in ACTIVE_CONNECTION_STATES
+        ServerSelection.select(
+            id, requiresSwitch,
+            persist = { repository.select(it) },
+            queueSwitch = { NirangVpnService.switchServer(activity, it) },
+        )
+        SafeLog.info(activity, if (requiresSwitch) "Server switch queued" else "Server selected")
+        // Return the requested choice immediately. ConnectionStore still owns
+        // the actual restart/connected/error status and restart rollback.
         result.success(repository.safeServers())
     }
 

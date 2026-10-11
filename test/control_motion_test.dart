@@ -10,11 +10,41 @@ import 'package:nirang/features/vpn/app_controller.dart';
 
 class _Controller extends AppController {
   @override
-  Future<AppSnapshot> build() async =>
-      const AppSnapshot(settings: NativeSettings(feedbackMode: 'off'));
+  Future<AppSnapshot> build() async => const AppSnapshot(
+    settings: NativeSettings(performanceMode: false, feedbackMode: 'off'),
+  );
 }
 
 void main() {
+  testWidgets('performance keeps the same scroll momentum as normal mode', (
+    tester,
+  ) async {
+    late BuildContext scrollContext;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) {
+            scrollContext = context;
+            return const SizedBox();
+          },
+        ),
+      ),
+    );
+    for (final performance in [false, true]) {
+      final physics =
+          const NirangScrollBehavior(
+                reducedEffects: false,
+              ).getScrollPhysics(scrollContext)
+              as BouncingScrollPhysics;
+      final actual =
+          NirangScrollBehavior(
+                reducedEffects: performance,
+              ).getScrollPhysics(scrollContext)
+              as BouncingScrollPhysics;
+      expect(actual.decelerationRate, physics.decelerationRate);
+      expect(actual.decelerationRate, ScrollDecelerationRate.normal);
+    }
+  });
   testWidgets(
     'glass control drag owns its gesture but tap and surrounding scroll work',
     (tester) async {

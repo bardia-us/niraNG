@@ -44,20 +44,25 @@ Future<void> main() async {
       ),
     ),
   );
-  runApp(
-    ProviderScope(
-      child: Consumer(
-        builder: (context, ref, child) => NirangRegistrationBootstrap(
-          prepareApp: () => ref.read(appControllerProvider.future).then((_) {}),
-          child: child!,
-        ),
-        child: const NirangApp(),
-      ),
-    ),
-  );
-  WidgetsBinding.instance.addPostFrameCallback(
-    (_) => unawaited(prepareLiveGlass()),
-  );
+  runApp(const ProviderScope(child: NirangStartup()));
+}
+
+class NirangStartup extends ConsumerWidget {
+  const NirangStartup({super.key});
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return NirangRegistrationBootstrap(
+      prepareApp: () async {
+        final app = await ref.read(appControllerProvider.future);
+        if (!ref.context.mounted || app.settings.performanceMode) return;
+        // Keep local shader warm-up under the existing loading screen. The
+        // initializer is bounded to two seconds with a visible fallback;
+        // background API checks still start only after the ready Home frame.
+        await ref.read(liveGlassPreparationProvider)();
+      },
+      child: const NirangApp(),
+    );
+  }
 }
 
 Future<void> _recordFrameworkError(String message, StackTrace? stack) async {

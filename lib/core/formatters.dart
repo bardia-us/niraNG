@@ -31,13 +31,25 @@ String countryFlag(String code) {
   );
 }
 
-/// Removes only leading country-flag emoji from presentation text. The stored
+/// Moves the first country flag into the dedicated badge, wherever it occurs.
+/// Other flags remain in the presentation text. The stored
 /// subscription remark remains untouched.
 String displayServerName(String value) {
   final trimmed = value.trimLeft();
-  final flag = RegExp(
-    r'^(?:[\u{1F1E6}-\u{1F1FF}]{2})[\u{FE0F}]?[\s\-–—:|·]*',
-    unicode: true,
-  );
-  return trimmed.replaceFirst(flag, '').trimLeft();
+  final match = countryFlagPattern.firstMatch(trimmed);
+  if (match == null) return trimmed;
+  final result = trimmed.replaceRange(match.start, match.end, '');
+  return (match.start == 0
+          ? result.replaceFirst(RegExp(r'^[\s\-–—:|·]+'), '')
+          : result)
+      .replaceAll(RegExp(r' {2,}'), ' ')
+      .trim();
 }
+
+final countryFlagPattern = RegExp(
+  r'[\u{1F1E6}-\u{1F1FF}]{2}\u{FE0F}?',
+  unicode: true,
+);
+
+String countryCodeFromFlag(String flag) =>
+    String.fromCharCodes(flag.runes.take(2).map((point) => point - 127397));

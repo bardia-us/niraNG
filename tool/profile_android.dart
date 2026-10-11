@@ -1,9 +1,12 @@
 // Diagnostic entrypoint only. Production APKs keep lib/main.dart.
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ui' show FramePhase;
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nirang/core/diagnostics.dart';
+import 'package:nirang/features/vpn/app_controller.dart';
 import 'package:nirang/main.dart' as app;
 
 Future<void> main() async {
@@ -25,11 +28,25 @@ Future<void> main() async {
   }
 
   void timings(List<FrameTiming> batch) {
+    final context = nirangNavigatorKey.currentContext;
+    final mode = context == null
+        ? 'startup'
+        : ProviderScope.containerOf(
+            context,
+            listen: false,
+          ).read(performanceModeProvider)
+        ? 'matte'
+        : 'glass';
     for (final frame in batch) {
-      if (++count > 1800) break;
+      if (++count > 6000) break;
       frames.add({
         'feature': NirangDiagnostics.currentFeature,
+        'mode': mode,
         'atMs': clock.elapsedMilliseconds,
+        'vsyncUs': frame.timestampInMicroseconds(FramePhase.vsyncStart),
+        'rasterFinishUs': frame.timestampInMicroseconds(
+          FramePhase.rasterFinish,
+        ),
         'buildUs': frame.buildDuration.inMicroseconds,
         'rasterUs': frame.rasterDuration.inMicroseconds,
         'totalUs': frame.totalSpan.inMicroseconds,
