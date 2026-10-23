@@ -19,6 +19,8 @@ class ServerInfo {
     this.cipherSuites = '',
     this.finalMask = '',
     this.alpn = '',
+    this.echConfigList = '',
+    this.echOutbound = '',
     this.allowInsecure = false,
     this.profileEditable = false,
     this.credentialLabel = '',
@@ -41,6 +43,8 @@ class ServerInfo {
     cipherSuites: '${map['cipherSuites'] ?? ''}',
     finalMask: '${map['finalMask'] ?? ''}',
     alpn: '${map['alpn'] ?? ''}',
+    echConfigList: '${map['echConfigList'] ?? ''}',
+    echOutbound: '${map['echOutbound'] ?? ''}',
     allowInsecure: map['allowInsecure'] == true,
     profileEditable: map['profileEditable'] == true,
     credentialLabel: '${map['credentialLabel'] ?? ''}',
@@ -61,6 +65,7 @@ class ServerInfo {
   final int port;
   final String sni;
   final String fingerprint, cipherSuites, finalMask, alpn;
+  final String echConfigList, echOutbound;
   final bool allowInsecure, profileEditable;
   final String credentialLabel;
   final String credentialMasked;
@@ -88,6 +93,8 @@ class ServerInfo {
     cipherSuites: cipherSuites,
     finalMask: finalMask,
     alpn: alpn,
+    echConfigList: echConfigList,
+    echOutbound: echOutbound,
     allowInsecure: allowInsecure,
     profileEditable: profileEditable,
     credentialLabel: credentialLabel,

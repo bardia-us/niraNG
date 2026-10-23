@@ -3,9 +3,13 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as glass;
+// Pinned vendor's materialize channels also drive the shader-free fallback.
+// ignore: implementation_imports
+import 'package:liquid_glass_widgets/src/renderer/glass_materialize_scope.dart';
 
 import '../../features/vpn/app_controller.dart';
 import 'live_liquid_glass.dart';
+import 'decorative_glass_surface.dart';
 
 /// Shared upstream material. Legacy hints preserve source compatibility, not
 /// different optical recipes: normal mode uses the approved preset, while
@@ -37,6 +41,8 @@ class GlassSurface extends ConsumerWidget {
     this.vibrantDark = false,
     this.showShadow = true,
     this.messageSurface = false,
+    this.backdropBlur,
+    this.opticalSettings,
   });
   final Widget child;
   final EdgeInsetsGeometry? padding;
@@ -46,13 +52,23 @@ class GlassSurface extends ConsumerWidget {
   final bool liquidDepth, continuousEdge, vibrantDark, showShadow;
   final bool messageSurface;
 
+  /// A local diffusion override for text-rich dialogs, not a tint/backer.
+  final double? backdropBlur;
+  final glass.LiquidGlassSettings? opticalSettings;
+
   static glass.LiquidGlassSettings settingsFor(
     Brightness brightness, {
     double blur = liquidBlur,
     double saturation = liquidSaturation,
     double tintOpacityScale = 1,
     double visibility = 1,
-  }) => liquidSurfaceSettings(brightness).copyWith(visibility: visibility);
+    bool messageSurface = false,
+    double? backdropBlur,
+  }) =>
+      (messageSurface
+              ? liquidMessageSettings(brightness)
+              : liquidSurfaceSettings(brightness))
+          .copyWith(visibility: visibility, blur: backdropBlur);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -63,50 +79,111 @@ class GlassSurface extends ConsumerWidget {
       0.0,
       1.0,
     );
-    final settings = messageSurface
-        ? liquidMessageSettings(theme.brightness)
-        : liquidSurfaceSettings(theme.brightness);
+    final settings =
+        opticalSettings ??
+        settingsFor(
+          theme.brightness,
+          messageSurface: messageSurface,
+          backdropBlur: backdropBlur,
+        );
+    final fallbackVisibility =
+        visible * (GlassMaterializeScope.maybeOf(context)?.glassProgress ?? 1);
     final content = Material(
       type: MaterialType.transparency,
       child: Padding(padding: padding ?? EdgeInsets.zero, child: child),
     );
     if (performance) {
       return Opacity(
-        opacity: visible,
+        opacity: fallbackVisibility,
         child: FrostedSurface(radius: radius, opaque: true, child: content),
+      );
+    }
+    if (DecorativeGlassScope.of(context)) {
+      return Opacity(
+        opacity: fallbackVisibility,
+        child: DecorativeGlassSurface(radius: radius, child: content),
       );
     }
     return ValueListenableBuilder<bool>(
       valueListenable: liveGlassReadyListenable,
       builder: (context, ready, _) {
         if (!reduced && ready && ui.ImageFilter.isShaderFilterSupported) {
+          final foreground = glass.InheritedLiquidGlass(
+            settings: settings,
+            quality: glass.GlassQuality.premium,
+            avoidsRefraction: true,
+            child: content,
+          );
+          // Only non-overlapping Home cards with the exact same material join
+          // this owner. Menus and surfaces fading independently keep a layer.
+          final shared =
+              !messageSurface &&
+              visible == 1 &&
+              (GlassMaterializeScope.maybeOf(context)?.glassProgress ?? 1) ==
+                  1 &&
+              _SharedSurfaceScope.maybeOf(context)?.settings == settings;
           return glass.AdaptiveGlass(
             quality: glass.GlassQuality.premium,
             allowElevation: false,
+            useOwnLayer: !shared,
             settings: settings.copyWith(
               visibility: visible.clamp(.000001, 1.0),
             ),
             shape: glass.LiquidRoundedRectangle(borderRadius: radius),
-            child: glass.InheritedLiquidGlass(
-              settings: settings,
-              quality: glass.GlassQuality.premium,
-              avoidsRefraction: true,
-              child: content,
-            ),
+            child: foreground,
           );
         }
         return Opacity(
-          opacity: visible,
+          opacity: fallbackVisibility,
           child: FrostedSurface(
             radius: radius,
             opaque: reduced,
-            sigma: 12,
+            sigma: backdropBlur ?? 12,
             child: content,
           ),
         );
       },
     );
   }
+}
+
+/// One native optical pass for non-overlapping surfaces of one material.
+/// This is deliberately opt-in: layered cards/menus must not be batched.
+class SharedGlassSurfaces extends ConsumerWidget {
+  const SharedGlassSurfaces({required this.child, super.key});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (ref.watch(performanceModeProvider) ||
+        MediaQuery.highContrastOf(context) ||
+        !ui.ImageFilter.isShaderFilterSupported) {
+      return child;
+    }
+    final settings = liquidSurfaceSettings(Theme.of(context).brightness);
+    return ValueListenableBuilder<bool>(
+      valueListenable: liveGlassReadyListenable,
+      child: child,
+      builder: (context, ready, child) => !ready
+          ? child!
+          : ClipRect(
+              child: glass.LiquidGlassLayer(
+                settings: settings,
+                child: _SharedSurfaceScope(settings: settings, child: child!),
+              ),
+            ),
+    );
+  }
+}
+
+class _SharedSurfaceScope extends InheritedWidget {
+  const _SharedSurfaceScope({required this.settings, required super.child});
+  final glass.LiquidGlassSettings settings;
+  static _SharedSurfaceScope? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_SharedSurfaceScope>();
+  @override
+  bool updateShouldNotify(_SharedSurfaceScope oldWidget) =>
+      settings != oldWidget.settings;
 }
 
 /// Ordinary translucency, never presented as optical refraction.
@@ -117,6 +194,7 @@ class FrostedSurface extends ConsumerWidget {
     this.opaque = false,
     this.sigma = 12,
     this.tintAlpha,
+    this.backdropKey,
     super.key,
   });
   final Widget child;
@@ -124,6 +202,7 @@ class FrostedSurface extends ConsumerWidget {
   final bool opaque;
   final double sigma;
   final double? tintAlpha;
+  final BackdropKey? backdropKey;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
@@ -139,6 +218,7 @@ class FrostedSurface extends ConsumerWidget {
       child: solid
           ? surface
           : BackdropFilter(
+              backdropGroupKey: backdropKey,
               filter: ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
               child: surface,
             ),

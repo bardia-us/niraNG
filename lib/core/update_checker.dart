@@ -112,7 +112,7 @@ class GitHubUpdateChecker {
   Future<BilingualReleaseNotes> releaseNotes(String version) async {
     // This APK has not necessarily been published yet; its own notes should
     // remain available offline, without displaying another release's notes.
-    if (version == '1.2.0' || version == '1.2.1' || version == '1.2.2') {
+    if (const {'1.2.0', '1.2.1', '1.2.2', '1.2.3'}.contains(version)) {
       return parseBilingualReleaseNotes(
         await rootBundle.loadString('assets/release_notes/$version.md'),
       );
@@ -248,8 +248,25 @@ bool _isOfficialReleaseUrl(Uri? uri) =>
     uri != null &&
     uri.scheme == 'https' &&
     uri.host == 'github.com' &&
+    uri.userInfo.isEmpty &&
+    (!uri.hasPort || uri.port == 443) &&
+    !uri.hasQuery &&
+    !uri.hasFragment &&
+    uri.pathSegments.every(
+      (segment) =>
+          segment != '.' &&
+          segment != '..' &&
+          !segment.contains('/') &&
+          !segment.contains('\\'),
+    ) &&
     uri.path.startsWith('/bardia-us/niraNG/releases/');
 
 bool _isOfficialDownloadUrl(Uri? uri) =>
     _isOfficialReleaseUrl(uri) &&
     uri!.path.startsWith('/bardia-us/niraNG/releases/download/');
+
+/// Keep recovery links restricted even when a persisted download is malformed.
+Uri officialUpdateBrowserDestination(Uri? downloadUrl) =>
+    _isOfficialDownloadUrl(downloadUrl)
+    ? downloadUrl!
+    : Uri.parse('$nirangRepositoryUrl/releases/latest');

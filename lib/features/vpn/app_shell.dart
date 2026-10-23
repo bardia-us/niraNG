@@ -33,6 +33,7 @@ class AppShell extends ConsumerStatefulWidget {
 }
 
 class _AppShellState extends ConsumerState<AppShell> {
+  final _chromeBackdropKey = BackdropKey();
   int _index = 0;
   final _pageController = PageController();
   bool _tabAnimating = false;
@@ -270,6 +271,18 @@ class _AppShellState extends ConsumerState<AppShell> {
     }
 
     const pages = [HomeScreen(), ServersScreen(), SettingsScreen()];
+    final viewport = MediaQuery.of(context);
+    // Only these two non-overlapping sigma-8 panels share a pristine input.
+    // Keep at least 3*sigma on each side; compact/keyboard layouts use their
+    // independent inputs. Never share this key with optical headers/popups.
+    final chromeGap =
+        viewport.size.height -
+        viewport.viewInsets.bottom -
+        viewport.padding.vertical -
+        kToolbarHeight -
+        72 -
+        14;
+    final chromeKey = chromeGap > 48 ? _chromeBackdropKey : null;
     final theme = Theme.of(context);
     final navigationBar = NavigationBar(
       height: 72,
@@ -320,7 +333,7 @@ class _AppShellState extends ConsumerState<AppShell> {
         backgroundColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
         flexibleSpace: FrostedSurface(
-          opaque: _index == 1,
+          backdropKey: chromeKey,
           sigma: 8,
           tintAlpha: theme.brightness == Brightness.dark ? .45 : .64,
           child: const SizedBox.expand(),
@@ -367,6 +380,7 @@ class _AppShellState extends ConsumerState<AppShell> {
                               child: glass.GlassMotionSync(
                                 motion: _pageController,
                                 shouldRefresh: () =>
+                                    index != 0 &&
                                     !shellState.performanceMode &&
                                     _isPageVisible(index),
                                 child: IgnorePointer(
@@ -393,6 +407,7 @@ class _AppShellState extends ConsumerState<AppShell> {
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 520),
               child: FrostedSurface(
+                backdropKey: chromeKey,
                 radius: 36,
                 sigma: 8,
                 tintAlpha: theme.brightness == Brightness.dark ? .45 : .64,

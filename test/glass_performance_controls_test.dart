@@ -137,7 +137,7 @@ void main() {
       expect(find.byType(glass.GlassMenu), findsOneWidget);
       expect(
         tester
-            .widget<glass.GlassIconButton>(find.byType(glass.GlassIconButton))
+            .widget<glass.GlassButton>(find.byType(glass.GlassButton))
             .useOwnLayer,
         isTrue,
       );
@@ -145,14 +145,14 @@ void main() {
       // Opacity/save-layer boundary that opts it out of shared backdrop reads.
       expect(
         enclosingBackdropGroup(
-          tester.renderObject(find.byType(glass.GlassIconButton)),
+          tester.renderObject(find.byType(glass.GlassButton)),
         ),
         isNotNull,
       );
       await tester.tap(find.byTooltip('Actions'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 10));
-      final triggerContext = tester.element(find.byType(glass.GlassIconButton));
+      final triggerContext = tester.element(find.byType(glass.GlassButton));
       final fade = GlassMaterializeScope.maybeOf(triggerContext)!;
       expect(fade.glassProgress, greaterThan(0));
       expect(fade.glassProgress, lessThan(1));
@@ -163,7 +163,7 @@ void main() {
       );
       expect(
         enclosingBackdropGroup(
-          tester.renderObject(find.byType(glass.GlassIconButton)),
+          tester.renderObject(find.byType(glass.GlassButton)),
         ),
         isNotNull,
       );
@@ -173,7 +173,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(MenuActivity.isOpen.value, isFalse);
       final restored = GlassMaterializeScope.maybeOf(
-        tester.element(find.byType(glass.GlassIconButton)),
+        tester.element(find.byType(glass.GlassButton)),
       )!;
       expect(restored.glassProgress, 1);
       expect(restored.contentOpacity, 1);

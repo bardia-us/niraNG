@@ -82,14 +82,25 @@ class GlassMaterializeScope extends InheritedWidget {
   /// The opacity and filter widgets are otherwise both always present, even
   /// at a momentary sigma of zero, so the child's element tree keeps one
   /// shape for the whole of a transition.
-  static Widget wrapContent(BuildContext context, Widget child) {
+  ///
+  /// [visibility] carries the surface's existing content alpha. It multiplies
+  /// the content channel outside the Gaussian rather than nesting another
+  /// opacity layer inside it; callers must not also fade the passed child.
+  static Widget wrapContent(BuildContext context, Widget child,
+      {double visibility = 1}) {
     final scope = maybeOf(context);
     if (scope == null ||
         (scope.contentOpacity >= 1.0 && scope.contentSigma <= 0.0)) {
-      return child;
+      return visibility >= 1
+          ? child
+          : Opacity(opacity: visibility.clamp(0.0, 1.0), child: child);
     }
+    // Gaussian filtering is linear in premultiplied colour. Multiply the
+    // two uniform alpha channels before filtering rather than allocating an
+    // additional translucent content layer INSIDE the Gaussian pass.
     return Opacity(
-      opacity: scope.contentOpacity.clamp(0.0, 1.0),
+      opacity:
+          scope.contentOpacity.clamp(0.0, 1.0) * visibility.clamp(0.0, 1.0),
       child: ImageFiltered(
         imageFilter: ui.ImageFilter.blur(
           sigmaX: scope.contentSigma,

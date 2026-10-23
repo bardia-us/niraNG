@@ -23,6 +23,18 @@ import '../liquid_glass.dart' show RenderLiquidGlass;
 import '../liquid_glass_settings.dart';
 import '../render_liquid_glass_geometry.dart';
 import '../snap_rect_to_pixels.dart';
+import '../capture_mapping.dart';
+
+/// Paint-time source for a staged scene. Resolve at the optical node itself:
+/// Flutter may paint a nested repaint boundary before its ancestor adapter.
+abstract interface class LiquidGlassBackdropProvider {
+  void resolveCapturedBackdropForPaint(LiquidGlassRenderObject node);
+}
+
+/// Bounds of a deliberately isolated compositor pass, in logical screen space.
+abstract interface class LiquidGlassCompositorPass {
+  Rect get compositorBoundsInScreenSpace;
+}
 
 /// A render object that can assemble [RenderLiquidGlassGeometry] shapes and
 /// render them to the screen with the liquid glass effect.
@@ -62,12 +74,11 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
   /// [LiquidGlassSettings.blur] runs as its own pass first.
   static const double frostGhostMaxSigma = 2.4;
 
-  // Built once per size and scale, shifted while the glass moves.
-  final FrostRows _frostRowsCache = FrostRows();
-
-  /// How many times the frost rows were built from scratch, for tests.
-  @visibleForTesting
-  int get debugFrostRowsBuilds => _frostRowsCache.builds;
+  // What [frostRowsPath] was last built for, so it is rebuilt only when the
+  // glass moves, resizes or changes pass.
+  Matrix4? _frostRowsTransform;
+  Rect? _frostRowsBounds;
+  Rect? _frostRowsPass;
 
   /// Cached light direction vector — updated only when [settings.lightAngle]
   /// changes. Avoids recomputing cos/sin on every setting change.
@@ -85,6 +96,22 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
   /// [enclosingBackdropPassRect] to find the pass its own fragment
   /// coordinates are relative to.
   Rect? backdropPassClipRectLocal;
+  // Lab opt-ins; preserve the package's default optical/layer behaviour.
+  Rect? samplingBoundsInScreenSpace;
+  bool combineClearBlur = false;
+  // In an isolated translucent pass, source-over blur leaves the unblurred
+  // text showing through its alpha. Replace only the precisely clipped blur;
+  // the optical shader itself must remain source-over at transparent corners.
+  bool replaceBackdrop = false;
+  double? capturePixelRatio;
+  // Optional staged-scene output invalidation. Unset for ordinary/live layers.
+  VoidCallback? onOpticalPaint;
+
+  /// Recompose cached local shapes after a staged scene moves their anchors.
+  void markCapturedGeometryMoved() {
+    needsGeometryUpdate = true;
+    markNeedsPaint();
+  }
 
   /// Whether direct children in [child] painted via [super.paint] should
   /// inherit [backdropPassClipRectLocal] even if they are not descendants of
@@ -98,14 +125,52 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
   /// inside the backdrop pass can override this to `true`.
   bool get encloseDirectChildrenInPass => false;
 
-  /// Builds [frostRowsPath] for the glass's current bounds and screen
-  /// transform; see [FrostRows].
-  Path? _frostRows(Rect passPhysical, double dpr) => _frostRowsCache.rows(
-        transform: getTransformTo(null),
-        bounds: _paintBounds,
-        passPhysical: passPhysical,
-        dpr: dpr,
+  /// Builds [frostRowsPath]: one rect per odd pass-relative pixel row across
+  /// the glass's bounds, mapped back into local coordinates.
+  Path? _frostRows(Rect passPhysical, double dpr) {
+    final transform = getTransformTo(null);
+    if (frostRowsPath != null &&
+        transform == _frostRowsTransform &&
+        _paintBounds == _frostRowsBounds &&
+        passPhysical == _frostRowsPass) {
+      return frostRowsPath;
+    }
+    final storage = transform.storage;
+    // Only scale and translation keep a local rect on whole pixel rows.
+    const tolerance = 1e-6;
+    if (storage[1].abs() > tolerance ||
+        storage[4].abs() > tolerance ||
+        storage[3].abs() > tolerance ||
+        storage[7].abs() > tolerance ||
+        storage[0] == 0 ||
+        storage[5] == 0) {
+      return null;
+    }
+    final inverse = Matrix4.tryInvert(transform);
+    if (inverse == null) return null;
+    final screen = MatrixUtils.transformRect(transform, _paintBounds);
+    final top = (screen.top * dpr - passPhysical.top).floorToDouble();
+    final bottom = (screen.bottom * dpr - passPhysical.top).ceilToDouble();
+    final path = Path();
+    // Dart's % is Euclidean, so this is the first odd row at or below top.
+    for (var y = top % 2 == 1 ? top : top + 1; y < bottom; y += 2) {
+      path.addRect(
+        MatrixUtils.transformRect(
+          inverse,
+          Rect.fromLTRB(
+            screen.left - 1 / dpr,
+            (y + passPhysical.top) / dpr,
+            screen.right + 1 / dpr,
+            (y + 1 + passPhysical.top) / dpr,
+          ),
+        ),
       );
+    }
+    _frostRowsTransform = transform;
+    _frostRowsBounds = _paintBounds;
+    _frostRowsPass = passPhysical;
+    return path;
+  }
 
   /// Screen-space (logical) rect of the nearest enclosing Impeller compositor
   /// pass that a [BackdropFilterLayer] in this subtree samples from, or null
@@ -131,6 +196,11 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
     RenderObject? node = parent;
     bool passedThroughGlassShape = false;
     while (node != null) {
+      if (node is LiquidGlassCompositorPass) {
+        return (node as LiquidGlassCompositorPass)
+            .compositorBoundsInScreenSpace
+            .intersect(Offset.zero & desiredMatteSize);
+      }
       Rect? local;
       if (node is RenderBackdropFilter) {
         // Flutter's BackdropFilter opens a pass scoped to its own logical size.
@@ -175,7 +245,18 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
         -sin(value.lightAngle),
       );
     }
+    // alwaysNeedsCompositing == (_geometryImage != null). The geometry image is
+    // set synchronously inside paint() so we cannot call
+    // markNeedsCompositingBitsUpdate() from there. However, when settings
+    // change such that the paint path changes (e.g. thickness/blur both drop to
+    // zero → _clearGeometryImage is called → predicate flips false), we need
+    // to dirty the compositing bit. Capture the pre-update state and request
+    // a re-evaluation after the value changes.
+    final wasCompositing = alwaysNeedsCompositing;
     _settings = value;
+    if (wasCompositing != alwaysNeedsCompositing) {
+      markNeedsCompositingBitsUpdate();
+    }
     markNeedsPaint();
   }
 
@@ -212,10 +293,52 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
   // [FlutterFragCoord()] (canvas-local) into capture-image space.
 
   ui.Image? _captureImage;
+  Rect? _captureSampleBounds;
+
+  /// Paint-time input from the staged capture adapter. The adapter invalidates
+  /// this render object before the paint phase; setters must not schedule
+  /// another frame while the pipeline is painting. Blur is baked into [image].
+  void bindCapturedBackdropForPaint(
+    ui.Image image, {
+    required Offset origin,
+    required double pixelRatio,
+    Rect? sampleBounds,
+  }) {
+    replaceBackdrop = false;
+    _captureImage = image;
+    _captureSampleBounds = sampleBounds;
+    _captureOriginInScreenSpace = origin;
+    capturePixelRatio = pixelRatio;
+    _settings = settings.copyWith(blur: 0, frost: 0);
+  }
+
   ui.Image? get captureImage => _captureImage;
+
+  /// Paint-time counterpart of bindCapturedBackdropForPaint. Providers resolve
+  /// inputs inside paint, where the public setters must not dirty the pipeline.
+  void bindLiveBackdropForPaint(BackdropKey pristineBlurKey,
+      {required double blur}) {
+    _captureImage = null;
+    _captureSampleBounds = null;
+    capturePixelRatio = null;
+    _captureOriginInScreenSpace = Offset.zero;
+    _backdropKey = pristineBlurKey;
+    _settings = settings.copyWith(blur: blur);
+    combineClearBlur = false;
+    replaceBackdrop = true;
+  }
+
+  /// Pixel bounds of this recipe, or the complete ordinary capture image.
+  Rect? get captureSamplingBounds =>
+      _captureSampleBounds ??
+      (_captureImage == null
+          ? null
+          : Rect.fromLTWH(0, 0, _captureImage!.width.toDouble(),
+              _captureImage!.height.toDouble()));
   set captureImage(ui.Image? value) {
-    if (identical(_captureImage, value)) return;
+    if (identical(_captureImage, value) && _captureSampleBounds == null) return;
     _captureImage = value;
+    _captureSampleBounds = null;
     markNeedsPaint();
   }
 
@@ -265,11 +388,9 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
   }
 
   @override
-  // This renderer creates backdrop/clip layers. Compositing bits are flushed
-  // BEFORE paint builds the first geometry image; deriving this bit from that
-  // image leaves ancestor clips non-composited on the cold frame (particularly
-  // a standalone control nested inside another glass). Reserve the layer
-  // contract from attachment, not from a paint-time resource mutation.
+  // The first geometry image is created DURING paint, after the framework
+  // flushed compositing bits. Reserve the backdrop/clip layer contract from
+  // attachment so a cold nested lens cannot paint into a non-composited clip.
   bool get alwaysNeedsCompositing => true;
 
   /// Pre-rendered geometry texture in the render object's LOCAL coordinate space.
@@ -305,12 +426,6 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
   /// Whether the paint that settles a capped matte is already requested.
   bool _settleGeometryScheduled = false;
 
-  /// The shape transforms [_geometryImage] was rasterized with, relative to
-  /// this render object. A blend group that moved on screen only needs a new
-  /// matte if it moved relative to this layer, not when both moved together
-  /// (glass scrolling with its content, a sheet sliding in).
-  final List<Matrix4> _geometryImageTransforms = [];
-
   @override
   @mustCallSuper
   void attach(PipelineOwner owner) {
@@ -331,9 +446,11 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
   }
 
   @override
-  void layout(Constraints constraints, {bool parentUsesSize = false}) {
+  void performLayout() {
+    // RenderObject.layout can short-circuit unchanged constraints. Only dirty
+    // the local matte when layout actually runs, not when its parent scrolls.
     needsGeometryUpdate = true;
-    super.layout(constraints, parentUsesSize: parentUsesSize);
+    super.performLayout();
   }
 
   ui.Rect _paintBounds = ui.Rect.zero;
@@ -344,17 +461,54 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
   // Reusable list to avoid per-frame allocations during paint traversal.
   final _shapesWithGeometry =
       <(RenderLiquidGlassGeometry, GeometryCache, Matrix4)>[];
+  final _matteComposition =
+      <(RenderLiquidGlassGeometry, GeometryCache, Matrix4)>[];
+  double? _matteCompositionDpr;
 
-  bool _sameTransformsAsMatte() {
-    if (_geometryImageTransforms.length != _shapesWithGeometry.length) {
-      return false;
-    }
+  /// A scroll moves every unchanged local mask by the same translation. Reuse
+  /// the composed GPU image in that case; relative movement, a changed SDF or
+  /// membership change still requires a fresh composition in this paint.
+  Offset? _uniformMatteTranslation() {
+    if (_geometryImage == null ||
+        _matteCompositionDpr != devicePixelRatio ||
+        _matteComposition.length != _shapesWithGeometry.length) return null;
+    Offset? translation;
     for (var i = 0; i < _shapesWithGeometry.length; i++) {
-      if (_shapesWithGeometry[i].$3 != _geometryImageTransforms[i]) {
-        return false;
+      final (node, geometry, transform) = _shapesWithGeometry[i];
+      final (oldNode, oldGeometry, oldTransform) = _matteComposition[i];
+      // Rendering an existing Picture into an Image preserves the exact shape
+      // list. Do not mistake that cache representation change for a new SDF.
+      if (!identical(node, oldNode) ||
+          !identical(geometry.shapes, oldGeometry.shapes) ||
+          geometry.bounds != oldGeometry.bounds ||
+          geometry.matteBounds != oldGeometry.matteBounds) return null;
+      final current = transform.storage;
+      final previous = oldTransform.storage;
+      // x/y matrix offsets are a Cartesian translation only for an affine
+      // projection of z=0. Perspective can change the projected shape as well.
+      if (current[3] != 0 ||
+          current[7] != 0 ||
+          current[15] != 1 ||
+          previous[3] != 0 ||
+          previous[7] != 0 ||
+          previous[15] != 1) return null;
+      for (var component = 0; component < 16; component++) {
+        if (component == 12 || component == 13) continue;
+        if (!current[component].isFinite || !previous[component].isFinite)
+          return null;
+        if ((current[component] - previous[component]).abs() > 1e-9)
+          return null;
       }
+      final delta =
+          Offset(current[12] - previous[12], current[13] - previous[13]);
+      if (!delta.dx.isFinite || !delta.dy.isFinite) return null;
+      if (translation != null &&
+          (delta - translation).distanceSquared > 1e-12) {
+        return null;
+      }
+      translation = delta;
     }
-    return true;
+    return translation;
   }
 
   // MARK: Painting
@@ -367,11 +521,31 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
     // prevent use-after-free on Mali GPU Vulkan resources.
     if (!attached) return;
 
+    RenderObject? backdropProvider = parent;
+    while (backdropProvider != null) {
+      if (backdropProvider is LiquidGlassBackdropProvider) {
+        (backdropProvider as LiquidGlassBackdropProvider)
+            .resolveCapturedBackdropForPaint(this);
+        break;
+      }
+      backdropProvider = backdropProvider.parent;
+    }
+    onOpticalPaint?.call();
     _shapesWithGeometry.clear();
 
     Rect? boundingBox;
 
     for (final geometryRo in link.shapes) {
+      var hidden = false;
+      for (RenderObject? ancestor = geometryRo;
+          ancestor != null && ancestor != this;
+          ancestor = ancestor.parent) {
+        if (ancestor is RenderOffstage && ancestor.offstage) {
+          hidden = true;
+          break;
+        }
+      }
+      if (hidden) continue;
       final geometry = geometryRo.maybeRebuildGeometry();
 
       if (geometry == null) continue;
@@ -419,15 +593,19 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
       return;
     }
 
-    final rebuildGeometry = needsGeometryUpdate ||
-        _geometryImage == null ||
-        link._dirty ||
-        (link._transformDirty && !_sameTransformsAsMatte());
-    link._transformDirty = false;
+    final compositionInvalidated = needsGeometryUpdate || link._dirty;
+    final translation = _uniformMatteTranslation();
+    final rebuildGeometry = translation == null;
+    if (translation != null) {
+      // Coordinates change synchronously, pixels do not. In particular this
+      // consumes motion notifications without allocating another GPU texture.
+      if (translation != Offset.zero) {
+        _geometryLocalBounds = _geometryLocalBounds.shift(translation);
+      }
+    }
     if (rebuildGeometry) {
-      link.updateAllGeometries();
-      link._dirty = false;
-      needsGeometryUpdate = false;
+      // Each geometry was resolved above, with its current shape transform.
+      // A second gather here only repeats the same work for every row.
 
       // Synchronous rasterization (toImageSync) eliminates 1-frame jitter
       // during size animations (like modal sheet expansion).
@@ -449,6 +627,17 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
       _updateGeometrySync(_shapesWithGeometry, boundingBox, capped: false);
     }
     _rebuiltGeometryLastPaint = rebuildGeometry;
+    if (_matteComposition.isEmpty ||
+        compositionInvalidated ||
+        translation != Offset.zero) {
+      _matteComposition
+        ..clear()
+        ..addAll(_shapesWithGeometry
+            .map((entry) => (entry.$1, entry.$2, Matrix4.copy(entry.$3))));
+    }
+    _matteCompositionDpr = devicePixelRatio;
+    link._dirty = false;
+    needsGeometryUpdate = false;
 
     if (debugPaintLiquidGlassGeometry) {
       _debugPaintGeometry(context, offset);
@@ -618,12 +807,37 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
               max(settings.blurWeight, 0.0),
             ]);
           })
-          ..setFloat(45, settings.effectiveBackdropZoom)
           ..setImageSampler(
             1,
             geometryImage,
             filterQuality: FilterQuality.medium,
           );
+        final content = samplingBoundsInScreenSpace;
+        var safe = Rect.zero;
+        if (content != null) {
+          final intersection = content.intersect(Rect.fromLTRB(
+              passPhysical.left / dpr,
+              passPhysical.top / dpr,
+              passPhysical.right / dpr,
+              passPhysical.bottom / dpr));
+          final margin = min(settings.effectiveBlur * 3 + .5,
+              min(intersection.width, intersection.height) * .2);
+          safe = intersection.deflate(margin);
+          safe = Rect.fromLTRB(
+              safe.left * dpr - passPhysical.left,
+              safe.top * dpr - passPhysical.top,
+              safe.right * dpr - passPhysical.left,
+              safe.bottom * dpr - passPhysical.top);
+        }
+        renderShader!
+          ..setFloat(45, safe.left)
+          ..setFloat(46, safe.top)
+          ..setFloat(47, safe.right)
+          ..setFloat(48, safe.bottom)
+          ..setFloat(49, 0)
+          ..setFloat(50, 0)
+          ..setFloat(51, 0)
+          ..setFloat(52, 0);
         paintLiquidGlass(
           context,
           offset,
@@ -640,6 +854,8 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
     _geometryImage?.dispose();
     _geometryImage = null;
     _geometryImageCapped = false;
+    _matteComposition.clear();
+    _matteCompositionDpr = null;
   }
 
   /// Subclasses implement the actual glass rendering
@@ -680,33 +896,25 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
 
     final dpr = devicePixelRatio;
 
-    // Our render object's global logical-pixel origin.
-    final thisOriginGlobal = matteTransform.getTranslation();
-    final thisOriginLogical = Offset(thisOriginGlobal.x, thisOriginGlobal.y);
-
-    // Physical-pixel offset from our canvas origin → capture-boundary origin.
-    // This is the uCaptureOffset uniform: it shifts FlutterFragCoord() (which
-    // is relative to the compositing layer, i.e. our RepaintBoundary surface)
-    // into the capture image's coordinate space.
-    final captureOffset =
-        (captureOriginInScreenSpace - thisOriginLogical) * dpr;
+    // Canvas fragments are LOCAL coordinates. Draw explicitly in local physical
+    // pixels; map sampling to the source using the full live affine transform.
+    final mapping = GlassCaptureMapping(
+        localToScreen: getTransformTo(null),
+        paintOffset: offset,
+        captureOrigin: captureOriginInScreenSpace,
+        dpr: dpr,
+        captureRatio: capturePixelRatio ?? dpr);
+    final captureOffset = mapping.translation;
 
     // uSize: physical pixel dimensions of the captured image.
     final captureSize =
         ui.Size(capture.width.toDouble(), capture.height.toDouble());
+    final sampleBounds = captureSamplingBounds!.deflate(1.5);
 
-    // Geometry bounds in screen space, snapped to pixels.
-    final activeBounds = MatrixUtils.transformRect(
-      matteTransform,
-      _geometryLocalBounds,
-    ).snapToPixels(dpr);
-
-    // uGeometryOffset/uGeometrySize are relative to the capture origin
-    // (not screen origin) so that geometryUV = (fragCoord + uCaptureOffset -
-    // uGeometryOffset) / uGeometrySize resolves correctly.
+    // The SDF is local to this canvas, not global or capture-image space.
     final geometryOffsetInCapture =
-        (activeBounds.topLeft - captureOriginInScreenSpace) * dpr;
-    final geometrySizePhysical = activeBounds.size * dpr;
+        (_geometryLocalBounds.topLeft + offset) * dpr;
+    final geometrySizePhysical = _geometryLocalBounds.size * dpr;
     final scale = dpr / 3.0;
 
     renderShader!
@@ -793,8 +1001,15 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
         ]);
       })
       // Slot 0: captured background image (replaces the BackdropFilter read).
+      ..setFloat(45, sampleBounds.left)
+      ..setFloat(46, sampleBounds.top)
+      ..setFloat(47, sampleBounds.right)
+      ..setFloat(48, sampleBounds.bottom)
+      ..setFloat(49, mapping.linear[0])
+      ..setFloat(50, mapping.linear[1])
+      ..setFloat(51, mapping.linear[2])
+      ..setFloat(52, mapping.linear[3])
       ..setImageSampler(0, capture)
-      ..setFloat(45, settings.effectiveBackdropZoom)
       ..setImageSampler(1, geometryImage!, filterQuality: FilterQuality.medium);
 
     // Draw the capture path: no BackdropFilterLayer needed — draw directly
@@ -818,9 +1033,18 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
     // No BackdropFilter wrapper; the captured image is already bound to slot 0.
     context.canvas
       ..save()
-      ..clipRect(clipRect.shift(offset))
+      ..scale(1 / dpr)
+      ..clipRect(Rect.fromLTRB(
+          (clipRect.left + offset.dx) * dpr,
+          (clipRect.top + offset.dy) * dpr,
+          (clipRect.right + offset.dx) * dpr,
+          (clipRect.bottom + offset.dy) * dpr))
       ..drawRect(
-        clipRect.shift(offset),
+        Rect.fromLTRB(
+            (clipRect.left + offset.dx) * dpr,
+            (clipRect.top + offset.dy) * dpr,
+            (clipRect.right + offset.dx) * dpr,
+            (clipRect.bottom + offset.dy) * dpr),
         Paint()..shader = renderShader!,
       )
       ..restore();
@@ -879,9 +1103,6 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
   }) {
     final matteDevicePixelRatio =
         _matteDevicePixelRatio(bounds.size, capped: capped);
-    _geometryImageTransforms
-      ..clear()
-      ..addAll([for (final (_, _, transform) in geometries) transform]);
 
     // Record canvas commands synchronously — pure CPU work.
     final (picture, localBounds, imageSize) =
@@ -1029,10 +1250,6 @@ class GeometryRenderLink {
 
   bool _dirty = false;
 
-  /// Set when a geometry's transform changed; the layer rebuilds its matte
-  /// only if the transform relative to it changed too.
-  bool _transformDirty = false;
-
   void updateAllGeometries() {
     for (final renderObject in _shapeGeometries) {
       renderObject.maybeRebuildGeometry();
@@ -1052,15 +1269,8 @@ class GeometryRenderLink {
     _dirty = true;
   }
 
-  /// Signals that a geometry object moved on screen. The render layer
-  /// rebuilds its matte on the next paint only if the geometry moved
-  /// relative to the layer.
-  void notifyTransformChanged(RenderLiquidGlassGeometry renderObject) {
-    _transformDirty = true;
-  }
-
   void unregisterGeometry(RenderLiquidGlassGeometry renderObject) {
-    _shapeGeometries.remove(renderObject);
+    if (_shapeGeometries.remove(renderObject)) _dirty = true;
   }
 
   void dispose() {
@@ -1086,88 +1296,5 @@ class InheritedGeometryRenderLink extends InheritedWidget {
   @override
   bool updateShouldNotify(covariant InheritedGeometryRenderLink oldWidget) {
     return oldWidget.link != link;
-  }
-}
-
-/// The frost's pixel rows: one rect per odd pass-relative physical row across
-/// a glass's bounds, in its local coordinates.
-///
-/// The rows only depend on the glass's size and scale and on where its top
-/// edge falls between two pass rows (its phase, 0 to 2 physical px). So they
-/// are built once for phase 0, with a row beyond each edge, and a glass that
-/// moves (a scroll, a sheet sliding in) gets them shifted by its phase
-/// instead of rebuilt. Rows past the edges don't matter: the frost is clipped
-/// to the shape first.
-class FrostRows {
-  Path? _base;
-  Path? _shifted;
-  Rect? _bounds;
-  double _scaleX = 0;
-  double _scaleY = 0;
-  double _dpr = 0;
-  double _phase = -1;
-
-  /// How many times the rows were built from scratch.
-  int builds = 0;
-
-  /// The rows for a glass of [bounds] under [transform] (local to screen),
-  /// drawn into a pass at [passPhysical], or null when [transform] rotates,
-  /// skews or flips, and rows in local space would not land on pixel rows.
-  Path? rows({
-    required Matrix4 transform,
-    required Rect bounds,
-    required Rect passPhysical,
-    required double dpr,
-  }) {
-    final storage = transform.storage;
-    const tolerance = 1e-6;
-    final sx = storage[0];
-    final sy = storage[5];
-    if (storage[1].abs() > tolerance ||
-        storage[4].abs() > tolerance ||
-        storage[3].abs() > tolerance ||
-        storage[7].abs() > tolerance ||
-        sx <= 0 ||
-        sy <= 0) {
-      return null;
-    }
-    if (_base == null ||
-        bounds != _bounds ||
-        sx != _scaleX ||
-        sy != _scaleY ||
-        dpr != _dpr) {
-      _base = _build(bounds, sx, sy, dpr);
-      _bounds = bounds;
-      _scaleX = sx;
-      _scaleY = sy;
-      _dpr = dpr;
-      _shifted = null;
-    }
-    // Pass-relative physical y of the glass's top edge, modulo two rows.
-    // Dart's % is Euclidean, so the phase is in [0, 2).
-    final top = bounds.top * sy + storage[13];
-    final phase = (top * dpr - passPhysical.top) % 2;
-    if (_shifted == null || phase != _phase) {
-      _phase = phase;
-      _shifted = _base!.shift(Offset(0, -phase / (dpr * sy)));
-    }
-    return _shifted;
-  }
-
-  /// The odd rows of a glass whose top edge sits on an even pass row:
-  /// physical offsets -1, 1, 3, ... from the top edge, through one row past
-  /// the bottom.
-  Path _build(Rect bounds, double sx, double sy, double dpr) {
-    builds++;
-    final rowHeight = 1 / (dpr * sy);
-    final left = bounds.left - 1 / (dpr * sx);
-    final right = bounds.right + 1 / (dpr * sx);
-    final physicalHeight = bounds.height * sy * dpr;
-    final path = Path();
-    for (var offset = -1.0; offset <= physicalHeight + 1; offset += 2) {
-      final rowTop = bounds.top + offset * rowHeight;
-      path.addRect(Rect.fromLTRB(left, rowTop, right, rowTop + rowHeight));
-    }
-    return path;
   }
 }

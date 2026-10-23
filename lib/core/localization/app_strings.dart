@@ -27,6 +27,13 @@ class AppStrings {
       'serverProfileSettings': 'Profile CDN / TLS settings',
       'profileSave': 'Save profile',
       'profileSaved': 'Profile saved',
+      'echConfigHint':
+          'Base64, domain+resolver, or h2c://1.1.1.1/dns-query. h2c needs an ECH outbound below.',
+      'echOutboundHint':
+          'Optional complete Xray outbound JSON with a unique tag. Only ECH DNS queries use it; it does not replace the selected proxy.',
+      'echConfigRequired':
+          'Enter an ECH config list before adding its outbound.',
+      'echOutboundRequired': 'h2c requires an ECH outbound to provide TLS.',
       'profileSaveFailed': 'Profile could not be saved',
       'profileInvalid': 'Check the profile settings',
       'profileDefault': 'Default',
@@ -75,6 +82,12 @@ class AppStrings {
       'restartService': 'Restart Service',
       'ping': 'Ping',
       'subscriptionUsage': 'Subscription usage',
+      'measuredTraffic': 'Measured traffic',
+      'trafficToday': 'Today',
+      'trafficMonth': 'This month',
+      'trafficScope':
+          'Core upload + download across all configs; excludes transport overhead. Local day, Gregorian month. ≥ means partial; actual usage may be higher.',
+      'trafficUnavailable': 'Measurement temporarily unavailable',
       'refresh': 'Update now',
       'notConfigured': 'Subscription endpoint is not configured.',
       'configureHint':
@@ -100,7 +113,8 @@ class AppStrings {
       'localBypassAuto': 'Automatic (direct local access)',
       'localBypassDirect': 'Bypass proxy',
       'localBypassProxy': 'Use proxy',
-      'localBypassHint': 'Controls private IPs and local names, independently of Iran bypass. Through proxy, local addresses refer to the server’s network and may be unreachable.',
+      'localBypassHint':
+          'Controls private IPs and local names, independently of Iran bypass. Through proxy, local addresses refer to the server’s network and may be unreachable.',
       'dns': 'DNS',
       'name': 'Name',
       'security': 'Security',
@@ -264,6 +278,9 @@ class AppStrings {
       'install': 'Install',
       'updateDownloadFailed':
           'The in-app download failed. You can still download the APK with your browser.',
+      'retryUpdateDownload': 'Retry download',
+      'updateDownloadRecoveryHint':
+          'Try again, or download from the official release in your browser. You can also try another network or a VPN, then retry.',
       'updateApkUnavailable':
           'No APK compatible with this device was found in the release.',
       'upToDate': "You're up to date.",
@@ -352,6 +369,13 @@ class AppStrings {
       'serverProfileSettings': 'تنظیمات CDN / TLS پروفایل',
       'profileSave': 'ذخیره پروفایل',
       'profileSaved': 'پروفایل ذخیره شد',
+      'echConfigHint':
+          'Base64، دامنه+آدرس resolver یا h2c://1.1.1.1/dns-query؛ برای h2c خروجی ECH پایین را هم وارد کن.',
+      'echOutboundHint':
+          'اختیاری: JSON کامل یک outbound هسته با tag یکتا. فقط دریافت کلید ECH از این مسیر می‌رود و جای پروکسی انتخاب‌شده را نمی‌گیرد.',
+      'echConfigRequired': 'قبل از افزودن خروجی، ECH config list را وارد کن.',
+      'echOutboundRequired':
+          'برای h2c باید خروجی ECH تأمین‌کنندهٔ TLS را هم وارد کنی.',
       'profileSaveFailed': 'پروفایل ذخیره نشد',
       'profileInvalid': 'تنظیمات پروفایل را بررسی کنید',
       'profileDefault': 'پیش‌فرض',
@@ -400,6 +424,12 @@ class AppStrings {
       'restartService': 'راه‌اندازی مجدد سرویس',
       'ping': 'پینگ',
       'subscriptionUsage': 'مصرف اشتراک',
+      'measuredTraffic': 'ترافیک اندازه‌گیری‌شده',
+      'trafficToday': 'امروز',
+      'trafficMonth': 'این ماه',
+      'trafficScope':
+          'مجموع ارسال و دریافت هسته در همه کانفیگ‌ها، بدون سربار انتقال. روز محلی و ماه میلادی. ≥ یعنی اندازه‌گیری ناقص؛ مصرف واقعی ممکن است بیشتر باشد.',
+      'trafficUnavailable': 'اندازه‌گیری موقتاً در دسترس نیست',
       'refresh': 'به‌روزرسانی اکنون',
       'notConfigured': 'آدرس داخلی اشتراک تنظیم نشده است.',
       'configureHint':
@@ -425,7 +455,8 @@ class AppStrings {
       'localBypassAuto': 'خودکار (دسترسی مستقیم محلی)',
       'localBypassDirect': 'عبور مستقیم، بدون پروکسی',
       'localBypassProxy': 'عبور از پروکسی',
-      'localBypassHint': 'برای IP خصوصی و نام‌های محلی، مستقل از بای‌پس ایران. در حالت پروکسی، آدرس محلی به شبکهٔ سرور اشاره می‌کند و ممکن است در دسترس نباشد.',
+      'localBypassHint':
+          'برای IP خصوصی و نام‌های محلی، مستقل از بای‌پس ایران. در حالت پروکسی، آدرس محلی به شبکهٔ سرور اشاره می‌کند و ممکن است در دسترس نباشد.',
       'dns': 'DNS',
       'name': 'نام',
       'security': 'امنیت',
@@ -585,6 +616,9 @@ class AppStrings {
       'install': 'نصب',
       'updateDownloadFailed':
           'دانلود داخل برنامه ناموفق بود. همچنان می‌توانید APK را با مرورگر دانلود کنید.',
+      'retryUpdateDownload': 'تلاش دوباره برای دانلود',
+      'updateDownloadRecoveryHint':
+          'دوباره تلاش کنید یا از انتشار رسمی در مرورگر دانلود کنید. می‌توانید اینترنت دیگری یا فیلترشکن را هم امتحان کنید و دوباره تلاش کنید.',
       'updateApkUnavailable':
           'APK سازگار با معماری این دستگاه در انتشار پیدا نشد.',
       'upToDate': 'برنامه به‌روز است.',

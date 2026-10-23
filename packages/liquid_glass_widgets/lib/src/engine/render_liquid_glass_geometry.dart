@@ -9,6 +9,7 @@
 // ignore_for_file: public_member_api_docs
 
 import 'dart:ui';
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 
 import 'package:flutter/rendering.dart';
@@ -135,6 +136,23 @@ abstract class RenderLiquidGlassGeometry extends RenderProxyBox {
   }
 
   @override
+  void markNeedsPaint() {
+    super.markNeedsPaint();
+    if (!attached) return;
+    // The foreground is painted by the linked optical owner, not by the
+    // marker's normal traversal. A viewport/repaint boundary between them
+    // otherwise swallows text/image invalidations until the next scroll.
+    // Request paint only: unchanged local SDF textures remain reusable.
+    for (RenderObject? node = parent; node != null; node = node.parent) {
+      if (node is RenderOffstage && node.offstage) return;
+      if (node is LiquidGlassRenderObject && identical(node.link, renderLink)) {
+        node.markNeedsPaint();
+        return;
+      }
+    }
+  }
+
+  @override
   @mustCallSuper
   void attach(PipelineOwner owner) {
     _renderLink?.registerGeometry(this);
@@ -201,11 +219,15 @@ abstract class RenderLiquidGlassGeometry extends RenderProxyBox {
 
   /// Should be called from within [paint] to maybe rebuild the [geometry].
   GeometryCache? maybeRebuildGeometry() {
-    if (geometryState == LiquidGlassGeometryState.updated && geometry != null) {
+    final (layerBounds, shapes, anyShapeChangedInLayer) = gatherShapeData();
+    // Paint-only drag/scale transforms are live before addToScene delivers its
+    // tracking notification. Check that pose now; waiting for the callback
+    // renders a fresh glyph over a stale lens for one frame (or until touch).
+    if (geometryState == LiquidGlassGeometryState.updated &&
+        geometry != null &&
+        !anyShapeChangedInLayer) {
       return geometry;
     }
-
-    final (layerBounds, shapes, anyShapeChangedInLayer) = gatherShapeData();
 
     if (geometryState == LiquidGlassGeometryState.mightNeedUpdate &&
         !anyShapeChangedInLayer &&
@@ -223,6 +245,9 @@ abstract class RenderLiquidGlassGeometry extends RenderProxyBox {
     geometryState = LiquidGlassGeometryState.updated;
 
     if (shapes.isEmpty) {
+      // Empty is a geometry change too. Otherwise a shared parent's composed
+      // matte can keep this group's last trigger after it moved to own-layer.
+      _renderLink?.notifyGeometryChanged(this);
       return null;
     }
 
@@ -577,6 +602,29 @@ class ShapeGeometry {
   final Rect shapeBounds;
 
   final Matrix4? shapeToGeometry;
+
+  /// Principal diameters and axis of an affine-transformed oval. Using the
+  /// enclosing rectangle instead inflates a diagonal pull in both directions.
+  (Size, Offset)? get ellipseAxes {
+    final transform = shapeToGeometry;
+    if (rawShapeType != RawShapeType.ellipse || transform == null) return null;
+    final m = transform.storage;
+    if (m[3] != 0 || m[7] != 0 || m[15] != 1) return null;
+    final w = renderObject.size.width;
+    final h = renderObject.size.height;
+    final ax = m[0] * w, ay = m[1] * w;
+    final bx = m[4] * h, by = m[5] * h;
+    final xx = ax * ax + bx * bx;
+    final yy = ay * ay + by * by;
+    final xy = ax * ay + bx * by;
+    final delta = math.sqrt((xx - yy) * (xx - yy) + 4 * xy * xy);
+    final angle = .5 * math.atan2(2 * xy, xx - yy);
+    return (
+      Size(math.sqrt(math.max(0, (xx + yy + delta) / 2)),
+          math.sqrt(math.max(0, (xx + yy - delta) / 2))),
+      Offset(math.cos(angle), math.sin(angle))
+    );
+  }
 
   @override
   bool operator ==(Object other) {

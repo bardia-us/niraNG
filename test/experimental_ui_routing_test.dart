@@ -236,7 +236,11 @@ void main() {
       final button = tester.widget<glass.GlassButton>(
         find.byType(glass.GlassButton),
       );
-      expect(button.settings!.frost, greaterThan(0));
+      expect(
+        button.settings!.frost,
+        0,
+        reason: 'Approved Clear Lens refracts without the old frosted cloud',
+      );
       expect(button.useOwnLayer, isTrue);
       expect(button.stretch, greaterThan(0));
       expect(find.byType(BackdropFilter), findsOneWidget);

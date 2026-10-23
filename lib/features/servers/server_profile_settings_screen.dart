@@ -41,6 +41,8 @@ class _ServerProfileSettingsScreenState
         'cs': widget.server.cipherSuites,
         'fm': widget.server.finalMask,
         'alpn': widget.server.alpn,
+        'echConfigList': widget.server.echConfigList,
+        'echOutbound': widget.server.echOutbound,
       },
     };
     _fields = _initial.map(
@@ -68,7 +70,9 @@ class _ServerProfileSettingsScreenState
     final changes = <String, Object?>{
       for (final field in _fields.entries)
         if (field.value.text != _initial[field.key])
-          field.key: field.value.text.trim(),
+          field.key: field.key == 'echOutbound'
+              ? field.value.text
+              : field.value.text.trim(),
     };
     if (changes.isEmpty) {
       Navigator.of(context).pop();
@@ -97,6 +101,29 @@ class _ServerProfileSettingsScreenState
     } catch (_) {
       // Native validation is authoritative; catch obvious JSON errors here.
     }
+    return context.s('profileInvalid');
+  }
+
+  String? _validateEchOutbound(String? raw) {
+    if (raw == null || raw.trim().isEmpty) {
+      return _fields['echConfigList']!.text.contains('h2c://')
+          ? context.s('echOutboundRequired')
+          : null;
+    }
+    if (_fields['echConfigList']!.text.trim().isEmpty) {
+      return context.s('echConfigRequired');
+    }
+    try {
+      final value = jsonDecode(raw);
+      if (value is Map<String, dynamic> &&
+          value['tag'] is String &&
+          (value['tag'] as String).trim().isNotEmpty &&
+          value['protocol'] is String &&
+          (value['protocol'] as String).trim().isNotEmpty &&
+          raw.length <= 32768) {
+        return null;
+      }
+    } catch (_) {}
     return context.s('profileInvalid');
   }
 
@@ -292,70 +319,86 @@ class _ServerProfileSettingsScreenState
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: Text(context.s('serverProfileSettings'))),
-    body: Form(
-      key: _form,
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              widget.server.name,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
-            Text(context.s('profileReconnectHint')),
-            if (!_tls) ...[
+    body: SafeArea(
+      top: false,
+      child: Form(
+        key: _form,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                widget.server.name,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
               const SizedBox(height: 8),
-              Text(context.s('profileTlsOnlyHint')),
-            ],
-            for (final field in _fields.entries) ...[
-              const SizedBox(height: 16),
-              if (field.key == 'fp')
-                _fingerprintField()
-              else
-                TextFormField(
-                  key: ValueKey('profile-${field.key}'),
-                  controller: field.value,
-                  enabled: !_saving,
-                  readOnly: field.key == 'cs' || field.key == 'alpn',
-                  onTap: field.key == 'cs' || field.key == 'alpn'
-                      ? () => _selectChoices(field.key)
-                      : null,
-                  textDirection: TextDirection.ltr,
-                  autocorrect: false,
-                  enableSuggestions: false,
-                  minLines: field.key == 'fm' ? 3 : 1,
-                  maxLines: field.key == 'fm' ? 8 : 1,
-                  decoration: InputDecoration(
-                    labelText: switch (field.key) {
-                      'sni' => 'SNI',
-                      'fp' => 'Fingerprint',
-                      'cs' => context.s('cipherSuites'),
-                      'fm' => context.s('finalMask'),
-                      _ => 'ALPN',
+              Text(context.s('profileReconnectHint')),
+              if (!_tls) ...[
+                const SizedBox(height: 8),
+                Text(context.s('profileTlsOnlyHint')),
+              ],
+              for (final field in _fields.entries) ...[
+                const SizedBox(height: 16),
+                if (field.key == 'fp')
+                  _fingerprintField()
+                else
+                  TextFormField(
+                    key: ValueKey('profile-${field.key}'),
+                    controller: field.value,
+                    enabled: !_saving,
+                    readOnly: field.key == 'cs' || field.key == 'alpn',
+                    onTap: field.key == 'cs' || field.key == 'alpn'
+                        ? () => _selectChoices(field.key)
+                        : null,
+                    textDirection: TextDirection.ltr,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    minLines: const {'fm', 'echOutbound'}.contains(field.key)
+                        ? 3
+                        : 1,
+                    maxLines: const {'fm', 'echOutbound'}.contains(field.key)
+                        ? 10
+                        : 1,
+                    decoration: InputDecoration(
+                      labelText: switch (field.key) {
+                        'sni' => 'SNI',
+                        'fp' => 'Fingerprint',
+                        'cs' => context.s('cipherSuites'),
+                        'fm' => context.s('finalMask'),
+                        'echConfigList' => 'ECH config list',
+                        'echOutbound' => 'ECH outbound (JSON)',
+                        _ => 'ALPN',
+                      },
+                      suffixIcon: field.key == 'cs' || field.key == 'alpn'
+                          ? const Icon(Icons.tune_rounded)
+                          : null,
+                      helperText: switch (field.key) {
+                        'cs' => context.s('profileCipherHint'),
+                        'echConfigList' => context.s('echConfigHint'),
+                        'echOutbound' => context.s('echOutboundHint'),
+                        _ => null,
+                      },
+                      helperMaxLines: 4,
+                    ),
+                    validator: switch (field.key) {
+                      'fm' => _validateMask,
+                      'echOutbound' => _validateEchOutbound,
+                      _ => null,
                     },
-                    suffixIcon: field.key == 'cs' || field.key == 'alpn'
-                        ? const Icon(Icons.tune_rounded)
-                        : null,
-                    helperText: field.key == 'cs'
-                        ? context.s('profileCipherHint')
-                        : null,
-                    helperMaxLines: 4,
                   ),
-                  validator: field.key == 'fm' ? _validateMask : null,
-                ),
+              ],
+              const SizedBox(height: 20),
+              FilledButton.icon(
+                key: const ValueKey('save-server-profile'),
+                onPressed: _saving || !widget.server.profileEditable
+                    ? null
+                    : _save,
+                icon: const Icon(Icons.save_outlined),
+                label: Text(context.s('profileSave')),
+              ),
             ],
-            const SizedBox(height: 20),
-            FilledButton.icon(
-              key: const ValueKey('save-server-profile'),
-              onPressed: _saving || !widget.server.profileEditable
-                  ? null
-                  : _save,
-              icon: const Icon(Icons.save_outlined),
-              label: Text(context.s('profileSave')),
-            ),
-          ],
+          ),
         ),
       ),
     ),

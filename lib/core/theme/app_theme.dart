@@ -66,7 +66,9 @@ abstract final class AppTheme {
     final accent = accentColors.containsKey(accentColor)
         ? accentColor
         : 'purple';
-    final canvas = darkCanvases.containsKey(darkCanvas) ? darkCanvas : 'midnight';
+    final canvas = darkCanvases.containsKey(darkCanvas)
+        ? darkCanvas
+        : 'midnight';
     return _personalized.putIfAbsent(
       (brightness, reducedEffects, accent, canvas),
       () => _theme(brightness, reducedEffects, accent: accent, canvas: canvas),
@@ -85,18 +87,28 @@ abstract final class AppTheme {
     String canvas = 'midnight',
   }) {
     final isDark = brightness == Brightness.dark;
-    final scheme = ColorScheme.fromSeed(
+    final seedScheme = ColorScheme.fromSeed(
       seedColor: accentColors[accent]!,
       brightness: brightness,
       dynamicSchemeVariant: DynamicSchemeVariant.tonalSpot,
     );
+    // Keep Performance opaque and shader-free, but avoid the high container's
+    // grey wash over the user's chosen canvas. Foreground/accent stay intact.
+    final canvasColor = isDark ? darkCanvases[canvas]! : AppPalette.lightCanvas;
+    final scheme = reducedEffects
+        ? seedScheme.copyWith(
+            surfaceContainerHigh: Color.lerp(
+              canvasColor,
+              seedScheme.surfaceContainerHigh,
+              .72,
+            ),
+          )
+        : seedScheme;
     return ThemeData(
       useMaterial3: true,
       brightness: brightness,
       colorScheme: scheme,
-      scaffoldBackgroundColor: isDark
-          ? darkCanvases[canvas]!
-          : AppPalette.lightCanvas,
+      scaffoldBackgroundColor: canvasColor,
       extensions: [
         NirangSemanticColors(
           success: isDark ? AppPalette.darkSuccess : AppPalette.lightSuccess,

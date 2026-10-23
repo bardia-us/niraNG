@@ -1,6 +1,7 @@
 package dev.nirang.client.xray
 
 import dev.nirang.client.model.ServerRecord
+import dev.nirang.client.subscription.TlsCertificatePolicy
 import dev.nirang.client.settings.NativeSettings
 import dev.nirang.client.settings.DnsResolverAddress
 import org.json.JSONArray
@@ -68,6 +69,13 @@ object XrayConfigBuilder {
     ): JSONObject = JSONObject().apply {
         validateServer(server)
         put("log", JSONObject().apply { put("loglevel", "warning") })
+        put("stats", JSONObject())
+        put("policy", JSONObject().apply {
+            put("system", JSONObject().apply {
+                put("statsOutboundUplink", true)
+                put("statsOutboundDownlink", true)
+            })
+        })
         put("dns", buildDns(settings))
         if (settings?.observatoryEnabled == true) {
             val sections = buildObservatorySections(
@@ -120,6 +128,7 @@ object XrayConfigBuilder {
                 localBypassMode = settings?.localBypassMode ?: "auto",
             ),
         )
+        EchOutboundPolicy.attach(this, server)
     }
 
     private fun buildInbounds(settings: NativeSettings?, includeTun: Boolean): JSONArray = JSONArray().apply {
@@ -312,7 +321,25 @@ object XrayConfigBuilder {
             })
             "tcp" -> server.parameters["headerType"]?.takeIf { it != "none" && it.isNotBlank() }?.let { headerType ->
                 put("tcpSettings", JSONObject().apply {
-                    put("header", JSONObject().apply { put("type", headerType) })
+                    put("header", JSONObject().apply {
+                        put("type", headerType)
+                        if (headerType.equals("http", true)) {
+                            fun values(key: String) = server.parameters[key].orEmpty()
+                                .split(',').map(String::trim).filter(String::isNotEmpty)
+                            put("request", JSONObject().apply {
+                                put("version", "1.1")
+                                put("method", "GET")
+                                put("path", JSONArray(values("path").ifEmpty { listOf("/") }))
+                                put("headers", JSONObject().apply {
+                                    values("host").takeIf(List<String>::isNotEmpty)?.let { put("Host", JSONArray(it)) }
+                                    put("User-Agent", JSONArray().put("Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.6478.122 Mobile Safari/537.36"))
+                                    put("Accept-Encoding", JSONArray().put("gzip, deflate"))
+                                    put("Connection", JSONArray().put("keep-alive"))
+                                    put("Pragma", "no-cache")
+                                })
+                            })
+                        }
+                    })
                 })
             }
             "hysteria" -> put("hysteriaSettings", JSONObject().apply {
@@ -328,12 +355,7 @@ object XrayConfigBuilder {
                 server.parameters["cs"]?.trim()?.takeIf(String::isNotBlank)?.let { put("cipherSuites", it) }
                 (server.parameters["echConfigList"]?.takeIf(String::isNotBlank)
                     ?: server.parameters["ech"]?.takeIf(String::isNotBlank))?.let { put("echConfigList", it) }
-                server.parameters["pcs"]?.trim()?.takeIf(String::isNotBlank)?.let {
-                    putOptionalArray("pinnedPeerCertSha256", it)
-                }
-                server.parameters["vcn"]?.takeIf { it == "1" || it.equals("true", true) }?.let {
-                    put("verifyPeerCertByName", true)
-                }
+                TlsCertificatePolicy.fields(server).forEach { (key, value) -> put(key, value) }
             })
             "reality" -> put("realitySettings", JSONObject().apply {
                 require(!server.parameters["fp"].equals("unsafe", true)) {
@@ -600,6 +622,7 @@ object XrayConfigBuilder {
     }
 
     private fun validateServer(server: ServerRecord) {
+        TlsCertificatePolicy.fields(server)
         require(server.protocol.lowercase() in setOf("vless", "vmess", "trojan", "shadowsocks", "socks", "http", "hysteria2")) { "Unsupported proxy protocol" }
         require(server.address.isNotBlank() && server.address.length <= 253) { "Server address is invalid" }
         require(server.port in 1..65_535) { "Server port is invalid" }

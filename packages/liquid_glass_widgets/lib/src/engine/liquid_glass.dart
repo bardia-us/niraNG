@@ -212,10 +212,8 @@ class LiquidGlass extends StatelessWidget {
         // because `settings` comes from the (possibly transformed) scope.
         child: GlassMaterializeScope.wrapContent(
           context,
-          Opacity(
-            opacity: settings.visibility.clamp(0, 1),
-            child: child,
-          ),
+          child,
+          visibility: settings.visibility,
         ),
       ),
     );
@@ -344,10 +342,19 @@ class RenderLiquidGlass extends RenderProxyBox
     _blendGroupLink?.notifyShapeTransformChanged(this);
   }
 
+  // Both marker paint and paintFromLayer's mixin paint draw only content.
+  // Only the shared owner can acknowledge that its optical matte is current.
+  @override
+  GeometryTransformTrackingLayer setUpLayer(Offset offset,
+          {bool recordTransform = false}) =>
+      super.setUpLayer(offset, recordTransform: false);
+
   @override
   // ignore: must_call_super
   void paint(PaintingContext context, Offset offset) {
-    setUpLayer(offset);
+    // This paints only the tracking marker, not the shared owner's optical
+    // matte. Do not acknowledge the transform as optically consumed yet.
+    setUpLayer(offset, recordTransform: false);
     // Push the tracking layer during the normal paint traversal.
     // We pass an empty painter because the child is NOT drawn here;
     // it is drawn by the blend group via paintFromLayer.

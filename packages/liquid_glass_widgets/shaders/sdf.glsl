@@ -47,6 +47,8 @@
 //   [base+4] size.y
 //   [base+5] cornerRadius     (top corners; or symmetric)
 //   [base+6] bottomCornerRadius (bottom corners; equals [base+5] for symmetric)
+// Ellipse type2 uses principal diameters in size.xy and principal-axis unit
+// vector in +5/+6 (unused corner slots). Legacy zero axis means unrotated.
 
 #include "gles_compat.glsl"
 
@@ -183,7 +185,16 @@ float smoothUnion(float d1, float d2, float k) {
 // `sdfRRectAsym` with equal radii is bit-identical to `sdfRRect`.
 float getShapeSDF(float type, vec2 p, vec2 center, vec2 size, float rTop, float rBottom) {
     if      (type == 1.0) return sdfSquircleAsym(p - center, size / 2.0, rTop, rBottom);
-    else if (type == 2.0) return sdfEllipse  (p - center, size / 2.0);
+    else if (type == 2.0) {
+        // Oval slots +5/+6 hold a principal-axis unit vector, not radii.
+        // Zero vector is the legacy identity (unrotated oval).
+        vec2 axis = vec2(rTop, rBottom);
+        vec2 q = p - center;
+        if (dot(axis, axis) > 0.5) {
+            q = vec2(dot(q, axis), dot(q, vec2(-axis.y, axis.x)));
+        }
+        return sdfEllipse(q, size / 2.0);
+    }
     else if (type == 3.0) return sdfRRectAsym(p - center, size / 2.0, rTop, rBottom);
     return 0.0;
 }

@@ -45,6 +45,8 @@ data class ServerRecord(
         "cipherSuites" to parameters["cs"].orEmpty(),
         "finalMask" to parameters["fm"].orEmpty(),
         "alpn" to parameters["alpn"].orEmpty(),
+        "echConfigList" to (parameters["echConfigList"] ?: parameters["ech"]).orEmpty(),
+        "echOutbound" to parameters["echOutbound"].orEmpty(),
         "allowInsecure" to listOf("allowInsecure", "insecure", "allow_insecure").any {
             parameters[it] == "1" || parameters[it].equals("true", true)
         },

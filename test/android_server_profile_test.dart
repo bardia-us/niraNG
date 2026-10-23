@@ -111,7 +111,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('FinalMask JSON'), findsOneWidget);
       expect(find.byType(DropdownButtonFormField<String>), findsOneWidget);
-      expect(find.byType(TextField), findsNWidgets(4));
+      expect(find.byType(TextField), findsNWidgets(6));
       final fields = tester
           .widgetList<TextField>(find.byType(TextField))
           .toList();

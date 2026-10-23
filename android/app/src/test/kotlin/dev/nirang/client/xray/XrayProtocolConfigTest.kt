@@ -9,6 +9,34 @@ import org.junit.Test
 
 class XrayProtocolConfigTest {
     @Test
+    fun `VLESS encrypted TCP HTTP keeps host path and complete request`() {
+        val encryption = "mlkem768x25519plus.xorpub.0rtt.test-public-key"
+        val result = outbound(server("vless", "test-id", mapOf(
+            "encryption" to encryption, "headerType" to "http",
+            "host" to " front.example, backup.example ", "path" to "/a,/b",
+        )))
+        assertEquals(encryption, result.getJSONObject("settings").getJSONArray("vnext")
+            .getJSONObject(0).getJSONArray("users").getJSONObject(0).getString("encryption"))
+        val stream = result.getJSONObject("streamSettings")
+        assertEquals("none", stream.getString("security"))
+        val request = stream.getJSONObject("tcpSettings").getJSONObject("header").getJSONObject("request")
+        assertEquals("GET", request.getString("method"))
+        assertEquals("1.1", request.getString("version"))
+        assertEquals(listOf("/a", "/b"), request.getJSONArray("path").let { (0 until it.length()).map(it::getString) })
+        assertEquals("front.example", request.getJSONObject("headers").getJSONArray("Host").getString(0))
+        assertEquals("backup.example", request.getJSONObject("headers").getJSONArray("Host").getString(1))
+    }
+
+    @Test
+    fun `TCP HTTP defaults missing path without inventing a Host`() {
+        val request = outbound(server("vless", "test-id", mapOf("headerType" to "http")))
+            .getJSONObject("streamSettings").getJSONObject("tcpSettings").getJSONObject("header").getJSONObject("request")
+        assertEquals("/", request.getJSONArray("path").getString(0))
+        assertFalse(request.getJSONObject("headers").has("Host"))
+        assertFalse(outbound(server("vless", "test-id", mapOf("headerType" to "none", "host" to "unused.example")))
+            .getJSONObject("streamSettings").has("tcpSettings"))
+    }
+    @Test
     fun `Shadowsocks maps method password and server into real outbound`() {
         val outbound = outbound(server("shadowsocks", "secret", mapOf("method" to "chacha20-ietf-poly1305")))
         assertEquals("shadowsocks", outbound.getString("protocol"))

@@ -391,9 +391,9 @@ class _GlassMenuState extends State<GlassMenu> with TickerProviderStateMixin {
                   child: widget.useGlassTriggerFade
                       ? materializedTrigger
                       : Opacity(
-                    opacity: triggerOpacity,
-                    child: materializedTrigger,
-                  ),
+                          opacity: triggerOpacity,
+                          child: materializedTrigger,
+                        ),
                 ),
               ),
             ),
@@ -410,7 +410,9 @@ class _GlassMenuState extends State<GlassMenu> with TickerProviderStateMixin {
             OverlayPortal(
               controller: _overlayController,
               overlayChildBuilder: _buildMorphingOverlay,
-              overlayLocation: OverlayChildLocation.nearestOverlay,
+              overlayLocation: widget.useRootOverlay
+                  ? OverlayChildLocation.rootOverlay
+                  : OverlayChildLocation.nearestOverlay,
             ),
           ],
         );
@@ -630,7 +632,8 @@ class _GlassMenuState extends State<GlassMenu> with TickerProviderStateMixin {
     _triggerBorderRadius = _triggerSize!.height / 2;
     _triggerGlobalPosition =
         renderBox.localToGlobal(Offset.zero); // store for screen bounds
-    final overlay = Overlay.maybeOf(context);
+    final overlay =
+        Overlay.maybeOf(context, rootOverlay: widget.useRootOverlay);
     final overlayBox = overlay?.context.findRenderObject() as RenderBox?;
     _triggerOverlayPosition = overlayBox != null
         ? renderBox.localToGlobal(Offset.zero, ancestor: overlayBox)

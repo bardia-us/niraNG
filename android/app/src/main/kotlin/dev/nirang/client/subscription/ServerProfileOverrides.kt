@@ -1,6 +1,7 @@
 package dev.nirang.client.subscription
 
 import dev.nirang.client.model.ServerRecord
+import dev.nirang.client.xray.EchOutboundPolicy
 import org.json.JSONObject
 import org.json.JSONTokener
 import java.net.IDN
@@ -12,13 +13,15 @@ class ServerProfileOverrides private constructor(private val records: Map<String
         require(server.profileEditable) { "This profile does not support TLS edits" }
         require(values.isNotEmpty()) { "No profile values supplied" }
         val normalized = values.mapValues { (key, value) -> normalize(key, value, server.security.equals("reality", true)) }
-        return ServerProfileOverrides(records + (server.id to (records[server.id].orEmpty() + normalized)))
+        val merged = records[server.id].orEmpty() + normalized
+        EchOutboundPolicy.validate(server.copy(parameters = editedParameters(server, merged)))
+        return ServerProfileOverrides(records + (server.id to merged))
     }
 
     fun apply(servers: List<ServerRecord>): List<ServerRecord> = servers.map { server ->
         val values = records[server.id]
         if (values == null || !server.profileEditable) server
-        else server.copy(parameters = server.parameters + values)
+        else server.copy(parameters = editedParameters(server, values))
     }
 
     fun toJson(): JSONObject = JSONObject().put("servers", JSONObject().apply {
@@ -26,6 +29,12 @@ class ServerProfileOverrides private constructor(private val records: Map<String
     })
 
     companion object {
+        private fun editedParameters(server: ServerRecord, values: Map<String, String>): Map<String, String> {
+            // An explicit empty canonical value means remove ECH, not revive
+            // the original share-link alias via the builder's fallback.
+            val source = if (values.containsKey("echConfigList")) server.parameters - "ech" else server.parameters
+            return source + values
+        }
         // Names recognized by bundled core 3115a981a8b6; do not track unbundled engines.
         private val fingerprints = setOf(
             "chrome", "firefox", "safari", "ios", "android", "edge", "360", "qq",
@@ -42,7 +51,7 @@ class ServerProfileOverrides private constructor(private val records: Map<String
             "hellochrome_100_psk", "hellochrome_112_psk_shuf", "hellochrome_114_padding_psk_shuf",
             "hellochrome_115_pq", "hellochrome_115_pq_psk", "hellochrome_120_pq",
         )
-        private val tlsOnly = setOf("cs", "fm", "alpn")
+        private val tlsOnly = setOf("cs", "fm", "alpn", "echConfigList", "echOutbound")
 
         fun fromJson(value: JSONObject): ServerProfileOverrides {
             require(value.length() == 1 && value.has("servers")) { "Invalid profile overrides" }
@@ -60,12 +69,14 @@ class ServerProfileOverrides private constructor(private val records: Map<String
         }
 
         private fun normalize(key: String, raw: Any?, reality: Boolean): String {
-            require(key in setOf("sni", "fp", "cs", "fm", "alpn") && raw is String) { "Invalid profile option" }
+            require(key in setOf("sni", "fp", "cs", "fm", "alpn", "echConfigList", "echOutbound") && raw is String) { "Invalid profile option" }
             require(!reality || key !in tlsOnly) { "This option requires TLS" }
             val value = raw.trim()
-            require(value.length <= if (key == "fm") 32768 else 4096) { "Profile option is too long" }
+            require(value.length <= if (key in setOf("fm", "echOutbound")) 32768 else 4096) { "Profile option is too long" }
             if (value.isEmpty()) return ""
             return when (key) {
+                "echConfigList" -> value.also { require(it.none { c -> c == '\n' || c == '\r' || c == '\u0000' }) { "Invalid ECH config list" } }
+                "echOutbound" -> raw.also { EchOutboundPolicy.parse(it) }
                 "fp" -> value.lowercase().also {
                     require(it in fingerprints && (!reality || it != "unsafe")) { "Unsupported fingerprint" }
                 }

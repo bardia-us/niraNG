@@ -29,6 +29,68 @@ class _Probe extends RenderBox {
 }
 
 void main() {
+  testWidgets('diagonal control transform keeps the actual header contour', (
+    tester,
+  ) async {
+    final header = GlobalKey();
+    final frame = GlobalKey();
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: Center(
+          child: RepaintBoundary(
+            key: frame,
+            child: SizedBox.square(
+              dimension: 200,
+              child: Stack(
+                children: [
+                  const Positioned.fill(child: ColoredBox(color: Colors.white)),
+                  Positioned(
+                    left: 80,
+                    top: 50,
+                    width: 40,
+                    height: 40,
+                    child: Transform.rotate(
+                      angle: .7853981633974483,
+                      child: HeaderExcludedControl(
+                        headerKey: header,
+                        child: const ColoredBox(color: Color(0xFFFF0000)),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    left: 10,
+                    top: 10,
+                    width: 180,
+                    height: 64,
+                    child: SizedBox(key: header),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    final boundary =
+        frame.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+    final image = await tester.runAsync(() => boundary.toImage(pixelRatio: 1));
+    final bytes = (await tester.runAsync(() => image!.toByteData()))!;
+    expect(
+      bytes.getUint8((60 * 200 + 100) * 4 + 1),
+      255,
+      reason: 'Header ends at y=74, so y=60 is covered',
+    );
+    expect(
+      bytes.getUint8((85 * 200 + 100) * 4 + 1),
+      closeTo(0, 1),
+      reason:
+          'Rotating/stretching must not enlarge the header cutout below y=74',
+    );
+    image!.dispose();
+    await tester.pumpWidget(const SizedBox());
+  });
   testWidgets(
     'composited control follows rounded header through scroll and parent motion',
     (tester) async {

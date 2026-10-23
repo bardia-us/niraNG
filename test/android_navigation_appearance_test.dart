@@ -54,6 +54,7 @@ class _PendingClient implements HttpClient {
 Future<void> _mountShell(
   WidgetTester tester, {
   String feedbackMode = 'off',
+  Size? reportedViewport,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -64,6 +65,12 @@ Future<void> _mountShell(
       ],
       child: MaterialApp(
         theme: AppTheme.light,
+        builder: reportedViewport == null
+            ? null
+            : (context, child) => MediaQuery(
+                data: MediaQuery.of(context).copyWith(size: reportedViewport),
+                child: child!,
+              ),
         localizationsDelegates: const [
           AppStrings.delegate,
           GlobalMaterialLocalizations.delegate,
@@ -78,6 +85,105 @@ Future<void> _mountShell(
 }
 
 void main() {
+  testWidgets('non-overlapping shell blur panels share a pristine input', (
+    tester,
+  ) async {
+    await _mountShell(tester);
+    final top = find
+        .descendant(
+          of: find.byType(AppBar),
+          matching: find.byType(FrostedSurface),
+        )
+        .first;
+    final bottom = find
+        .ancestor(
+          of: find.byType(NavigationBar),
+          matching: find.byType(FrostedSurface),
+        )
+        .first;
+    final topFilter = tester.widget<BackdropFilter>(
+      find.descendant(of: top, matching: find.byType(BackdropFilter)).first,
+    );
+    final bottomFilter = tester.widget<BackdropFilter>(
+      find.descendant(of: bottom, matching: find.byType(BackdropFilter)).first,
+    );
+    expect(topFilter.backdropGroupKey, isNotNull);
+    expect(bottomFilter.backdropGroupKey, same(topFilter.backdropGroupKey));
+    expect(tester.getRect(top).overlaps(tester.getRect(bottom)), isFalse);
+    expect(tester.widget<FrostedSurface>(top).sigma, 8);
+    expect(tester.widget<FrostedSurface>(bottom).sigma, 8);
+    await tester.pumpWidget(const SizedBox());
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets(
+    'compact shell does not group blur panels with touching sampling margins',
+    (tester) async {
+      // Exercise the viewport guard without overflowing unrelated Home content.
+      await _mountShell(tester, reportedViewport: const Size(800, 180));
+      final top = find
+          .descendant(
+            of: find.byType(AppBar),
+            matching: find.byType(FrostedSurface),
+          )
+          .first;
+      final bottom = find
+          .ancestor(
+            of: find.byType(NavigationBar),
+            matching: find.byType(FrostedSurface),
+          )
+          .first;
+      expect(tester.widget<FrostedSurface>(top).backdropKey, isNull);
+      expect(tester.widget<FrostedSurface>(bottom).backdropKey, isNull);
+      await tester.pumpWidget(const SizedBox());
+      expect(tester.takeException(), isNull);
+    },
+  );
+  testWidgets('Home isolates row repaints without a shared optical owner', (
+    tester,
+  ) async {
+    await _mountShell(tester);
+    final list = tester.widget<ListView>(
+      find.descendant(
+        of: find.byType(HomeScreen),
+        matching: find.byType(ListView),
+      ),
+    );
+    final delegate = list.childrenDelegate as SliverChildListDelegate;
+    expect(
+      delegate.addRepaintBoundaries,
+      isTrue,
+      reason: 'Painted cards keep async flag/traffic changes local to the row',
+    );
+  });
+  testWidgets('Servers app bar transmits the backdrop just like Home', (
+    tester,
+  ) async {
+    await _mountShell(tester);
+    Color topTint() => tester
+        .widget<ColoredBox>(
+          find
+              .descendant(
+                of: find.byType(AppBar),
+                matching: find.byType(ColoredBox),
+              )
+              .first,
+        )
+        .color;
+    final home = topTint();
+    await tester.tap(find.text('Servers').last);
+    await tester.pumpAndSettle();
+    expect(topTint(), home);
+    expect(
+      find.descendant(
+        of: find.byType(AppBar),
+        matching: find.byType(BackdropFilter),
+      ),
+      findsOneWidget,
+      reason:
+          'Servers must not silently switch its ordinary app bar to an opaque grey surface',
+    );
+    expect(tester.takeException(), isNull);
+  });
   testWidgets(
     'released page reaches destination without a long settling tail',
     (tester) async {
@@ -139,7 +245,7 @@ void main() {
     await tester.tap(find.text('Settings').last);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 40));
-    expect(syncFor(HomeScreen).shouldRefresh?.call(), isTrue);
+    expect(syncFor(HomeScreen).shouldRefresh?.call(), isFalse);
     expect(syncFor(ServersScreen).shouldRefresh?.call(), isTrue);
     expect(syncFor(SettingsScreen).shouldRefresh?.call(), isFalse);
     await tester.pump(const Duration(milliseconds: 40));

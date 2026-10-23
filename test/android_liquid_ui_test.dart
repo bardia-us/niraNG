@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as glass;
 import 'package:nirang/core/platform/native_models.dart';
 import 'package:nirang/core/widgets/glass_surface.dart';
+import 'package:nirang/core/widgets/decorative_glass_surface.dart';
 import 'package:nirang/core/widgets/liquid_controls.dart';
 import 'package:nirang/core/widgets/header_excluded_control.dart';
 import 'package:nirang/core/widgets/live_liquid_glass.dart';
@@ -32,7 +33,7 @@ void main() {
     (Brightness.dark, false),
   ]) {
     testWidgets(
-      'server actions fit the compact row as a circle ($brightness, performance=$performanceMode)',
+      'server actions fit the compact row at rest and stretch freely ($brightness)',
       (tester) async {
         liveGlassReadyListenable.value = true;
         final header = GlobalKey();
@@ -106,35 +107,16 @@ void main() {
         );
         expect(button.width, button.height);
         expect(button.shape, isA<glass.LiquidOval>());
-        expect(button.stretch, 0);
-        expect(button.interactionScale, 1);
-        expect(button.useOwnLayer, isTrue);
-        expect(
-          button.quality,
-          performanceMode
-              ? glass.GlassQuality.standard
-              : glass.GlassQuality.premium,
-        );
-        if (performanceMode) {
-          expect(button.settings!.effectiveBlur, greaterThan(0));
-          expect(button.settings!.frost, 0);
-          expect(button.settings!.saturation, 1);
-          expect(button.settings!.thickness, lessThan(32));
-          expect(button.settings!.lightIntensity, greaterThan(0));
-          expect(button.settings!.glassColor.a, greaterThan(0));
-          expect(button.settings!.glassColor.a, lessThan(1));
-        } else {
-          expect(button.settings!.effectiveBlur, 0);
-          expect(button.settings!.frost, 14);
-          expect(button.settings!.thickness, 32);
-          expect(button.settings!.lensModel, glass.GlassLensModel.spherical);
-        }
-        expect(button.settings!.shadow, isEmpty);
-        expect(button.settings!.shadowElevation, 0);
-        expect(button.settings!.rimShadeEnds, .35);
+        expect(button.stretch, .32);
+        expect(button.anchorStretch, isFalse);
+        expect(button.isStationary, isFalse);
+        expect(button.interactionScale, greaterThan(1));
+        expect(button.useOwnLayer, isFalse);
+        expect(button.style, glass.GlassButtonStyle.transparent);
+        expect(button.quality, glass.GlassQuality.minimal);
         final lens = find.descendant(
           of: find.byType(glass.GlassButton),
-          matching: find.byType(glass.AdaptiveGlass),
+          matching: find.byType(DecorativeGlassSurface),
         );
         final lensSize = tester.getSize(lens);
         expect(
@@ -145,7 +127,9 @@ void main() {
         expect(lensSize.width, lessThanOrEqualTo(44));
         expect(lensSize, const Size(40, 40));
         final press = await tester.startGesture(tester.getCenter(lens));
+        await tester.pump();
         await press.moveBy(const Offset(0, 25));
+        await tester.pump();
         await tester.pump(const Duration(milliseconds: 100));
         final box = tester.renderObject<RenderBox>(lens);
         final origin = box.localToGlobal(Offset.zero);
@@ -153,16 +137,27 @@ void main() {
         final vertical = box.localToGlobal(Offset(0, box.size.height));
         expect(
           (horizontal - origin).distance,
-          closeTo((vertical - origin).distance, .01),
-          reason: 'Actual painted bounds must stay circular during a hold/drag',
+          lessThan((vertical - origin).distance),
+          reason: 'A vertical drag stretches the lens along the drag direction',
         );
         await press.up();
         await tester.pumpAndSettle();
+        final settledOrigin = box.localToGlobal(Offset.zero);
+        expect(
+          (box.localToGlobal(Offset(box.size.width, 0)) - settledOrigin)
+              .distance,
+          closeTo(lensSize.width, .01),
+        );
+        expect(
+          (box.localToGlobal(Offset(0, box.size.height)) - settledOrigin)
+              .distance,
+          closeTo(lensSize.height, .01),
+        );
         final menu = tester.widget<glass.GlassMenu>(
           find.byType(glass.GlassMenu),
         );
         expect(menu.quality, glass.GlassQuality.premium);
-        expect(menu.settings!.effectiveBlur, greaterThanOrEqualTo(6));
+        expect(menu.settings!.effectiveBlur, 3.5);
         expect(menu.settings!.effectiveFrost, 0);
         await tester.tap(find.byTooltip('Server actions'));
         await tester.pumpAndSettle();
@@ -219,8 +214,11 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    final action = tester.widget<glass.GlassIconButton>(
-      find.byType(glass.GlassIconButton),
+    final action = tester.widget<glass.GlassButton>(
+      find.descendant(
+        of: find.byType(LiquidActionMenu<int>),
+        matching: find.byType(glass.GlassButton),
+      ),
     );
     expect(action.quality, glass.GlassQuality.premium);
     final connect = tester.widget<glass.GlassButton>(
@@ -236,16 +234,15 @@ void main() {
   });
   for (final performanceMode in [false, true]) {
     test(
-      'light panels use continuous blur without sharp ghost rows (performance=$performanceMode)',
+      'surface roles retain clear uniform optics and mode-appropriate blur (performance=$performanceMode)',
       () {
         final settings = liquidSurfaceSettings(
           Brightness.light,
           performanceMode: performanceMode,
         );
-        expect(settings.effectiveBlur, greaterThanOrEqualTo(6));
+        expect(settings.effectiveBlur, performanceMode ? 0 : 4.5);
         expect(settings.effectiveFrost, 0);
         expect(settings.blurWeight, 1);
-        expect(settings.frostClamp, 0);
         final control = liquidControlSettings(
           Brightness.light,
           performanceMode: performanceMode,
@@ -257,14 +254,16 @@ void main() {
         expect(settings.thickness, control.thickness);
         expect(settings.refractiveIndex, control.refractiveIndex);
         expect(settings.rimLight, control.rimLight);
-        expect(control.effectiveFrost, greaterThan(0));
-        expect(control.blur, 0);
+        expect(control.effectiveFrost, 0);
+        expect(control.effectiveBlur, performanceMode ? 0 : 2.4);
+        expect(control.saturation, 1);
+        expect(control.glassColor.a, 0);
         expect(
           liquidMessageSettings(
             Brightness.light,
             performanceMode: performanceMode,
           ),
-          settings,
+          control.copyWith(blur: performanceMode ? 0 : 3.5),
         );
         if (!performanceMode) {
           expect(GlassSurface.settingsFor(Brightness.light), settings);
@@ -273,61 +272,70 @@ void main() {
     );
   }
   test(
-    'large dark message material narrows highlights without smoking the body or changing controls',
+    'message surfaces reduce blur while preserving the approved clear depth and rim',
     () {
       final panel = liquidSurfaceSettings(Brightness.dark);
       final message = liquidMessageSettings(Brightness.dark);
-      expect(message.lightIntensity, lessThan(panel.lightIntensity));
-      expect(message.thickness, lessThan(panel.thickness));
-      expect(message.refractiveIndex, lessThan(panel.refractiveIndex));
+      expect(message.lightIntensity, panel.lightIntensity);
+      expect(message.thickness, panel.thickness);
+      expect(message.refractiveIndex, panel.refractiveIndex);
+      expect(message.rimLight, panel.rimLight);
+      expect(message.rimShade, panel.rimShade);
+      expect(message.rimShadeEnds, panel.rimShadeEnds);
       expect(message.glassColor, panel.glassColor);
-      expect(message.blur, panel.blur);
+      expect(message.effectiveBlur, lessThan(panel.effectiveBlur));
       expect(message.whitenStrength, 0);
       expect(message.backerColor, isNull);
       expect(
         liquidMessageSettings(Brightness.light),
-        liquidSurfaceSettings(Brightness.light),
+        liquidControlSettings(Brightness.light).copyWith(blur: 3.5),
       );
-      expect(liquidControlSettings(Brightness.dark).lightIntensity, .35);
+      expect(
+        liquidControlSettings(Brightness.dark).lightIntensity,
+        message.lightIntensity,
+      );
     },
   );
   test(
-    'performance optical material removes redundant weighted GPU passes',
+    'performance recipes disable every optical pass instead of only reducing weights',
     () {
       final settings = liquidSurfaceSettings(
         Brightness.dark,
         performanceMode: true,
       );
-      expect(settings.blurWeight, 1);
-      expect(settings.frostWeight, 1);
-      expect(settings.effectiveBlur, greaterThanOrEqualTo(6));
+      expect(settings.effectiveBlur, 0);
       expect(settings.frost, 0);
-      expect(settings.glassColor.a, lessThan(.08));
-      expect(settings.lensModel, glass.GlassLensModel.spherical);
+      expect(settings.thickness, 0);
+      expect(settings.lightIntensity, 0);
+      expect(settings.rimLight, 0);
+      expect(settings.rimShade, 0);
+      expect(settings.fresnelStrength, 0);
       final control = liquidControlSettings(
         Brightness.dark,
         performanceMode: true,
       );
       expect(control.blur, 0);
-      expect(control.frostWeight, 1);
-      expect(control.frost, greaterThan(0));
+      expect(control.frost, 0);
+      expect(control.thickness, 0);
+      expect(control.lightIntensity, 0);
+      expect(control.rimLight, 0);
+      expect(control.rimShade, 0);
+      expect(control.fresnelStrength, 0);
     },
   );
   tearDown(() => liveGlassReadyListenable.value = false);
   test(
-    'Android uses the approved upstream optical material, not the old renderer',
+    'Android clear surfaces retain refraction without frost tint or backdrop zoom',
     () {
       final settings = GlassSurface.settingsFor(Brightness.dark);
       expect(settings, isA<glass.LiquidGlassSettings>());
-      // A continuous native blur feeds the same optical shader. No sharp
-      // ghost rows may make the text under a dark panel legible again.
-      expect(settings.effectiveBlur, greaterThanOrEqualTo(6));
-      expect(settings.frostWeight, 1);
-      expect(settings.frostOpacity, lessThan(1));
+      expect(settings.effectiveBlur, 4.5);
       expect(settings.frost, 0);
-      expect(settings.glassColor.a, lessThan(.08));
-      expect(settings.glassColor.r, greaterThan(.9));
-      expect(settings.lensModel, glass.GlassLensModel.spherical);
+      expect(settings.glassColor.a, 0);
+      expect(settings.saturation, 1);
+      expect(settings.backdropZoom, 1);
+      expect(settings.lensModel, glass.GlassLensModel.paraxial);
+      expect(settings.thickness, 40);
       expect(settings.lightIntensity, greaterThan(0));
       expect(settings.fresnelStrength, greaterThan(0));
     },

@@ -250,7 +250,7 @@ class RenderLiquidGlassBlendGroup extends RenderLiquidGlassGeometry
   @override
   void onTransformChanged() {
     markNeedsPaint();
-    renderLink?.notifyTransformChanged(this);
+    renderLink?.notifyGeometryChanged(this);
   }
 
   @override
@@ -296,7 +296,8 @@ class RenderLiquidGlassBlendGroup extends RenderLiquidGlassGeometry
       value.setFloat(devicePixelRatio);
       for (final shape in shapes) {
         final center = shape.shapeBounds.center;
-        final size = shape.shapeBounds.size;
+        final ellipse = shape.ellipseAxes;
+        final size = ellipse?.$1 ?? shape.shapeBounds.size;
         // 7-float per-shape stride: type, center.xy, size.xy, top corner
         // radius, bottom corner radius. For symmetric shapes top == bottom
         // so the shader's `sdfRRectAsym` collapses to plain `sdfRRect`
@@ -308,8 +309,10 @@ class RenderLiquidGlassBlendGroup extends RenderLiquidGlassGeometry
           ..setFloat(center.dy * devicePixelRatio)
           ..setFloat(size.width * devicePixelRatio)
           ..setFloat(size.height * devicePixelRatio)
-          ..setFloat(shape.rawCornerRadius * devicePixelRatio)
-          ..setFloat(shape.rawBottomCornerRadius * devicePixelRatio);
+          // Ellipses have no corners: these two slots carry their axis vector.
+          ..setFloat(ellipse?.$2.dx ?? shape.rawCornerRadius * devicePixelRatio)
+          ..setFloat(
+              ellipse?.$2.dy ?? shape.rawBottomCornerRadius * devicePixelRatio);
       }
     });
   }
@@ -350,7 +353,8 @@ class RenderLiquidGlassBlendGroup extends RenderLiquidGlassGeometry
         if (existingShape == null) {
           anyShapeChangedInLayer = true;
         } else if (existingShape.shapeBounds != shapeData.shapeBounds ||
-            existingShape.shape != shapeData.shape) {
+            existingShape.shape != shapeData.shape ||
+            existingShape.shapeToGeometry != shapeData.shapeToGeometry) {
           anyShapeChangedInLayer = true;
         }
       } catch (e) {

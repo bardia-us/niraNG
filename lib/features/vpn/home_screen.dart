@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as glass;
 
 import '../../core/formatters.dart';
 import '../../core/localization/app_strings.dart';
@@ -10,8 +9,10 @@ import '../../core/user_facing_error.dart';
 import '../../core/widgets/country_flag_badge.dart';
 import '../../core/widgets/server_name_text.dart';
 import '../../core/widgets/glass_surface.dart';
+import '../../core/widgets/decorative_glass_surface.dart';
 import '../../core/widgets/liquid_controls.dart';
 import 'app_controller.dart';
+import 'measured_traffic_panel.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -22,16 +23,10 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final _scrollController = ScrollController();
-  final _layoutMotion = ValueNotifier<int>(0);
-  late final _opticalMotion = Listenable.merge([
-    _scrollController,
-    _layoutMotion,
-  ]);
 
   @override
   void dispose() {
     _scrollController.dispose();
-    _layoutMotion.dispose();
     super.dispose();
   }
 
@@ -61,44 +56,38 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       edgeOffset: MediaQuery.paddingOf(context).top + 6,
       displacement: 28,
       onRefresh: controller.refreshSubscription,
-      child: NotificationListener<SizeChangedLayoutNotification>(
-        onNotification: (_) {
-          // SizeTransition moves the usage panel without changing scroll offset.
-          // Refresh only optical paint after layout, never rebuild from here.
-          _layoutMotion.value++;
-          return false;
-        },
-        child: glass.GlassMotionSync(
-          motion: _opticalMotion,
-          shouldRefresh: () => !ref.read(performanceModeProvider),
-          child: ListView(
-            controller: _scrollController,
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: EdgeInsets.fromLTRB(
-              16,
-              MediaQuery.paddingOf(context).top + 6,
-              16,
-              MediaQuery.paddingOf(context).bottom + 24,
-            ),
-            children: [
-              SizeChangedLayoutNotifier(
-                child: _ConnectionCard(
-                  app: app,
-                  controller: controller,
-                  reducedEffects: MediaQuery.disableAnimationsOf(context),
-                ),
-              ),
-              if (app.subscriptionError != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  app.subscriptionError!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
-              ],
-              const SizedBox(height: 12),
-              _SubscriptionSection(usage: app.usage),
-            ],
+      child: DecorativeGlassScope(
+        child: ListView(
+          controller: _scrollController,
+          // Ordinary Flutter painting: async Ping/IP labels now repaint
+          // their own row instead of invalidating a full-page optical pass.
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: EdgeInsets.fromLTRB(
+            16,
+            MediaQuery.paddingOf(context).top + 6,
+            16,
+            MediaQuery.paddingOf(context).bottom + 24,
           ),
+          children: [
+            SizeChangedLayoutNotifier(
+              child: _ConnectionCard(
+                app: app,
+                controller: controller,
+                reducedEffects: MediaQuery.disableAnimationsOf(context),
+              ),
+            ),
+            if (app.subscriptionError != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                app.subscriptionError!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
+            const SizedBox(height: 12),
+            _SubscriptionSection(usage: app.usage),
+            const SizedBox(height: 12),
+            const MeasuredTrafficPanel(),
+          ],
         ),
       ),
     );

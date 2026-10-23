@@ -715,10 +715,20 @@ class RenderRawLiquidStretch extends RenderProxyBox {
           }
         }
       } else {
-        // Original behaviour: scale from center + translate toward the finger.
+        // Stretch along the drag vector, including diagonals. Independent X/Y
+        // scales cancel into uniform inflation when abs(dx) == abs(dy).
+        final reference = math.max(size.width, size.height);
+        final relative =
+            reference > 0 ? _stretchPixels.distance / reference : 0.0;
+        final angle = math.atan2(_stretchPixels.dy, _stretchPixels.dx);
+        // Bounded elongation with transverse compression, not growing area.
+        final major = 1 + .17 * relative / (1 + relative);
+        final minor = 1 / major;
         matrix
           ..translateByDouble(size.width / 2, size.height / 2, 0.0, 1.0)
-          ..scaleByDouble(scale.dx, scale.dy, 1.0, 1.0)
+          ..rotateZ(angle)
+          ..scaleByDouble(major, minor, 1.0, 1.0)
+          ..rotateZ(-angle)
           ..translateByDouble(-size.width / 2, -size.height / 2, 0.0, 1.0)
           ..translateByDouble(_stretchPixels.dx, _stretchPixels.dy, 0.0, 1.0);
       }

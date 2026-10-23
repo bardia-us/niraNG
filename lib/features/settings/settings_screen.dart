@@ -11,7 +11,6 @@ import '../../core/widgets/status_toast.dart';
 import '../../core/widgets/live_liquid_glass.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/platform/native_models.dart';
-import '../../core/platform/nirang_native.dart';
 import '../../core/update_checker.dart';
 import '../../core/user_facing_error.dart';
 import '../vpn/app_controller.dart';
@@ -514,6 +513,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             icon: Icons.settings_outlined,
             children: [
               ListTile(
+                leading: const Icon(Icons.dashboard_customize_outlined),
+                title: Text(context.s('quickSettingsTile')),
+                subtitle: Text(context.s('quickSettingsTileSummary')),
+                trailing: const Icon(Icons.add_rounded),
+                onTap: () => _addQuickSettingsTile(context, controller),
+              ),
+              ListTile(
                 leading: const Icon(Icons.sync_rounded),
                 title: Text(context.s('refresh')),
                 subtitle: Text(
@@ -816,13 +822,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             children: [
               const UpdateDownloadSettingsTile(),
               ListTile(
-                leading: const Icon(Icons.dashboard_customize_outlined),
-                title: Text(context.s('quickSettingsTile')),
-                subtitle: Text(context.s('quickSettingsTileSummary')),
-                trailing: const Icon(Icons.add_rounded),
-                onTap: () => _addQuickSettingsTile(context, controller),
-              ),
-              ListTile(
                 leading: const Icon(Icons.system_update_alt_rounded),
                 title: Text(context.s('checkForUpdates')),
                 subtitle: Text(
@@ -859,25 +858,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   validator: (value) => _validateHttps(context, value),
                   onSave: (value) =>
                       controller.updateSettings({'ipCheckUrl': value}),
-                ),
-              ),
-              FutureBuilder<bool>(
-                future: NirangNative.batteryOptimizationStatus(),
-                builder: (context, snapshot) => ListTile(
-                  leading: const Icon(Icons.battery_saver_outlined),
-                  title: Text(context.s('batteryOptimization')),
-                  subtitle: Text(
-                    context.s(
-                      snapshot.data == true
-                          ? 'batteryOptimizationUnrestricted'
-                          : 'batteryOptimizationSummary',
-                    ),
-                  ),
-                  trailing: const Icon(Icons.open_in_new_rounded, size: 19),
-                  onTap: () => _perform(
-                    context,
-                    NirangNative.openBatteryOptimizationSettings,
-                  ),
                 ),
               ),
               ListTile(

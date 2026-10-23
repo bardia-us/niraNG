@@ -2,9 +2,13 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as glass;
+// Pinned vendor: an animating trigger needs its own visibility uniform.
+// ignore: implementation_imports
+import 'package:liquid_glass_widgets/src/renderer/glass_materialize_scope.dart';
 import '../../features/vpn/app_controller.dart';
 import 'live_liquid_glass.dart';
 import 'menu_activity.dart';
+import 'decorative_glass_surface.dart';
 
 class LiquidActionItem<T> {
   const LiquidActionItem({
@@ -32,6 +36,7 @@ class LiquidActionMenu<T> extends ConsumerStatefulWidget {
     this.serverActions = false,
     this.reuseParentGlass = false,
     this.triggerDecorator,
+    this.triggerSettings,
     super.key,
   });
   final List<LiquidActionItem<T>> items;
@@ -46,6 +51,8 @@ class LiquidActionMenu<T> extends ConsumerStatefulWidget {
   final bool reuseParentGlass;
   // Decorate only the anchored control; the popup lives in its own overlay.
   final Widget Function(Widget trigger)? triggerDecorator;
+  final glass.LiquidGlassSettings? triggerSettings;
+
   @override
   ConsumerState<LiquidActionMenu<T>> createState() =>
       _LiquidActionMenuState<T>();
@@ -110,6 +117,7 @@ class _LiquidActionMenuState<T> extends ConsumerState<LiquidActionMenu<T>> {
               widget.fallback;
         }
         return glass.GlassMenu(
+          useRootOverlay: widget.serverActions,
           useGlassTriggerFade: true,
           onVisibilityChanged: _visibilityChanged,
           enableHaptics: feedbackMode == 'haptic',
@@ -121,7 +129,7 @@ class _LiquidActionMenuState<T> extends ConsumerState<LiquidActionMenu<T>> {
           menuPadding: const EdgeInsets.symmetric(vertical: 8),
           menuBorderRadius: 24,
           selectionColor: theme.colorScheme.onSurface.withValues(alpha: .08),
-          settings: liquidSurfaceSettings(
+          settings: liquidMessageSettings(
             theme.brightness,
             performanceMode: performance,
           ),
@@ -138,6 +146,12 @@ class _LiquidActionMenuState<T> extends ConsumerState<LiquidActionMenu<T>> {
             final trigger = _ControlDragBoundary(
               child: Tooltip(
                 message: widget.tooltip,
+                // A held row control is an elastic gesture, not a tooltip
+                // request. A tooltip in the captured drag overlay also feeds
+                // its every-frame layout back into the header capture.
+                triggerMode: widget.serverActions
+                    ? TooltipTriggerMode.manual
+                    : null,
                 child: widget.serverActions
                     ? LayoutBuilder(
                         builder: (context, constraints) {
@@ -151,49 +165,91 @@ class _LiquidActionMenuState<T> extends ConsumerState<LiquidActionMenu<T>> {
                               constraints.maxHeight,
                             ),
                           );
-                          return glass.GlassButton.custom(
+                          final control = glass.GlassButton.custom(
                             onTap: toggle,
                             label: widget.tooltip,
                             width: side,
                             height: side,
                             shape: const glass.LiquidOval(),
-                            stretch: 0,
-                            interactionScale: 1,
-                            isStationary: true,
-                            useOwnLayer: true,
-                            settings:
-                                liquidServerControlSettings(
-                                  theme.brightness,
-                                  performanceMode: performance,
-                                ).copyWith(
-                                  // A downward-offset preset shadow lengthens the
-                                  // silhouette of a 40px control. Keep the real lens
-                                  // and rim lighting, not an asymmetric outer halo.
-                                  shadow: const [],
-                                  shadowElevation: 0,
-                                  rimShadeEnds: .35,
-                                ),
-                            quality: glass.GlassQuality.premium,
-                            child: IconTheme(
-                              data: IconThemeData(
-                                size: 22,
-                                color: theme.colorScheme.onSurface,
-                              ),
-                              child: widget.icon,
+                            stretch: .32,
+                            resistance: .012,
+                            anchorStretch: false,
+                            interactionScale: 1.08,
+                            isStationary: false,
+                            ambientBaseLight: 0,
+                            glowOpacity: 0,
+                            glowBlurRadius: 0,
+                            canRequestFocus: false,
+                            // Keep the proven spring/input, not its optical pass.
+                            style: glass.GlassButtonStyle.transparent,
+                            useOwnLayer: false,
+                            quality: glass.GlassQuality.minimal,
+                            child: Builder(
+                              builder: (context) {
+                                // Treat circle and glyph as one ordinary row:
+                                // both pass under the header and into its input.
+                                // No animated header mask or capture exclusion.
+                                const background = DecorativeGlassSurface(
+                                  radius: 100,
+                                  compact: true,
+                                  child: SizedBox.expand(),
+                                );
+                                final fade = GlassMaterializeScope.maybeOf(
+                                  context,
+                                );
+                                return Opacity(
+                                  opacity: fade?.contentOpacity ?? 1,
+                                  child: Stack(
+                                    fit: StackFit.expand,
+                                    alignment: Alignment.center,
+                                    children: [
+                                      IgnorePointer(child: background),
+                                      Center(
+                                        child: IconTheme(
+                                          data: IconThemeData(
+                                            size: 22,
+                                            color: theme.colorScheme.onSurface,
+                                          ),
+                                          child: widget.icon,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
                             ),
                           );
+                          return control;
                         },
                       )
-                    : glass.GlassIconButton(
-                        icon: widget.icon,
-                        onPressed: toggle,
-                        semanticLabel: widget.tooltip,
-                        size: 44,
+                    : glass.GlassButton.custom(
+                        onTap: toggle,
+                        label: widget.tooltip,
+                        width: 44,
+                        height: 44,
+                        shape: const glass.LiquidOval(),
+                        stretch: .32,
+                        resistance: .012,
+                        anchorStretch: false,
+                        interactionScale: 1.08,
+                        ambientBaseLight: 0,
+                        glowOpacity: 0,
+                        glowBlurRadius: 0,
+                        canRequestFocus: false,
                         // Only an actual optical host can supply the nested
                         // vibrancy path. BackdropGroup alone is not such a host.
                         useOwnLayer: !reuseHost,
-                        settings: liquidControlSettings(theme.brightness),
+                        settings:
+                            widget.triggerSettings ??
+                            liquidControlSettings(theme.brightness),
                         quality: glass.GlassQuality.premium,
+                        child: IconTheme(
+                          data: IconThemeData(
+                            color: theme.colorScheme.onSurface,
+                            size: 22,
+                          ),
+                          child: widget.icon,
+                        ),
                       ),
               ),
             );
@@ -239,6 +295,7 @@ class LiquidConnectButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final performance = ref.watch(performanceModeProvider);
+    final decorative = DecorativeGlassScope.of(context);
     if (performance) {
       return _ControlDragBoundary(
         child: SizedBox(
@@ -279,35 +336,51 @@ class LiquidConnectButton extends ConsumerWidget {
           onTap: onPressed ?? () {},
           enabled: onPressed != null,
           useOwnLayer: true,
+          style: decorative
+              ? glass.GlassButtonStyle.transparent
+              : glass.GlassButtonStyle.filled,
           height: 46,
           width: null,
           shape: const glass.LiquidRoundedRectangle(borderRadius: 18),
           settings: liquidControlSettings(theme.brightness),
-          quality: ready
+          quality: decorative
+              ? glass.GlassQuality.minimal
+              : ready
               ? glass.GlassQuality.premium
               : glass.GlassQuality.minimal,
           stretch: .25,
           interactionScale: 1.04,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                icon,
-                const SizedBox(width: 6),
-                Text(
-                  label,
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    color: theme.colorScheme.onSurface,
+          child: decorative
+              ? SizedBox(
+                  height: 46,
+                  child: DecorativeGlassSurface(
+                    radius: 18,
+                    compact: true,
+                    child: _connectContent(theme),
                   ),
-                ),
-              ],
-            ),
-          ),
+                )
+              : _connectContent(theme),
         ),
       ),
     );
   }
+
+  Widget _connectContent(ThemeData theme) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 14),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        icon,
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: theme.textTheme.labelLarge?.copyWith(
+            color: theme.colorScheme.onSurface,
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 /// Claim drags on an elastic control without swallowing taps. Upstream tracks

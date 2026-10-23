@@ -103,7 +103,7 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
-  testWidgets('Home vertical scroll drives the optical motion synchronizer', (
+  testWidgets('Home scroll and layout changes need no optical synchronizer', (
     tester,
   ) async {
     final controller = await _mount(tester, const HomeScreen());
@@ -112,26 +112,17 @@ void main() {
       of: find.byType(ListView),
       matching: find.byType(glass.GlassMotionSync),
     );
-    expect(syncFinder, findsOneWidget);
-    final sync = tester.widget<glass.GlassMotionSync>(syncFinder);
+    expect(syncFinder, findsNothing);
     expect(list.controller, isNotNull);
-    var refreshes = 0;
-    void observeMotion() => refreshes++;
-    sync.motion.addListener(observeMotion);
-    addTearDown(() => sync.motion.removeListener(observeMotion));
     list.controller!.jumpTo(12);
     await tester.pump();
-    expect(refreshes, greaterThan(0));
+    expect(list.controller!.offset, 12);
     await tester.pumpAndSettle();
     controller.connected(true);
     await tester.pump();
-    refreshes = 0;
     await tester.pump(const Duration(milliseconds: 100));
-    expect(
-      refreshes,
-      greaterThan(0),
-      reason: 'Resizing a card also moves the glass below it',
-    );
+    expect(find.byType(glass.GlassMotionSync), findsNothing);
+    expect(tester.takeException(), isNull);
     await tester.pumpAndSettle();
   });
 

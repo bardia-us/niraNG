@@ -71,16 +71,18 @@ mixin TransformTrackingRenderObjectMixin on RenderProxyBox {
     super.paint(context, offset);
   }
 
-  GeometryTransformTrackingLayer setUpLayer(Offset offset) {
+  GeometryTransformTrackingLayer setUpLayer(Offset offset,
+      {bool recordTransform = true}) {
     // ignore: unnecessary_this
-    return (this.layer ??= GeometryTransformTrackingLayer())
+    final result = (this.layer ??= GeometryTransformTrackingLayer())
       ..renderObject = this
       ..onTransformChanged = () {
         if (attached) {
           onTransformChanged();
         }
-      }
-      ..recordPaintTransform();
+      };
+    if (recordTransform) result.recordPaintTransform();
+    return result;
   }
 
   void onTransformChanged();
@@ -93,14 +95,13 @@ class GeometryTransformTrackingLayer extends OffsetLayer {
   VoidCallback? onTransformChanged;
   Matrix4? _lastTransform;
 
-  // Motion synchronization may already repaint at the new screen transform.
-  // Composition must not schedule a duplicate trailing frame in that case.
-  // Cached, unpainted translations still compare against the previous paint
-  // and retain the post-frame fallback below.
+  // Motion sync may already have painted at the latest transform this frame.
+  // Remember that actual paint; addToScene must not ask for it a second time.
   void recordPaintTransform() {
-    final target = renderObject;
-    if (target == null || !target.attached) return;
-    _lastTransform = target.getTransformTo(null);
+    final object = renderObject;
+    if (object != null && object.attached) {
+      _lastTransform = object.getTransformTo(null);
+    }
   }
 
   @override

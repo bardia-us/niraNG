@@ -24,14 +24,14 @@
 
 | نسخه | مناسب برای | دانلود |
 | --- | --- | --- |
-| **Universal** | ARM64، ARM32 و x86-64 در یک فایل | [APK](https://github.com/bardia-us/niraNG/releases/download/v1.2.2/niraNG-v1.2.2-universal.apk) |
-| **arm64-v8a** | بیشتر گوشی‌های جدید با اندروید ۶۴بیتی ARM | [APK](https://github.com/bardia-us/niraNG/releases/download/v1.2.2/niraNG-v1.2.2-arm64-v8a.apk) |
-| **armeabi-v7a** | دستگاه‌های ARM با اندروید ۳۲بیتی | [APK](https://github.com/bardia-us/niraNG/releases/download/v1.2.2/niraNG-v1.2.2-armeabi-v7a.apk) |
-| **x86_64** | دستگاه‌ها و شبیه‌سازهای x86-64؛ نه بیشتر گوشی‌ها | [APK](https://github.com/bardia-us/niraNG/releases/download/v1.2.2/niraNG-v1.2.2-x86_64.apk) |
+| **Universal** | ARM64، ARM32 و x86-64 در یک فایل | [APK](https://github.com/bardia-us/niraNG/releases/download/v1.2.3/niraNG-v1.2.3-universal.apk) |
+| **arm64-v8a** | بیشتر گوشی‌های جدید با اندروید ۶۴بیتی ARM | [APK](https://github.com/bardia-us/niraNG/releases/download/v1.2.3/niraNG-v1.2.3-arm64-v8a.apk) |
+| **armeabi-v7a** | دستگاه‌های ARM با اندروید ۳۲بیتی | [APK](https://github.com/bardia-us/niraNG/releases/download/v1.2.3/niraNG-v1.2.3-armeabi-v7a.apk) |
+| **x86_64** | دستگاه‌ها و شبیه‌سازهای x86-64؛ نه بیشتر گوشی‌ها | [APK](https://github.com/bardia-us/niraNG/releases/download/v1.2.3/niraNG-v1.2.3-x86_64.apk) |
 
 نیازمند **Android 7.0 یا جدیدتر** و یکی از معماری‌های بالا است. Universal به معنی پشتیبانی از تمام نسخه‌ها و دستگاه‌های اندروید نیست.
 
-لینک‌های جدول مربوط به **v1.2.2** هستند؛ برای انتشارهای بعدی همیشه [صفحهٔ آخرین نسخه](https://github.com/bardia-us/niraNG/releases/latest) را بررسی کنید.
+لینک‌های جدول مربوط به **v1.2.3** هستند؛ برای انتشارهای بعدی همیشه [صفحهٔ آخرین نسخه](https://github.com/bardia-us/niraNG/releases/latest) را بررسی کنید. [تغییرات فارسی و انگلیسی این نسخه](assets/release_notes/1.2.3.md)
 
 ## نسخهٔ ویندوز: niraN
 
@@ -49,7 +49,8 @@
 - **اتصال و مدیریت سرورها:** Xray-core، پروتکل‌های VLESS، VMess و Trojan، تست TCP و تأخیر واقعی، مرتب‌سازی و تعویض سرور.
 - **VPN و پراکسی محلی:** حالت VPN و Proxy-only، با SOCKS محلی روی پورت پیش‌فرض `10808`.
 - **اشتراک:** دریافت و به‌روزرسانی اشتراک مدیریت‌شده، نمایش مصرف و مقدار باقی‌مانده.
-- **شبکه و TLS:** تنظیمات DNS و Routing، بای‌پس شبکهٔ محلی و تنظیمات CDN/TLS، از جمله ECH برای TLS.
+- **شبکه و TLS:** تنظیمات DNS و Routing، بای‌پس شبکهٔ محلی و تنظیمات CDN/TLS، شامل pin گواهی SHA-256، ECH و خروجی کمکی ECH resolver.
+- **ترافیک Home:** جمع ارسال و دریافت اندازه‌گیری‌شدهٔ امروز و ماه جاری؛ مستقل از سهمیهٔ سرویس‌دهنده.
 - **ظاهر و حرکت:** Liquid Glass، انیمیشن‌های نرم، تم روشن/تاریک، رنگ‌های مختلف و بازخورد صدا یا لرزش.
 - **Performance Mode:** ظاهر سبک‌تر و مات، بدون شیدر و بلور گلس؛ مناسب دستگاه‌هایی که افکت‌های کامل روی آن‌ها سنگین است.
 - **زبان و ابزارها:** فارسی و انگلیسی، پشتیبانی راست‌به‌چپ، انتخاب و کپی متن لاگ، اطلاعات فنی سرورها و قطع اتصال از اعلان.
@@ -86,6 +87,8 @@
 ### Features and use
 
 VLESS, VMess and Trojan through Xray; VPN and local SOCKS proxy; managed subscriptions and usage information; latency testing and sorting; DNS/routing and CDN/TLS settings; Persian/English UI; sound/haptic feedback; selectable logs.
+
+Version **1.2.3** adds daily/monthly measured traffic, SHA-256 certificate pinning and ECH resolver outbound editing, with lighter decorative controls and refined optical glass. See the [bilingual release notes](assets/release_notes/1.2.3.md). Measured traffic is not provider quota usage; 120 FPS is not guaranteed on every device.
 
 Install updates **over the existing app** to keep your settings. Select a server, tap **Connect**, and approve Android's VPN permission when using VPN mode. Enable **Performance Mode** for a simpler, matte interface without glass shaders or blur.
 

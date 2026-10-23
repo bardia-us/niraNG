@@ -27,6 +27,7 @@ import dev.nirang.client.subscription.SubscriptionRepository
 import dev.nirang.client.subscription.SubscriptionScheduler
 import dev.nirang.client.update.UpdateDownloadEvents
 import dev.nirang.client.update.UpdateInstaller
+import dev.nirang.client.traffic.MeasuredTrafficRepository
 import dev.nirang.client.vpn.ConnectionStore
 import dev.nirang.client.vpn.NirangVpnService
 import dev.nirang.client.vpn.NirangTileService
@@ -81,6 +82,7 @@ class NirangBridge(
             }
             "initialize" -> initialize(result)
             "getBootstrap" -> success(result) { bootstrap() }
+            "getMeasuredTraffic" -> success(result) { MeasuredTrafficRepository.get(activity).snapshot() }
             "refreshSubscription" -> refreshSubscription(result)
             "selectServer" -> selectServer(call, result)
             "reorderServers" -> reorderServers(call, result)

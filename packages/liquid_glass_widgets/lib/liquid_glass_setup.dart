@@ -38,10 +38,11 @@ import 'widgets/effects/progressive_blur.dart';
 class LiquidGlassWidgets {
   LiquidGlassWidgets._();
 
-  /// True only when both premium programs were actually cached successfully.
+  /// True only when geometry and both active render variants are cached.
   static bool get premiumShadersReady =>
       MultiShaderBuilder.cachedProgram(ShaderKeys.blendedGeometry) != null &&
-      MultiShaderBuilder.cachedProgram(ShaderKeys.liquidGlassRender) != null;
+      MultiShaderBuilder.cachedProgram(ShaderKeys.liquidGlassRender) != null &&
+      MultiShaderBuilder.cachedProgram(ShaderKeys.liquidGlassRenderClear) != null;
 
   // ── Global accessors ───────────────────────────────────────────────────────
 
@@ -133,6 +134,7 @@ class LiquidGlassWidgets {
         MultiShaderBuilder.precacheShaders([
           ShaderKeys.blendedGeometry,
           ShaderKeys.liquidGlassRender,
+          ShaderKeys.liquidGlassRenderClear,
         ]),
       );
     }

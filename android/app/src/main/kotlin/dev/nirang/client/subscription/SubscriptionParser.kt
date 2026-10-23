@@ -93,6 +93,10 @@ object SubscriptionParser {
                 .forEach { (target, source) -> json.optString(source).takeIf(String::isNotBlank)?.let { put(target, it) } }
             (json.optString("echConfigList").takeIf(String::isNotBlank)
                 ?: json.optString("ech").takeIf(String::isNotBlank))?.let { put("echConfigList", it) }
+            json.optString("echOutbound").takeIf(String::isNotBlank)?.let { put("echOutbound", it) }
+            listOf("pcs", "pinSHA256", "vcn").forEach { key ->
+                if (json.has(key)) put(key, TlsCertificatePolicy.normalizeOption(key, json.getString(key)))
+            }
         }
         return server(json.optString("ps", "Server").ifBlank { "Server" }, "vmess", normalizedHost(json.getString("add")), json.optString("port").toIntOrNull() ?: json.optInt("port", 443), json.getString("id"), json.optString("net", "tcp"), json.optString("tls", "none").ifBlank { "none" }, parameters)
     }
@@ -144,7 +148,7 @@ object SubscriptionParser {
 
     private fun server(name: String, protocol: String, address: String, port: Int, credential: String, transport: String, security: String, parameters: Map<String, String>) = ServerRecord(
         id = stableId(name, protocol, address, port, credential, transport, security, parameters), name = name, country = inferCountry(name), protocol = protocol, address = address, port = port, credential = credential, transport = transport, security = security, parameters = parameters,
-    )
+    ).also { TlsCertificatePolicy.fields(it) }
 
     private fun parseHostPort(value: String): Pair<String, Int> {
         val uri = URI("ss://$value")
@@ -152,8 +156,16 @@ object SubscriptionParser {
         return normalizedHost(uri.host ?: error("Missing host")) to uri.port
     }
 
-    private fun parseQuery(raw: String?): Map<String, String> = if (raw.isNullOrBlank()) emptyMap() else raw.split('&').associate { part ->
-        val pieces = part.split('=', limit = 2); decode(pieces[0]) to decode(pieces.getOrElse(1) { "" })
+    private fun parseQuery(raw: String?): Map<String, String> = buildMap {
+        if (!raw.isNullOrBlank()) raw.split('&').forEach { part ->
+            val pieces = part.split('=', limit = 2)
+            val key = decode(pieces[0])
+            val value = TlsCertificatePolicy.normalizeOption(key, decode(pieces.getOrElse(1) { "" }))
+            if (TlsCertificatePolicy.isConstraint(key) || key in setOf("ech", "echConfigList", "echOutbound")) {
+                require(!containsKey(key) || get(key) == value) { "Conflicting repeated TLS certificate constraints" }
+            }
+            put(key, value)
+        }
     }
 
     private fun decodeBase64(input: String): String? {

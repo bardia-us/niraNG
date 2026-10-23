@@ -64,6 +64,9 @@ class NirangNative {
 
   static Future<bool> refreshPublicIp() async =>
       await _methods.invokeMethod<bool>('refreshPublicIp') ?? false;
+  static Future<Map<dynamic, dynamic>> measuredTraffic() async =>
+      await _methods.invokeMethod<Map<dynamic, dynamic>>('getMeasuredTraffic') ??
+      const {};
   static Future<Map<dynamic, dynamic>> deleteServer(String id) async =>
       (await _methods.invokeMethod<Map<dynamic, dynamic>>('deleteServer', {
         'id': id,

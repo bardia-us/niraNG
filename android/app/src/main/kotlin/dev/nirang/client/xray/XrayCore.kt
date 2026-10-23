@@ -5,6 +5,10 @@ import go.Seq
 import libv2ray.CoreCallbackHandler
 import libv2ray.CoreController
 import libv2ray.Libv2ray
+import dev.nirang.client.traffic.MeasuredTrafficRepository
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
 
 internal fun initializeCoreEnvironment(
     filesPath: String,
@@ -19,6 +23,13 @@ internal fun initializeCoreEnvironment(
 object XrayCore {
     private val lock = Any()
     private var controller: CoreController? = null
+    private var traffic: MeasuredTrafficRepository? = null
+    private var trafficTask: ScheduledFuture<*>? = null
+    private val trafficWorker by lazy {
+        Executors.newSingleThreadScheduledExecutor { runnable ->
+            Thread(runnable, "nirang-traffic").apply { isDaemon = true }
+        }
+    }
 
     fun initialize(context: Context) = synchronized(lock) {
         if (controller != null) return
@@ -37,10 +48,31 @@ object XrayCore {
         check(controller?.isRunning != true) { "Xray core is already running" }
         controller!!.startLoop(config, tunFd)
         check(controller!!.isRunning) { "Xray core did not enter running state" }
+        // The library exposes reset-on-read outbound counters. This is their
+        // sole consumer, serialized with every core start/stop/reconnect.
+        runCatching {
+            traffic = MeasuredTrafficRepository.get(context)
+            traffic!!.begin()
+            trafficTask = trafficWorker.scheduleWithFixedDelay({
+                synchronized(lock) { sampleTraffic() }
+            }, 0, 5, TimeUnit.SECONDS)
+        }
     }
 
     fun stop() = synchronized(lock) {
-        if (controller?.isRunning == true) controller?.stopLoop()
+        trafficTask?.cancel(false)
+        trafficTask = null
+        if (controller?.isRunning == true) {
+            sampleTraffic()
+            runCatching { traffic?.end() }
+            controller?.stopLoop()
+        }
+    }
+
+    private fun sampleTraffic() {
+        if (controller?.isRunning != true || traffic == null) return
+        val raw = runCatching { controller!!.queryAllOutboundTrafficStats() }.getOrNull()
+        runCatching { traffic?.record(raw) }
     }
 
     fun isRunning(): Boolean = synchronized(lock) { controller?.isRunning == true }

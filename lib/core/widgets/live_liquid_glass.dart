@@ -1,140 +1,94 @@
-import 'dart:async';
 import 'dart:ui' as ui;
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as glass;
+import 'glass_preparation.dart';
 
-final liveGlassReadyListenable = ValueNotifier<bool>(false);
-Future<void>? _preparation;
-// Asset loading is an external asynchronous boundary, shared by startup and
-// the settings transition.
+final _preparation = GlassPreparation(
+  supported: () => ui.ImageFilter.isShaderFilterSupported,
+  initialize: (mode) => glass.LiquidGlassWidgets.initialize(
+    warmUpMode: mode,
+    enablePerformanceMonitor: false,
+  ),
+  programsReady: () => glass.LiquidGlassWidgets.premiumShadersReady,
+);
+final liveGlassReadyListenable = _preparation.ready;
 final liveGlassPreparationProvider = Provider<Future<void> Function()>(
   (_) => prepareLiveGlass,
 );
+
+// The exact approved Lab clear material: no frost, backer, saturation wash or
+// extra backdrop zoom. Only blur differs by surface role, not optical depth.
 glass.LiquidGlassSettings liquidSettings(ui.Brightness brightness) =>
     (brightness == ui.Brightness.dark
             ? glass.LiquidGlassSettings.ios27Dark
             : glass.LiquidGlassSettings.ios27Light)
         .copyWith(
-          // The native 14px frost already supplies the broad blur. A second
-          // pre-blur + luminance-weight pass per shape is especially costly
-          // while two pages are live. Keep the full-mode ghost/cloud mix,
-          // but sample its sharp ghost through upstream's six-tap branch.
-          blur: 0,
+          bodyMode: glass.GlassBodyMode.clear,
+          glassColor: const ui.Color(0x00000000),
+          saturation: 1,
+          frost: 0,
+          blur: 4.5,
           blurWeight: 1,
-          frostWeight: 1,
-          backdropZoom: 1.035,
-          // Use upstream's curved Snell bevel and actual normal-driven light
-          // lobes, rather than only the thin-prism band/hairline preset.
-          lensModel: glass.GlassLensModel.spherical,
-          lightIntensity: .35,
-          fresnelStrength: .18,
+          thickness: 40,
+          rimLight: 1.3,
+          rimShade: .30,
+          rimShadeEnds: .12,
+          edgeAbsorption: 0,
+          lightIntensity: .18,
+          fresnelStrength: .3,
+          lensModel: glass.GlassLensModel.paraxial,
+          backdropZoom: 1,
+          shadow: const [],
+          shadowElevation: 0,
         );
+
+glass.LiquidGlassSettings _forMode(
+  glass.LiquidGlassSettings settings,
+  bool performance,
+) => performance
+    ? settings.copyWith(
+        blur: 0,
+        frost: 0,
+        thickness: 0,
+        lightIntensity: 0,
+        rimLight: 0,
+        rimShade: 0,
+        fresnelStrength: 0,
+      )
+    : settings;
 
 glass.LiquidGlassSettings liquidControlSettings(
   ui.Brightness brightness, {
   bool performanceMode = false,
-}) => _performanceOptics(liquidSettings(brightness), performanceMode);
+}) => _forMode(liquidSettings(brightness).copyWith(blur: 2.4), performanceMode);
 
-/// Tiny scrolling controls can use the upstream 2D material in performance mode.
-/// Menus and focal controls continue to use [liquidControlSettings].
 glass.LiquidGlassSettings liquidServerControlSettings(
   ui.Brightness brightness, {
   bool performanceMode = false,
-}) {
-  final settings = liquidControlSettings(
-    brightness,
-    performanceMode: performanceMode,
-  );
-  if (!performanceMode) return settings;
-  return settings.copyWith(
-    // Match upstream's premium-to-standard calibration, with neutral
-    // saturation and a narrower blur instead of the wide interleaved frost.
-    blur: settings.frost * .25,
-    frost: 0,
-    saturation: 1,
-    thickness: settings.thickness * .4,
-    lightIntensity: const glass.LiquidGlassSettings().lightIntensity * .6,
-    rimLight: 0,
-    shadow: const [],
-    shadowElevation: 0,
-  );
-}
+}) => liquidControlSettings(brightness, performanceMode: performanceMode);
 
-glass.LiquidGlassSettings _performanceOptics(
-  glass.LiquidGlassSettings settings,
-  bool performanceMode,
-) => !performanceMode
-    ? settings
-    : settings.copyWith(
-        frostOpacity: 1,
-        // At full cloud opacity the upstream sampler never reads its ghost.
-        // Its Gaussian frost still supplies the visible blur; a separate
-        // pre-blur and weighted-alpha read would just add compositor passes.
-        blur: 0,
-        blurWeight: 1,
-        frostWeight: 1,
-      );
+/// Header-specific lighting; does not change optical depth, index or blur.
+glass.LiquidGlassSettings liquidServerHeaderSettings(
+  ui.Brightness brightness, {
+  bool trigger = false,
+}) =>
+    (trigger
+            ? liquidControlSettings(brightness)
+            : liquidSurfaceSettings(brightness))
+        .copyWith(rimLight: trigger ? .8 : 1.0);
 
-/// Panel bodies differ from small controls; refraction and rims stay upstream.
 glass.LiquidGlassSettings liquidSurfaceSettings(
   ui.Brightness brightness, {
   bool performanceMode = false,
-}) {
-  var settings = liquidSettings(brightness);
-  settings = _performanceOptics(settings, performanceMode).copyWith(
-    // One continuous native Gaussian feeds the optical shader in both themes.
-    // Replace the interleaved frost/ghost path, which preserves sharp detail;
-    // do not stack another blur pass or change the small-control material.
-    frost: 0,
-    blur: performanceMode ? 6 : 8,
-    frostClamp: 0,
-  );
-  if (brightness == ui.Brightness.dark) {
-    settings = settings.copyWith(
-      bodyMode: glass.GlassBodyMode.clear,
-      // Neutral transmission without washing the entire dark canvas grey.
-      glassColor: const ui.Color(0x0FFFFFFF),
-      rimShadeEnds: .2,
-    );
-  }
-  // Light tint and all lens/rim/motion settings stay unchanged.
-  return settings;
-}
+}) => _forMode(liquidSettings(brightness), performanceMode);
 
-/// Large messages need a narrower, quieter bevel than small controls.
-/// The body remains neutral/transparent; no dark backer or whitening veil.
+// Settings/dialog menus deliberately have less blur than headers. The bevel,
+// normal map, refraction, rim and depth remain the same approved clear lens.
 glass.LiquidGlassSettings liquidMessageSettings(
   ui.Brightness brightness, {
   bool performanceMode = false,
-}) {
-  final settings = liquidSurfaceSettings(
-    brightness,
-    performanceMode: performanceMode,
-  );
-  if (brightness != ui.Brightness.dark) return settings;
-  return settings.copyWith(
-    thickness: 18,
-    refractiveIndex: 1.12,
-    lightIntensity: .12,
-    fresnelStrength: .08,
-    rimLight: .55,
-  );
-}
+}) => _forMode(liquidSettings(brightness).copyWith(blur: 3.5), performanceMode);
 
-/// Does not delay the first frame or any access-policy check. Failure/timeout
-/// locks this session to the visible shader-free fallback.
-Future<void> prepareLiveGlass() => _preparation ??= _prepare();
-Future<void> _prepare() async {
-  if (!ui.ImageFilter.isShaderFilterSupported) return;
-  try {
-    await glass.LiquidGlassWidgets.initialize(
-      warmUpMode: glass.GlassWarmUpMode.always,
-      enablePerformanceMonitor: false,
-    ).timeout(const Duration(seconds: 2));
-    liveGlassReadyListenable.value =
-        glass.LiquidGlassWidgets.premiumShadersReady;
-  } on Object {
-    liveGlassReadyListenable.value = false;
-  }
-}
+/// Shares one local load, bounds startup to two seconds and keeps the visible
+/// fallback only until verified premium programs are ready. No network work.
+Future<void> prepareLiveGlass() => _preparation.prepare();

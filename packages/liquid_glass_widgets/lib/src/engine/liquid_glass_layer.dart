@@ -11,12 +11,8 @@
 import 'dart:ui';
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/widgets.dart';
 import 'package:flutter/rendering.dart';
-import '../renderer/glass_backdrop_group.dart';
-import '../renderer/glass_backdrop_group_boundary.dart';
-import '../renderer/glass_frost_budget.dart';
 import '../renderer/glass_materialize_scope.dart';
 import '../renderer/liquid_glass_push_back_scope.dart';
 import '../renderer/liquid_glass_self_scale_scope.dart';
@@ -26,6 +22,7 @@ import 'liquid_glass_render_scope.dart';
 import 'liquid_glass_settings.dart';
 import 'multi_shader_builder.dart';
 import 'render_liquid_glass_geometry.dart';
+import 'liquid_glass_blend_group.dart';
 import 'rendering/liquid_glass_render_object.dart';
 import 'shaders.dart';
 
@@ -245,9 +242,7 @@ class _LiquidGlassLayerState extends State<LiquidGlassLayer>
     }
 
     return BackdropGroup(
-      // Inside a GlassBackdropGroup the blur and frost passes share the
-      // group's backdrop read instead of this layer's own.
-      backdropKey: GlassBackdropGroup.keyOf(context) ?? _backdropKey,
+      backdropKey: _backdropKey,
       child: _ScaleSafeRepaintBoundary(
         // Inflate the RepaintBoundary texture by clipExpansion so that any
         // ancestor Transform.scale (e.g. LiquidStretch press animation) can
@@ -258,7 +253,9 @@ class _LiquidGlassLayerState extends State<LiquidGlassLayer>
           child: InheritedGeometryRenderLink(
             link: _link,
             child: ShaderBuilder(
-              assetKey: ShaderKeys.liquidGlassRender,
+              assetKey: settings.effectiveFrost == 0
+                  ? ShaderKeys.liquidGlassRenderClear
+                  : ShaderKeys.liquidGlassRender,
               (context, shader, child) => _TouchSpecularBridge(
                 renderShader: shader,
                 backdropKey: BackdropGroup.of(context)?.backdropKey,
@@ -427,7 +424,7 @@ class _RawShapes extends SingleChildRenderObjectWidget {
       devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
       renderShader: renderShader,
       backdropKey: backdropKey,
-      settings: GlassFrostBudget.apply(context, settings),
+      settings: settings,
       shadows: shadows,
       link: link,
       clipExpansion: clipExpansion,
@@ -435,7 +432,7 @@ class _RawShapes extends SingleChildRenderObjectWidget {
       captureOriginInScreenSpace: captureOriginInScreenSpace,
       selfScaled: selfScaled,
       pushBackActive: pushBackActive,
-    )..sharedBackdrop = GlassBackdropGroup.keyOf(context) != null;
+    );
   }
 
   @override
@@ -446,15 +443,14 @@ class _RawShapes extends SingleChildRenderObjectWidget {
     renderObject
       ..link = link
       ..devicePixelRatio = MediaQuery.devicePixelRatioOf(context)
-      ..settings = GlassFrostBudget.apply(context, settings)
+      ..settings = settings
       ..shadows = shadows
       ..backdropKey = backdropKey
       ..clipExpansion = clipExpansion
       ..captureImage = captureImage
       ..captureOriginInScreenSpace = captureOriginInScreenSpace
       ..selfScaled = selfScaled
-      ..pushBackActive = pushBackActive
-      ..sharedBackdrop = GlassBackdropGroup.keyOf(context) != null;
+      ..pushBackActive = pushBackActive;
   }
 }
 
@@ -485,64 +481,6 @@ class RenderLiquidGlassLayer extends LiquidGlassRenderObject
   double _cachedFrostSigma = -1;
   ColorFilter? _cachedWeight;
   double _cachedWeightValue = 1;
-  ImageFilter? _cachedSharedFrost;
-
-  /// Whether this layer's blur and frost share the backdrop read of an
-  /// enclosing [GlassBackdropGroup]; see there.
-  bool get sharedBackdrop => _sharedBackdrop;
-  bool _sharedBackdrop = false;
-  set sharedBackdrop(bool value) {
-    if (_sharedBackdrop == value) return;
-    _sharedBackdrop = value;
-    markNeedsPaint();
-  }
-
-  /// The group this layer shares the backdrop read with, while it does.
-  RenderGlassBackdropGroupBoundary? _group;
-
-  /// Whether the last paint shared the group's backdrop read.
-  @visibleForTesting
-  bool get debugSharesBackdrop => _sharesBackdrop;
-  bool _sharesBackdrop = false;
-
-  /// Runs the group check [paintLiquidGlass] runs; see there.
-  @visibleForTesting
-  bool debugResolveSharing() => _resolveSharing();
-
-  /// Joins or leaves the enclosing group for this paint, and says whether
-  /// the blur and frost share its backdrop read: only with another member
-  /// in it, and only while no render pass of its own opens between this
-  /// layer and the group (see [opensRenderPassBelow]).
-  bool _resolveSharing() {
-    final group = sharedBackdrop && backdropKey != null
-        ? enclosingBackdropGroup(this)
-        : null;
-    if (!identical(group, _group)) {
-      _group?.leave(this);
-      _group = group;
-    }
-    group?.join(this);
-    return _sharesBackdrop = group != null && group.memberCount >= 2;
-  }
-
-  @override
-  void detach() {
-    _group?.leave(this);
-    _group = null;
-    super.detach();
-  }
-
-  // ── Baked shadow ────────────────────────────────────────────────────────
-  // The shadows drawn once into an image while the geometry holds still, so
-  // a resting surface doesn't pay a saveLayer and a blur for them on every
-  // frame the backdrop moves. See _paintShadows.
-  ui.Image? _lastShadowGeometry;
-  ui.Image? _bakedShadow;
-  Rect _bakedShadowRect = Rect.zero;
-  ui.Image? _bakedShadowGeometry;
-  List<BoxShadow>? _bakedShadowList;
-  Rect _bakedShadowBounds = Rect.zero;
-  double _bakedShadowDpr = 0;
 
   final _shaderHandle = LayerHandle<BackdropFilterLayer>();
   final _blurLayerHandle = LayerHandle<BackdropFilterLayer>();
@@ -703,16 +641,58 @@ class RenderLiquidGlassLayer extends LiquidGlassRenderObject
     Rect boundingBox,
   ) {
     if (!attached) return;
-    final shared = _resolveSharing();
 
     // ── Pass 0: SDF Shadows ──────────────────────────────────────────────────
     if (shadows.isNotEmpty && geometryImage != null) {
-      _paintShadows(
-        context.canvas,
-        offset,
-        geometryImage!,
-        geometryLocalBounds,
-      );
+      final localBounds = geometryLocalBounds.shift(offset);
+
+      for (final shadow in shadows) {
+        if (shadow.color.a == 0) continue;
+
+        // Inflate clip rect to ensure large blurs aren't cut off
+        final shadowClip = localBounds.shift(shadow.offset).inflate(
+              shadow.spreadRadius + shadow.blurRadius * 3,
+            );
+
+        context.canvas.saveLayer(shadowClip, Paint());
+
+        // 1. Draw the geometry matte as a blurred, tinted shadow
+        final shadowPaint = Paint()
+          ..colorFilter = ColorFilter.mode(shadow.color, BlendMode.srcIn)
+          ..imageFilter = ImageFilter.blur(
+            sigmaX: shadow.blurSigma,
+            sigmaY: shadow.blurSigma,
+            tileMode: TileMode.decal,
+          );
+
+        context.canvas.drawImageRect(
+          geometryImage!,
+          Rect.fromLTWH(
+            0,
+            0,
+            geometryImage!.width.toDouble(),
+            geometryImage!.height.toDouble(),
+          ),
+          localBounds.shift(shadow.offset),
+          shadowPaint,
+        );
+
+        // 2. GPU Cutout (dstOut): punch out the interior using the same geometry
+        // matte to prevent the glass from blurring its own shadow (dirty rim).
+        context.canvas.drawImageRect(
+          geometryImage!,
+          Rect.fromLTWH(
+            0,
+            0,
+            geometryImage!.width.toDouble(),
+            geometryImage!.height.toDouble(),
+          ),
+          localBounds,
+          Paint()..blendMode = BlendMode.dstOut,
+        );
+
+        context.canvas.restore();
+      }
     }
 
     // ── Pass 1a: Blur ────────────────────────────────────────────────────────
@@ -724,7 +704,18 @@ class RenderLiquidGlassLayer extends LiquidGlassRenderObject
     // rows the frost pass leaves (see Pass 1b), so there is no blur pass
     // unless the blur is wider than the shader takes.
     final frostRows = frostRowsPath;
-    if (settings.effectiveBlur > 0 &&
+    final composeBlur = combineClearBlur &&
+        captureImage == null &&
+        frostRows == null &&
+        settings.effectiveBlur > 0 &&
+        shapes.every((entry) {
+          final geometry = entry.$1;
+          return geometry is RenderLiquidGlassBlendGroup &&
+              geometry.link.shapeEntries
+                  .every((shape) => !shape.key.glassContainsChild);
+        });
+    if (!composeBlur &&
+        settings.effectiveBlur > 0 &&
         (frostRows == null ||
             settings.effectiveBlur * devicePixelRatio >
                 LiquidGlassRenderObject.frostGhostMaxSigma)) {
@@ -740,10 +731,9 @@ class RenderLiquidGlassLayer extends LiquidGlassRenderObject
       }
 
       final blurLayer = (_blurLayerHandle.layer ??= BackdropFilterLayer())
-        // Outside a group the key is this layer's own BackdropGroup. A group
-        // member that does not share this frame (alone, or in a render pass
-        // of its own) must not use the group's key.
-        ..backdropKey = shared || !sharedBackdrop ? backdropKey : null
+        ..blendMode = replaceBackdrop ? BlendMode.src : BlendMode.srcOver
+        ..backdropKey =
+            backdropKey // Scoped to this LiquidGlassLayer's BackdropGroup
         ..filter = _cachedBlur!;
 
       _clipPathLayerHandle.layer = context.pushClipPath(
@@ -788,12 +778,10 @@ class RenderLiquidGlassLayer extends LiquidGlassRenderObject
     // the frost to one plain blur pass: on Impeller any other filter stage
     // composed with a backdrop blur measured as costly as a pass over the
     // whole screen. Not part of the layer's BackdropGroup, so that content
-    // painted inside the glass above is in what it reads, unless the layer
-    // sits in a GlassBackdropGroup.
+    // painted inside the glass above is in what it reads.
     if (frostRows != null) {
       final frostSigma = settings.effectiveFrost;
       if (_cachedFrost == null || _cachedFrostSigma != frostSigma) {
-        _cachedSharedFrost = null;
         _cachedFrost = ImageFilter.blur(
           tileMode: TileMode.mirror,
           sigmaX: frostSigma,
@@ -802,39 +790,12 @@ class RenderLiquidGlassLayer extends LiquidGlassRenderObject
         _cachedFrostSigma = frostSigma;
       }
       final weight = settings.frostWeight;
-      final weighted = weight != 1.0 && weight > 0;
-      if (weighted && (_cachedWeight == null || _cachedWeightValue != weight)) {
-        // alpha = base + slope * luma, with white weighing `weight` times
-        // black and the heavier end at 1.
-        final base = weight > 1 ? 1 / weight : 1.0;
-        final slope = weight > 1 ? 1 - 1 / weight : weight - 1;
-        _cachedWeight = ColorFilter.matrix(<double>[
-          1, 0, 0, 0, 0, //
-          0, 1, 0, 0, 0, //
-          0, 0, 1, 0, 0, //
-          slope * 0.2126, slope * 0.7152, slope * 0.0722, base, 0, //
-        ]);
-        _cachedWeightValue = weight;
-        _cachedSharedFrost = null;
-      }
-      // In a GlassBackdropGroup the frost reads the group's shared backdrop,
-      // so the weight can't be written into the backdrop by a pass of its
-      // own first: it goes ahead of the blur in the same filter. Alone that
-      // costs more than the two passes; shared, the engine runs the filter
-      // once for every surface with the same settings.
-      ImageFilter frostFilter = _cachedFrost!;
-      if (shared && weighted) {
-        frostFilter = _cachedSharedFrost ??= ImageFilter.compose(
-          outer: _cachedFrost!,
-          inner: _cachedWeight!,
-        );
-      }
       final frostLayer = (_frostLayerHandle.layer ??= BackdropFilterLayer())
-        ..backdropKey = shared ? backdropKey : null
+        ..backdropKey = null
         // Replaces rather than covers the weighted pixels below, so the
         // cloud rows keep the blurred weight in their alpha.
-        ..blendMode = weighted ? BlendMode.src : BlendMode.srcOver
-        ..filter = frostFilter;
+        ..blendMode = weight == 1.0 ? BlendMode.srcOver : BlendMode.src
+        ..filter = _cachedFrost!;
 
       // frostWeight: the shape is first given an alpha that weights each
       // pixel by its luminance, colour premultiplied by it, so the blur's
@@ -842,7 +803,20 @@ class RenderLiquidGlassLayer extends LiquidGlassRenderObject
       // pixels count for more; the sharp rows unpremultiply back to what
       // they were. A lone colour filter stays within the clip; ahead of the
       // blur in one filter it would not.
-      if (weighted && !shared) {
+      if (weight != 1.0 && weight > 0) {
+        if (_cachedWeight == null || _cachedWeightValue != weight) {
+          // alpha = base + slope * luma, with white weighing `weight` times
+          // black and the heavier end at 1.
+          final base = weight > 1 ? 1 / weight : 1.0;
+          final slope = weight > 1 ? 1 - 1 / weight : weight - 1;
+          _cachedWeight = ColorFilter.matrix(<double>[
+            1, 0, 0, 0, 0, //
+            0, 1, 0, 0, 0, //
+            0, 0, 1, 0, 0, //
+            slope * 0.2126, slope * 0.7152, slope * 0.0722, base, 0, //
+          ]);
+          _cachedWeightValue = weight;
+        }
         (_weightLayerHandle.layer ??= BackdropFilterLayer())
           ..backdropKey = null
           // Only the alpha is taken: the pixels beneath keep their colour,
@@ -938,7 +912,14 @@ class RenderLiquidGlassLayer extends LiquidGlassRenderObject
     // FlutterFragCoord() is relative to (see enclosingBackdropPassRect).
     backdropPassClipRectLocal = clipRect;
     final shaderLayer = (_shaderHandle.layer ??= BackdropFilterLayer())
-      ..filter = ImageFilter.shader(renderShader!);
+      ..filter = composeBlur
+          ? ImageFilter.compose(
+              outer: ImageFilter.shader(renderShader!),
+              inner: ImageFilter.blur(
+                  sigmaX: settings.effectiveBlur,
+                  sigmaY: settings.effectiveBlur,
+                  tileMode: TileMode.mirror))
+          : ImageFilter.shader(renderShader!);
 
     _clipRectLayerHandle.layer = context.pushClipRect(
       needsCompositing,
@@ -957,140 +938,8 @@ class RenderLiquidGlassLayer extends LiquidGlassRenderObject
     );
   }
 
-  /// Draws [shadows] under the glass.
-  ///
-  /// While the geometry changes from frame to frame (a jelly squash, a morph)
-  /// they are drawn live. Once the same geometry image is painted a second
-  /// time they are drawn once into an image and that image is drawn from
-  /// then on: same pixels, but no saveLayer and no blur per frame.
-  void _paintShadows(
-    Canvas canvas,
-    Offset offset,
-    ui.Image geometry,
-    Rect bounds,
-  ) {
-    final stable = identical(geometry, _lastShadowGeometry);
-    _lastShadowGeometry = geometry;
-    if (stable) {
-      if (!identical(_bakedShadowGeometry, geometry) ||
-          !listEquals(_bakedShadowList, shadows) ||
-          _bakedShadowBounds != bounds ||
-          _bakedShadowDpr != devicePixelRatio) {
-        _bakeShadows(geometry, bounds);
-      }
-      if (_bakedShadow case final baked?) {
-        canvas.drawImageRect(
-          baked,
-          Rect.fromLTWH(0, 0, baked.width.toDouble(), baked.height.toDouble()),
-          _bakedShadowRect.shift(offset),
-          Paint()..filterQuality = FilterQuality.low,
-        );
-        return;
-      }
-    }
-    _drawShadows(canvas, bounds.shift(offset), geometry);
-  }
-
-  void _bakeShadows(ui.Image geometry, Rect bounds) {
-    _bakedShadow?.dispose();
-    _bakedShadow = null;
-    _bakedShadowGeometry = geometry;
-    _bakedShadowList = List.of(shadows);
-    _bakedShadowBounds = bounds;
-    _bakedShadowDpr = devicePixelRatio;
-
-    Rect? area;
-    for (final shadow in shadows) {
-      if (shadow.color.a == 0) continue;
-      final clip = _shadowClip(bounds, shadow);
-      area = area == null ? clip : area.expandToInclude(clip);
-    }
-    if (area == null) return;
-    final dpr = devicePixelRatio;
-    final width = (area.width * dpr).ceil();
-    final height = (area.height * dpr).ceil();
-    if (width <= 0 || height <= 0) return;
-    // Whole physical pixels, so the image is drawn back unscaled.
-    final rect = Rect.fromLTWH(area.left, area.top, width / dpr, height / dpr);
-
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder)
-      ..scale(dpr)
-      ..translate(-rect.left, -rect.top);
-    _drawShadows(canvas, bounds, geometry);
-    final picture = recorder.endRecording();
-    _bakedShadow = picture.toImageSync(width, height);
-    picture.dispose();
-    _bakedShadowRect = rect;
-  }
-
-  /// Paints the shadows as a paint pass would, for tests: [geometry] stands
-  /// in for the geometry matte and [bounds] for where it lies.
-  @visibleForTesting
-  void debugPaintShadows(
-    Canvas canvas,
-    Offset offset,
-    ui.Image geometry,
-    Rect bounds,
-  ) =>
-      _paintShadows(canvas, offset, geometry, bounds);
-
-  /// The image the shadows are baked into, once the geometry held still.
-  @visibleForTesting
-  ui.Image? get debugBakedShadow => _bakedShadow;
-
-  static Rect _shadowClip(Rect bounds, BoxShadow shadow) =>
-      // Inflated so large blurs aren't cut off.
-      bounds
-          .shift(shadow.offset)
-          .inflate(shadow.spreadRadius + shadow.blurRadius * 3);
-
-  void _drawShadows(Canvas canvas, Rect bounds, ui.Image geometry) {
-    final src = Rect.fromLTWH(
-      0,
-      0,
-      geometry.width.toDouble(),
-      geometry.height.toDouble(),
-    );
-    for (final shadow in shadows) {
-      if (shadow.color.a == 0) continue;
-
-      canvas.saveLayer(_shadowClip(bounds, shadow), Paint());
-
-      // 1. Draw the geometry matte as a blurred, tinted shadow
-      final shadowPaint = Paint()
-        ..colorFilter = ColorFilter.mode(shadow.color, BlendMode.srcIn)
-        ..imageFilter = ImageFilter.blur(
-          sigmaX: shadow.blurSigma,
-          sigmaY: shadow.blurSigma,
-          tileMode: TileMode.decal,
-        );
-      canvas.drawImageRect(
-        geometry,
-        src,
-        bounds.shift(shadow.offset),
-        shadowPaint,
-      );
-
-      // 2. GPU Cutout (dstOut): punch out the interior using the same geometry
-      // matte to prevent the glass from blurring its own shadow (dirty rim).
-      canvas.drawImageRect(
-        geometry,
-        src,
-        bounds,
-        Paint()..blendMode = BlendMode.dstOut,
-      );
-
-      canvas.restore();
-    }
-  }
-
   @override
   void dispose() {
-    _bakedShadow?.dispose();
-    _bakedShadow = null;
-    _bakedShadowGeometry = null;
-    _lastShadowGeometry = null;
     // Eagerly clear filter references on the backdrop layers before nulling
     // the handles. During isolate shutdown on Mali GPUs, GC finalization of
     // BackdropFilterLayer retains DlRuntimeEffectColorSource → TextureVK →

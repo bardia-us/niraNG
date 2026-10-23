@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart' show kTouchSlop;
@@ -15,23 +16,119 @@ import '../../core/widgets/server_name_text.dart';
 import '../../core/widgets/glass_surface.dart';
 import '../../core/widgets/glass_dialog.dart';
 import '../../core/widgets/liquid_controls.dart';
-import '../../core/widgets/header_excluded_control.dart';
+import '../../core/widgets/optical_backdrop.dart';
+import '../../core/widgets/optical_list_controls.dart';
+import '../../core/widgets/optical_row_anchor.dart';
+import '../../core/widgets/live_liquid_glass.dart';
 import '../../core/widgets/menu_activity.dart';
 import '../vpn/app_controller.dart';
 import 'server_information_screen.dart';
 
 class ServersScreen extends ConsumerStatefulWidget {
-  const ServersScreen({super.key});
+  const ServersScreen({super.key, this.liveHeaderBackdrop = false});
+
+  final bool liveHeaderBackdrop;
 
   @override
   ConsumerState<ServersScreen> createState() => _ServersScreenState();
 }
 
-class _ServersScreenState extends ConsumerState<ServersScreen> {
+class _ServersScreenState extends ConsumerState<ServersScreen>
+    with SingleTickerProviderStateMixin {
   final _headerKey = GlobalKey();
   final _scrollController = ScrollController();
+  // Header 4.5 and its independent button 2.4 share the raw input, not optics.
+  final _listSource = OpticalBackdropSource(
+    sharedBlurSigma: 4.5,
+    regionalBlurSigmas: const [4.5, 2.4],
+  );
+  bool _reordering = false;
+  String? _draggingId;
+  int? _reorderPointer;
+  final _rowPointers = <String, int>{};
+  final _rowLinks = <String, OpticalRowLink>{};
+  final _rowMenuKeys = <String, GlobalKey>{};
+  late final _reorderPulse = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 1),
+  );
+  late final _opticalMotion = Listenable.merge([
+    _scrollController,
+    _reorderPulse,
+  ]);
   Rect? _menuAnchor;
   ServerInfo? _serverActionsTarget;
+
+  @override
+  void initState() {
+    super.initState();
+    liveGlassReadyListenable.addListener(_opticsReadyChanged);
+  }
+
+  void _opticsReadyChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _rowPressedMotion(String id, bool active) {
+    _rowLinks[id]?.pressFrame(active);
+    if (!liveGlassReadyListenable.value) return;
+    _listSource.invalidate();
+  }
+
+  void _finishReorder() {
+    if (!mounted || !_reordering) return;
+    _reorderPulse.stop();
+    setState(() {
+      _reordering = false;
+      _draggingId = null;
+      _reorderPointer = null;
+    });
+  }
+
+  Widget _rowControl(
+    BuildContext context,
+    AppController controller,
+    ServerInfo server, {
+    required bool isPinging,
+  }) => KeyedSubtree(
+    key: ValueKey('server-menu-${server.id}'),
+    child: LiquidActionMenu<String>(
+      key: _rowMenuKeys[server.id],
+      serverActions: true,
+      tooltip: context.s('serverActions'),
+      items: [
+        LiquidActionItem(
+          value: 'select',
+          label: context.s('select'),
+          icon: Icons.check_circle_outline_rounded,
+        ),
+        LiquidActionItem(
+          value: 'ping',
+          label: context.s('testLatency'),
+          icon: Icons.network_ping_rounded,
+          enabled: !isPinging,
+        ),
+        LiquidActionItem(
+          value: 'info',
+          label: context.s('serverInformation'),
+          icon: Icons.info_outline_rounded,
+        ),
+        LiquidActionItem(
+          value: 'delete',
+          label: context.s('delete'),
+          icon: Icons.delete_outline_rounded,
+          destructive: true,
+        ),
+      ],
+      onSelected: (action) =>
+          unawaited(_handleAction(context, controller, server, action)),
+      fallback: IconButton(
+        tooltip: context.s('serverActions'),
+        onPressed: () => _serverActions(server),
+        icon: const Icon(Icons.more_vert_rounded),
+      ),
+    ),
+  );
 
   void _openMenu(Rect globalAnchor) {
     final box = context.findRenderObject() as RenderBox?;
@@ -42,7 +139,15 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
 
   @override
   void dispose() {
+    final links = _rowLinks.values.toList();
+    _rowLinks.clear();
+    for (final link in links) {
+      link.dispose();
+    }
+    _reorderPulse.dispose();
     _scrollController.dispose();
+    liveGlassReadyListenable.removeListener(_opticsReadyChanged);
+    _listSource.dispose();
     super.dispose();
   }
 
@@ -70,23 +175,72 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
       settings: NativeSettings(performanceMode: view.performanceMode),
     );
     final controller = ref.read(appControllerProvider.notifier);
+    final optical =
+        !view.performanceMode &&
+        liveGlassReadyListenable.value &&
+        !MediaQuery.highContrastOf(context);
+    final nativeHeader =
+        optical &&
+        widget.liveHeaderBackdrop &&
+        ui.ImageFilter.isShaderFilterSupported;
     const headerHeight = 64.0;
     final chromeTop = MediaQuery.paddingOf(context).top;
-    return Stack(
+    final rowOptical = optical;
+    _rowLinks.removeWhere((id, link) {
+      if (app.servers.any((server) => server.id == id)) return false;
+      link.dispose();
+      return true;
+    });
+    _rowMenuKeys.removeWhere(
+      (id, _) => !app.servers.any((server) => server.id == id),
+    );
+    _rowPointers.removeWhere(
+      (id, _) => !app.servers.any((server) => server.id == id),
+    );
+    for (final server in app.servers) {
+      _rowLinks.putIfAbsent(server.id, OpticalRowLink.new);
+      _rowMenuKeys.putIfAbsent(server.id, GlobalKey.new);
+    }
+    final rowControls = rowOptical
+        ? <Widget>[
+            for (final server in app.servers)
+              KeyedSubtree(
+                key: ValueKey(server.id),
+                child: _draggingId == server.id
+                    ? const SizedBox.square(dimension: 44)
+                    : OpticalControlFollow(
+                        link: _rowLinks[server.id]!,
+                        enabled: _reordering,
+                        motion: _reorderPulse,
+                        // Keep free overflow above adjacent cards, but retain the
+                        // static decorative paint while its outer position changes.
+                        child: OpticalPaintObserver(
+                          onPaint: _listSource.invalidate,
+                          child: _rowControl(
+                            context,
+                            controller,
+                            server,
+                            isPinging: app.isPinging,
+                          ),
+                        ),
+                      ),
+              ),
+          ]
+        : const <Widget>[];
+    final backdrop = Stack(
       children: [
         Positioned.fill(
-          child: RepaintBoundary(
+          child: SizedBox.expand(
             child: Stack(
               children: [
                 Positioned.fill(
                   child: RepaintBoundary(
                     child: glass.GlassBackdropGroup(
-                      child: glass.GlassMotionSync(
-                        // Cached rows translate during scroll without painting
-                        // their own optical layer. Refresh its coordinates for
-                        // this paint, not the post-composition fallback frame.
-                        motion: _scrollController,
-                        shouldRefresh: () => !view.performanceMode,
+                      child: DecoratedBox(
+                        decoration: NirangVisualEffects.shellBackground(
+                          Theme.of(context),
+                          reducedEffects: view.performanceMode,
+                        ),
                         child: app.servers.isEmpty
                             ? Padding(
                                 padding: EdgeInsets.only(
@@ -94,240 +248,277 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
                                 ),
                                 child: _EmptyServers(app: app),
                               )
-                            : ReorderableListView.builder(
-                                scrollController: _scrollController,
-                                scrollCacheExtent:
-                                    const ScrollCacheExtent.pixels(360),
-                                buildDefaultDragHandles: false,
-                                itemCount: app.servers.length,
-                                padding: EdgeInsets.fromLTRB(
-                                  8,
-                                  chromeTop + headerHeight + 16,
-                                  8,
-                                  MediaQuery.paddingOf(context).bottom + 16,
-                                ),
-                                onReorderItem: (oldIndex, newIndex) {
-                                  unawaited(
-                                    _perform(
-                                      context,
-                                      () => controller.reorderServers(
-                                        oldIndex,
-                                        newIndex > oldIndex
-                                            ? newIndex + 1
-                                            : newIndex,
+                            : Builder(
+                                // The moving proxy must stay inside the list's
+                                // capture boundary. A route-root proxy required a
+                                // replacement lens and changed the entire matte
+                                // membership at drag start/drop.
+                                builder: (context) => ReorderableListView.builder(
+                                  scrollController: _scrollController,
+                                  itemExtent: serverRowExtent,
+                                  onReorderStart: (index) {
+                                    setState(() {
+                                      _reordering = true;
+                                      _draggingId = app.servers[index].id;
+                                      _reorderPointer =
+                                          _rowPointers[_draggingId];
+                                    });
+                                    if (optical) _reorderPulse.repeat();
+                                  },
+                                  scrollCacheExtent:
+                                      const ScrollCacheExtent.pixels(360),
+                                  buildDefaultDragHandles: false,
+                                  itemCount: app.servers.length,
+                                  padding: EdgeInsets.fromLTRB(
+                                    8,
+                                    chromeTop + headerHeight + 16,
+                                    8,
+                                    MediaQuery.paddingOf(context).bottom + 16,
+                                  ),
+                                  onReorderItem: (oldIndex, newIndex) {
+                                    unawaited(
+                                      _perform(
+                                        context,
+                                        () => controller.reorderServers(
+                                          oldIndex,
+                                          newIndex > oldIndex
+                                              ? newIndex + 1
+                                              : newIndex,
+                                        ),
                                       ),
-                                    ),
-                                  );
-                                },
-                                proxyDecorator: (child, _, animation) =>
-                                    view.performanceMode
-                                    ? child
-                                    : AnimatedBuilder(
+                                    );
+                                  },
+                                  proxyDecorator: (child, index, animation) =>
+                                      _ReorderProxyLifetime(
                                         animation: animation,
-                                        builder: (context, _) {
-                                          final pressed = Curves.easeOutCubic
-                                              .transform(animation.value);
-                                          return Transform.translate(
-                                            offset: Offset(0, pressed * 2),
-                                            child: Transform.scale(
-                                              scale: 1 - (pressed * .015),
-                                              child: child,
-                                            ),
-                                          );
-                                        },
+                                        onRemoved: _finishReorder,
+                                        child: _ReorderMenuScope(
+                                          child: view.performanceMode
+                                              ? child
+                                              : AnimatedBuilder(
+                                                  animation: animation,
+                                                  builder: (context, _) {
+                                                    final pressed = Curves
+                                                        .easeOutCubic
+                                                        .transform(
+                                                          animation.value,
+                                                        );
+                                                    return Transform.translate(
+                                                      offset: Offset(
+                                                        0,
+                                                        pressed * 2,
+                                                      ),
+                                                      child: Transform.scale(
+                                                        scale:
+                                                            1 -
+                                                            (pressed * .015),
+                                                        child: child,
+                                                      ),
+                                                    );
+                                                  },
+                                                ),
+                                        ),
                                       ),
-                                itemBuilder: (context, index) {
-                                  final server = app.servers[index];
-                                  return Padding(
-                                    key: ValueKey(server.id),
-                                    padding: const EdgeInsets.only(bottom: 5),
-                                    child: RepaintBoundary(
-                                      child: ReorderableDelayedDragStartListener(
-                                        index: index,
-                                        child: _PressScale(
-                                          enabled: !view.performanceMode,
-                                          child: AnimatedContainer(
-                                            duration: Duration(
-                                              milliseconds: view.performanceMode
-                                                  ? 85
-                                                  : 140,
-                                            ),
-                                            curve: Curves.easeOutCubic,
-                                            decoration: BoxDecoration(
-                                              color: server.selected
-                                                  ? Theme.of(context)
-                                                        .colorScheme
-                                                        .primaryContainer
-                                                        .withValues(alpha: .26)
-                                                  : Theme.of(context)
-                                                        .colorScheme
-                                                        .surfaceContainerLow
-                                                        .withValues(alpha: .42),
-                                              borderRadius:
-                                                  BorderRadius.circular(13),
-                                              border: Border.all(
+                                  itemBuilder: (context, index) {
+                                    final server = app.servers[index];
+                                    return Padding(
+                                      key: ValueKey(server.id),
+                                      padding: const EdgeInsets.only(bottom: 5),
+                                      child: OpticalPaintObserver(
+                                        onPaint: _listSource.invalidate,
+                                        child: ReorderableDelayedDragStartListener(
+                                          index: index,
+                                          child: _PressScale(
+                                            enabled: !view.performanceMode,
+                                            onPointerStarted: (pointer) =>
+                                                _rowPointers[server.id] =
+                                                    pointer,
+                                            onMotion: (active) =>
+                                                _rowPressedMotion(
+                                                  server.id,
+                                                  active,
+                                                ),
+                                            child: AnimatedContainer(
+                                              duration: Duration(
+                                                milliseconds:
+                                                    view.performanceMode
+                                                    ? 85
+                                                    : 140,
+                                              ),
+                                              curve: Curves.easeOutCubic,
+                                              decoration: BoxDecoration(
                                                 color: server.selected
                                                     ? Theme.of(context)
                                                           .colorScheme
-                                                          .primary
+                                                          .primaryContainer
                                                           .withValues(
-                                                            alpha: .28,
+                                                            alpha: .26,
                                                           )
                                                     : Theme.of(context)
                                                           .colorScheme
-                                                          .outlineVariant
+                                                          .surfaceContainerLow
                                                           .withValues(
-                                                            alpha: .22,
+                                                            alpha: .42,
                                                           ),
+                                                borderRadius:
+                                                    BorderRadius.circular(13),
+                                                border: Border.all(
+                                                  color: server.selected
+                                                      ? Theme.of(context)
+                                                            .colorScheme
+                                                            .primary
+                                                            .withValues(
+                                                              alpha: .28,
+                                                            )
+                                                      : Theme.of(context)
+                                                            .colorScheme
+                                                            .outlineVariant
+                                                            .withValues(
+                                                              alpha: .22,
+                                                            ),
+                                                ),
                                               ),
-                                            ),
-                                            child: ClipRRect(
-                                              borderRadius:
-                                                  BorderRadius.circular(13),
-                                              child: Material(
-                                                type: MaterialType.transparency,
-                                                child: ListTile(
-                                                  minLeadingWidth: 26,
-                                                  horizontalTitleGap: 12,
-                                                  contentPadding:
-                                                      const EdgeInsets.symmetric(
-                                                        horizontal: 12,
-                                                        vertical: 1,
-                                                      ),
-                                                  splashColor: Theme.of(context)
-                                                      .colorScheme
-                                                      .primary
-                                                      .withValues(alpha: .10),
-                                                  leading: _SelectionIndicator(
-                                                    selected: server.selected,
-                                                    reducedEffects:
-                                                        view.performanceMode,
-                                                  ),
-                                                  title: Row(
-                                                    children: [
-                                                      CountryFlagBadge(
-                                                        countryCode:
-                                                            server.country,
-                                                        width: 25,
-                                                        height: 18,
-                                                      ),
-                                                      const SizedBox(width: 8),
-                                                      Expanded(
-                                                        child: ServerNameText(
-                                                          server.name,
-                                                          maxLines: 1,
-                                                          style: Theme.of(context)
-                                                              .textTheme
-                                                              .bodyLarge
-                                                              ?.copyWith(
-                                                                fontSize: 15,
-                                                                letterSpacing:
-                                                                    0,
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .w600,
-                                                              ),
-                                                          overflow: TextOverflow
-                                                              .ellipsis,
+                                              child: ClipRRect(
+                                                borderRadius:
+                                                    BorderRadius.circular(13),
+                                                child: Material(
+                                                  type:
+                                                      MaterialType.transparency,
+                                                  child: ListTile(
+                                                    minLeadingWidth: 26,
+                                                    horizontalTitleGap: 12,
+                                                    contentPadding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 12,
+                                                          vertical: 1,
                                                         ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                  subtitle: Text(
-                                                    '${server.protocol}  ${server.transport}',
-                                                    maxLines: 1,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                  ),
-                                                  trailing: Row(
-                                                    mainAxisSize:
-                                                        MainAxisSize.min,
-                                                    children: [
-                                                      _Latency(server: server),
-                                                      const SizedBox(width: 10),
-                                                      LiquidActionMenu<String>(
-                                                        serverActions: true,
-                                                        triggerDecorator:
-                                                            (
-                                                              trigger,
-                                                            ) => view.performanceMode
-                                                            ? trigger
-                                                            : HeaderExcludedControl(
-                                                                headerKey:
-                                                                    _headerKey,
-                                                                child: trigger,
-                                                              ),
-                                                        tooltip: context.s(
-                                                          'serverActions',
+                                                    splashColor:
+                                                        Theme.of(context)
+                                                            .colorScheme
+                                                            .primary
+                                                            .withValues(
+                                                              alpha: .10,
+                                                            ),
+                                                    leading:
+                                                        _SelectionIndicator(
+                                                          selected:
+                                                              server.selected,
+                                                          reducedEffects: view
+                                                              .performanceMode,
                                                         ),
-                                                        items: [
-                                                          LiquidActionItem(
-                                                            value: 'select',
-                                                            label: context.s(
-                                                              'select',
-                                                            ),
-                                                            icon: Icons
-                                                                .check_circle_outline_rounded,
+                                                    title: Row(
+                                                      children: [
+                                                        CountryFlagBadge(
+                                                          countryCode:
+                                                              server.country,
+                                                          width: 25,
+                                                          height: 18,
+                                                        ),
+                                                        const SizedBox(
+                                                          width: 8,
+                                                        ),
+                                                        Expanded(
+                                                          child: ServerNameText(
+                                                            server.name,
+                                                            maxLines: 1,
+                                                            style: Theme.of(context)
+                                                                .textTheme
+                                                                .bodyLarge
+                                                                ?.copyWith(
+                                                                  fontSize: 15,
+                                                                  letterSpacing:
+                                                                      0,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .w600,
+                                                                ),
+                                                            overflow:
+                                                                TextOverflow
+                                                                    .ellipsis,
                                                           ),
-                                                          LiquidActionItem(
-                                                            value: 'ping',
-                                                            label: context.s(
-                                                              'testLatency',
+                                                        ),
+                                                      ],
+                                                    ),
+                                                    subtitle: Text(
+                                                      '${server.protocol}  ${server.transport}',
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                    ),
+                                                    trailing: Row(
+                                                      mainAxisSize:
+                                                          MainAxisSize.min,
+                                                      children: [
+                                                        _Latency(
+                                                          server: server,
+                                                        ),
+                                                        const SizedBox(
+                                                          width: 10,
+                                                        ),
+                                                        if (rowOptical)
+                                                          OpticalRowAnchor(
+                                                            link:
+                                                                _rowLinks[server
+                                                                    .id]!,
+                                                            child: Builder(
+                                                              builder: (rowContext) =>
+                                                                  _ReorderMenuScope.of(
+                                                                    rowContext,
+                                                                  )
+                                                                  ? SizedBox.square(
+                                                                      dimension:
+                                                                          44,
+                                                                      child: OverflowBox(
+                                                                        minWidth:
+                                                                            44,
+                                                                        maxWidth:
+                                                                            44,
+                                                                        minHeight:
+                                                                            44,
+                                                                        maxHeight:
+                                                                            44,
+                                                                        child: _rowControl(
+                                                                          rowContext,
+                                                                          controller,
+                                                                          server,
+                                                                          isPinging:
+                                                                              app.isPinging,
+                                                                        ),
+                                                                      ),
+                                                                    )
+                                                                  : const SizedBox(
+                                                                      width: 44,
+                                                                      height:
+                                                                          44,
+                                                                    ),
                                                             ),
-                                                            icon: Icons
-                                                                .network_ping_rounded,
-                                                            enabled:
-                                                                !app.isPinging,
-                                                          ),
-                                                          LiquidActionItem(
-                                                            value: 'info',
-                                                            label: context.s(
-                                                              'serverInformation',
-                                                            ),
-                                                            icon: Icons
-                                                                .info_outline_rounded,
-                                                          ),
-                                                          LiquidActionItem(
-                                                            value: 'delete',
-                                                            label: context.s(
-                                                              'delete',
-                                                            ),
-                                                            icon: Icons
-                                                                .delete_outline_rounded,
-                                                            destructive: true,
-                                                          ),
-                                                        ],
-                                                        onSelected: (action) =>
-                                                            unawaited(
-                                                              _handleAction(
+                                                          )
+                                                        else
+                                                          SizedBox.square(
+                                                            dimension: 44,
+                                                            child: OverflowBox(
+                                                              minWidth: 44,
+                                                              maxWidth: 44,
+                                                              minHeight: 44,
+                                                              maxHeight: 44,
+                                                              child: _rowControl(
                                                                 context,
                                                                 controller,
                                                                 server,
-                                                                action,
+                                                                isPinging: app
+                                                                    .isPinging,
                                                               ),
                                                             ),
-                                                        fallback: IconButton(
-                                                          tooltip: context.s(
-                                                            'serverActions',
                                                           ),
-                                                          onPressed: () =>
-                                                              _serverActions(
-                                                                server,
-                                                              ),
-                                                          icon: const Icon(
-                                                            Icons
-                                                                .more_vert_rounded,
+                                                      ],
+                                                    ),
+                                                    onTap: () => _perform(
+                                                      context,
+                                                      () => controller
+                                                          .selectServer(
+                                                            server.id,
                                                           ),
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                  onTap: () => _perform(
-                                                    context,
-                                                    () =>
-                                                        controller.selectServer(
-                                                          server.id,
-                                                        ),
+                                                    ),
                                                   ),
                                                 ),
                                               ),
@@ -335,9 +526,9 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
                                           ),
                                         ),
                                       ),
-                                    ),
-                                  );
-                                },
+                                    );
+                                  },
+                                ),
                               ),
                       ),
                     ),
@@ -347,56 +538,95 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
             ),
           ),
         ),
+        if (rowOptical)
+          Positioned.fill(
+            child: ClipRect(
+              child: OpticalListControls(
+                scroll: _scrollController,
+                paddingTop: chromeTop + headerHeight + 16,
+                controls: rowControls,
+                retainedControlKey: _draggingId == null
+                    ? null
+                    : ValueKey(_draggingId!),
+                stageBuilder: (controls) => controls,
+              ),
+            ),
+          ),
+      ],
+    );
+    final page = Stack(
+      children: [
+        Positioned.fill(
+          // Painted controls and list now form one display list. Capture only
+          // the header region, without a second snapshot/composite or a cached
+          // underlay whose paint can lag behind the scrolling list.
+          child: OpticalBackdropBoundary(
+            source: _listSource,
+            child: Overlay.wrap(child: backdrop),
+          ),
+        ),
         Positioned(
           top: chromeTop + 6,
-          left: 8,
-          right: 8,
+          left: 5,
+          right: 5,
           // Optical transparency is not input transparency: the complete fixed
           // header owns pointer hits, including empty space between its controls.
           child: Listener(
             behavior: HitTestBehavior.opaque,
-            child: _ServersGlassHeader(
-              key: _headerKey,
-              height: headerHeight,
-              serverCount: app.servers.length,
-              isPinging: app.isPinging,
-              isRefreshing: app.isRefreshing,
-              reducedEffects: view.performanceMode,
-              onMenu: _openMenu,
-              items: [
-                LiquidActionItem(
-                  value: _ServerPageAction.restart,
-                  label: context.s('restartService'),
-                  icon: Icons.restart_alt_rounded,
-                  enabled: app.connection.isConnected,
+            child: OpticalBackdropCapture(
+              source: _listSource,
+              sampleRegion: Rect.fromLTWH(
+                0,
+                chromeTop + 6 - 96,
+                MediaQuery.sizeOf(context).width,
+                headerHeight + 192,
+              ),
+              motion: _opticalMotion,
+              enabled: optical,
+              liveBackdrop: nativeHeader,
+              child: _ServersGlassHeader(
+                key: _headerKey,
+                height: headerHeight,
+                serverCount: app.servers.length,
+                isPinging: app.isPinging,
+                isRefreshing: app.isRefreshing,
+                reducedEffects: view.performanceMode,
+                onMenu: _openMenu,
+                items: [
+                  LiquidActionItem(
+                    value: _ServerPageAction.restart,
+                    label: context.s('restartService'),
+                    icon: Icons.restart_alt_rounded,
+                    enabled: app.connection.isConnected,
+                  ),
+                  LiquidActionItem(
+                    value: _ServerPageAction.sort,
+                    label: context.s('sortByTestResults'),
+                    icon: Icons.sort_rounded,
+                    enabled: app.servers.isNotEmpty,
+                  ),
+                  LiquidActionItem(
+                    value: _ServerPageAction.tcpDelay,
+                    label: context.s('testTcpDelays'),
+                    icon: Icons.cable_rounded,
+                    enabled: app.servers.isNotEmpty && !app.isPinging,
+                  ),
+                  LiquidActionItem(
+                    value: _ServerPageAction.realDelay,
+                    label: context.s('testRealDelays'),
+                    icon: Icons.network_ping_rounded,
+                    enabled: app.servers.isNotEmpty && !app.isPinging,
+                  ),
+                  LiquidActionItem(
+                    value: _ServerPageAction.refresh,
+                    label: context.s('refresh'),
+                    icon: Icons.sync_rounded,
+                    enabled: !app.isRefreshing,
+                  ),
+                ],
+                onSelected: (action) => unawaited(
+                  _performServerPageAction(context, controller, action),
                 ),
-                LiquidActionItem(
-                  value: _ServerPageAction.sort,
-                  label: context.s('sortByTestResults'),
-                  icon: Icons.sort_rounded,
-                  enabled: app.servers.isNotEmpty,
-                ),
-                LiquidActionItem(
-                  value: _ServerPageAction.tcpDelay,
-                  label: context.s('testTcpDelays'),
-                  icon: Icons.cable_rounded,
-                  enabled: app.servers.isNotEmpty && !app.isPinging,
-                ),
-                LiquidActionItem(
-                  value: _ServerPageAction.realDelay,
-                  label: context.s('testRealDelays'),
-                  icon: Icons.network_ping_rounded,
-                  enabled: app.servers.isNotEmpty && !app.isPinging,
-                ),
-                LiquidActionItem(
-                  value: _ServerPageAction.refresh,
-                  label: context.s('refresh'),
-                  icon: Icons.sync_rounded,
-                  enabled: !app.isRefreshing,
-                ),
-              ],
-              onSelected: (action) => unawaited(
-                _performServerPageAction(context, controller, action),
               ),
             ),
           ),
@@ -427,6 +657,12 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
             ),
           ),
       ],
+    );
+    return Listener(
+      onPointerCancel: (event) {
+        if (event.pointer == _reorderPointer) _finishReorder();
+      },
+      child: nativeHeader ? LiveGlassViewport(child: page) : page,
     );
   }
 
@@ -678,10 +914,17 @@ class _ServerActionsSheetOverlayState extends State<_ServerActionsSheetOverlay>
 }
 
 class _PressScale extends StatefulWidget {
-  const _PressScale({required this.enabled, required this.child});
+  const _PressScale({
+    required this.enabled,
+    required this.child,
+    this.onMotion,
+    this.onPointerStarted,
+  });
 
   final bool enabled;
   final Widget child;
+  final ValueChanged<bool>? onMotion;
+  final ValueChanged<int>? onPointerStarted;
 
   @override
   State<_PressScale> createState() => _PressScaleState();
@@ -703,7 +946,18 @@ class _PressScaleState extends State<_PressScale>
   int? _pressPointer;
   Offset? _pressOrigin;
 
+  @override
+  void initState() {
+    super.initState();
+    _motion.addListener(_notifyMotion);
+  }
+
+  void _notifyMotion() => widget.onMotion?.call(_motion.value != 0);
+
   void _pointerDown(PointerDownEvent event) {
+    // ReorderableDelayedDragStartListener replaces its recognizer on every
+    // down, even when the tap-depth animation already follows another finger.
+    widget.onPointerStarted?.call(event.pointer);
     if (_pressPointer != null) return;
     _pressPointer = event.pointer;
     _pressOrigin = event.position;
@@ -745,6 +999,8 @@ class _PressScaleState extends State<_PressScale>
 
   @override
   void dispose() {
+    widget.onMotion?.call(false);
+    _motion.removeListener(_notifyMotion);
     _motion.dispose();
     _controller.dispose();
     super.dispose();
@@ -824,45 +1080,56 @@ class _ServersGlassHeaderState extends State<_ServersGlassHeader> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return GlassSurface(
-      radius: 26,
-      darkBlur: GlassSurface.darkServersHeaderBlur,
-      saturation: 1.78,
-      tintOpacityScale: .35,
-      showShadow: false,
-      child: SizedBox(
-        height: widget.height,
-        child: Padding(
-          padding: const EdgeInsetsDirectional.only(start: 14, end: 4),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '${context.s('servers')} (${widget.serverCount})',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
+    return SizedBox(
+      height: widget.height,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned.fill(
+            child: GlassSurface(
+              radius: 26,
+              showShadow: false,
+              opticalSettings: liquidServerHeaderSettings(theme.brightness),
+              child: Padding(
+                padding: const EdgeInsetsDirectional.only(start: 14, end: 52),
+                child: Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: Text(
+                    '${context.s('servers')} (${widget.serverCount})',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
               ),
-              LiquidActionMenu<_ServerPageAction>(
-                reuseParentGlass: true,
-                tooltip: context.s('serverPageActions'),
-                icon: const Icon(Icons.sort_rounded),
-                items: widget.items,
-                onSelected: widget.onSelected,
-                fallback: IconButton(
-                  key: _menuKey,
-                  tooltip: context.s('serverPageActions'),
-                  onPressed: _openMenu,
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.sort_rounded),
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
+          // Both optical passes sample the row stage. The trigger does not
+          // refract the header and is free to stretch past the header's rim.
+          PositionedDirectional(
+            end: 4,
+            top: (widget.height - 44) / 2,
+            child: LiquidActionMenu<_ServerPageAction>(
+              triggerSettings: liquidServerHeaderSettings(
+                theme.brightness,
+                trigger: true,
+              ),
+              tooltip: context.s('serverPageActions'),
+              icon: const Icon(Icons.sort_rounded),
+              items: widget.items,
+              onSelected: widget.onSelected,
+              fallback: IconButton(
+                key: _menuKey,
+                tooltip: context.s('serverPageActions'),
+                onPressed: _openMenu,
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.sort_rounded),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1122,6 +1389,73 @@ class _Latency extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A drag may finish by drop, pointer cancellation or route disposal. The
+/// overlay proxy's lifetime covers all three; onReorderEnd does not.
+class _ReorderProxyLifetime extends StatefulWidget {
+  const _ReorderProxyLifetime({
+    required this.animation,
+    required this.onRemoved,
+    required this.child,
+  });
+  final Animation<double> animation;
+  final VoidCallback onRemoved;
+  final Widget child;
+  @override
+  State<_ReorderProxyLifetime> createState() => _ReorderProxyLifetimeState();
+}
+
+class _ReorderProxyLifetimeState extends State<_ReorderProxyLifetime> {
+  bool _returned = false;
+  bool _advanced = false;
+  void _frame() {
+    if (widget.animation.value > 0) _advanced = true;
+    if (_advanced && widget.animation.value == 0 && !_returned) {
+      _returned = true;
+      // Move the keyed menu back in this build frame, before the proxy is
+      // disposed; a post-frame-only return loses its state for one frame.
+      widget.onRemoved();
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    widget.animation.addListener(_frame);
+  }
+
+  @override
+  void didUpdateWidget(_ReorderProxyLifetime oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.animation != widget.animation) {
+      oldWidget.animation.removeListener(_frame);
+      widget.animation.addListener(_frame);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.animation.removeListener(_frame);
+    final removed = widget.onRemoved;
+    if (!_returned) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => removed());
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}
+
+/// The existing row menu is promoted with its card into the local drag overlay.
+/// Its GlobalKey keeps state; there is no duplicate control or new optical layer.
+class _ReorderMenuScope extends InheritedWidget {
+  const _ReorderMenuScope({required super.child});
+  static bool of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_ReorderMenuScope>() != null;
+  @override
+  bool updateShouldNotify(_ReorderMenuScope oldWidget) => false;
 }
 
 class _EmptyServers extends StatelessWidget {

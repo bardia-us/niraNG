@@ -22,6 +22,7 @@
 //   B: height    normalized to thickness
 //   A: foreground alpha (SDF anti-aliasing)
 
+// niraNG geometry revision 2026-10-22: oriented ellipse payload in corner slots.
 #version 460 core
 precision highp float; // mediump caused ~1.5px displacement banding on mobile (10-bit mantissa)
 

@@ -10,6 +10,7 @@
 
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 /// A callback used by [MultiShaderBuilder].
@@ -168,7 +169,7 @@ class _MultiShaderBuilderState extends State<MultiShaderBuilder> {
   @override
   void didUpdateWidget(covariant MultiShaderBuilder oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.assetKeys != widget.assetKeys) {
+    if (!listEquals(oldWidget.assetKeys, widget.assetKeys)) {
       _loadShaders(widget.assetKeys);
     }
   }

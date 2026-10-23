@@ -1,6 +1,7 @@
 import 'dart:ui' as ui;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
+import 'optical_capture_phase.dart';
 
 /// Excludes only a scrolling trigger's overlap with the rounded fixed header.
 /// The clip follows the final composed transform, including reorder/press motion.
@@ -9,27 +10,35 @@ class HeaderExcludedControl extends SingleChildRenderObjectWidget {
     required this.headerKey,
     required super.child,
     this.headerRadius = 26,
+    this.excludeFromCapture = false,
     super.key,
   });
   final GlobalKey headerKey;
   final double headerRadius;
+  final bool excludeFromCapture;
 
   @override
   RenderObject createRenderObject(BuildContext context) =>
-      _HeaderExcludedRenderBox(headerKey, headerRadius);
+      _HeaderExcludedRenderBox(headerKey, headerRadius, excludeFromCapture);
 
   @override
   void updateRenderObject(BuildContext context, RenderObject renderObject) {
     (renderObject as _HeaderExcludedRenderBox)
       ..headerKey = headerKey
-      ..headerRadius = headerRadius;
+      ..headerRadius = headerRadius
+      ..excludeFromCapture = excludeFromCapture;
   }
 }
 
 class _HeaderExcludedRenderBox extends RenderProxyBox {
-  _HeaderExcludedRenderBox(this.headerKey, this.headerRadius);
+  _HeaderExcludedRenderBox(
+    this.headerKey,
+    this.headerRadius,
+    this.excludeFromCapture,
+  );
   GlobalKey headerKey;
   double headerRadius;
+  bool excludeFromCapture;
 
   @override
   bool get isRepaintBoundary => true;
@@ -39,7 +48,7 @@ class _HeaderExcludedRenderBox extends RenderProxyBox {
     covariant _HeaderExclusionLayer? oldLayer,
   }) => oldLayer ?? _HeaderExclusionLayer(this);
 
-  RRect? get headerRegion {
+  Path? get headerRegion {
     final header = headerKey.currentContext?.findRenderObject();
     if (header is! RenderBox ||
         !header.attached ||
@@ -48,18 +57,20 @@ class _HeaderExcludedRenderBox extends RenderProxyBox {
         header.size.isEmpty) {
       return null;
     }
-    final rect = MatrixUtils.transformRect(
-      header.getTransformTo(this),
-      Offset.zero & header.size,
-    );
-    if (!rect.isFinite) return null;
-    return RRect.fromRectAndRadius(
-      rect,
-      Radius.elliptical(
-        headerRadius * rect.width / header.size.width,
-        headerRadius * rect.height / header.size.height,
-      ),
-    );
+    final transform = header.getTransformTo(this);
+    if (transform.storage.any((value) => !value.isFinite) ||
+        transform.determinant() == 0) {
+      return null;
+    }
+    // Keep the actual rounded contour under diagonal squash/stretch. Scaling
+    // radii around a transformed bounding rectangle enlarges the cutout.
+    return (Path()..addRRect(
+          RRect.fromRectAndRadius(
+            Offset.zero & header.size,
+            Radius.circular(headerRadius),
+          ),
+        ))
+        .transform(transform.storage);
   }
 
   @override
@@ -93,9 +104,16 @@ class _HeaderExclusionLayer extends OffsetLayer {
   @override
   void addToScene(ui.SceneBuilder builder) {
     if (!control.attached || !control.hasSize) return;
+    if (control.excludeFromCapture && OpticalCapturePhase.isActive) {
+      // Exclude only from the optical input, never from the displayed scene.
+      // The separate glyph remains available to the header's real refraction.
+      _replaceClip(null);
+      engineLayer = null;
+      return;
+    }
     final header = control.headerRegion;
     final bounds = Offset.zero & control.size;
-    if (header == null || !header.outerRect.overlaps(bounds)) {
+    if (header == null || !header.getBounds().overlaps(bounds)) {
       _replaceClip(null);
       super.addToScene(builder);
       return;
@@ -115,7 +133,7 @@ class _HeaderExclusionLayer extends OffsetLayer {
     final visible = Path.combine(
       PathOperation.difference,
       Path()..addRect(bounds.inflate(24)),
-      Path()..addRRect(header),
+      header,
     );
     _replaceClip(
       builder.pushClipPath(

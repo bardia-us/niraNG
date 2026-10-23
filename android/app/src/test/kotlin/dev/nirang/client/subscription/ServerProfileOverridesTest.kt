@@ -7,6 +7,26 @@ import org.junit.Test
 
 class ServerProfileOverridesTest {
     @Test
+    fun `ECH outbound retains editor formatting after stored payload round trip`() {
+        val raw = "\n{\n  \"tag\": \"ech-dns\",\n  \"protocol\": \"direct\",\n  \"settings\": { \"redirect\": \"1.1.1.1:443\" }\n}\n"
+        val source = server(parameters = mapOf("echConfigList" to "h2c://1.1.1.1/dns-query", "echOutbound" to raw))
+        val saved = ServerProfileOverrides().updated(source, mapOf("echOutbound" to raw))
+        val restored = ServerProfileOverrides.fromJson(JSONObject(saved.toJson().toString()))
+        assertEquals(raw, restored.apply(listOf(source)).single().parameters["echOutbound"])
+    }
+
+    @Test
+    fun `format preservation still rejects malformed or oversized ECH outbound text`() {
+        val raw = "{\"tag\":\"ech-dns\",\"protocol\":\"direct\"}"
+        val source = server(parameters = mapOf("echConfigList" to "h2c://1.1.1.1/dns-query"))
+        listOf("$raw trailing", "[$raw]", " ".repeat(32768) + raw).forEach { invalid ->
+            assertThrows(IllegalArgumentException::class.java) {
+                ServerProfileOverrides().updated(source, mapOf("echOutbound" to invalid))
+            }
+        }
+    }
+
+    @Test
     fun `bundled core advanced fingerprints survive profile edits and reload`() {
         listOf("randomizednoalpn", "hellofirefox_148", "hellosafari_26_3", "hellochrome_120_pq", "hellogolang").forEach { fingerprint ->
             val source = server()

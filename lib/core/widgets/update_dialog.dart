@@ -58,7 +58,9 @@ Future<void> showUpdateOptionsDialog(
   );
   if (!context.mounted) return;
   if (choice == 'browser') {
-    await NirangNative.openExternalUrl(asset.downloadUrl.toString());
+    await NirangNative.openExternalUrl(
+      officialUpdateBrowserDestination(asset.downloadUrl).toString(),
+    );
   } else if (choice == 'install') {
     await _showUpdateDownloadDialog(
       context,
@@ -150,6 +152,7 @@ class _UpdateDownloadSettingsTileState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(_statusText(context, d)),
+          if (d.failed) Text(context.s('updateDownloadRecoveryHint')),
           if (d.active || d.canResume) ...[
             const SizedBox(height: 7),
             LinearProgressIndicator(value: progress),
@@ -167,7 +170,7 @@ class _UpdateDownloadSettingsTileState
               onPressed: () => _action(NirangNative.cancelUpdateDownload),
               icon: const Icon(Icons.pause_rounded),
             )
-          else if (d.canResume)
+          else if (!d.failed && d.canResume)
             IconButton(
               tooltip: context.s('resumeDownload'),
               onPressed: () => _action(NirangNative.resumeUpdateDownload),
@@ -179,10 +182,20 @@ class _UpdateDownloadSettingsTileState
               onPressed: NirangNative.installDownloadedUpdate,
               icon: const Icon(Icons.install_mobile_rounded),
             ),
+          if (d.failed)
+            IconButton(
+              tooltip: context.s('retryUpdateDownload'),
+              onPressed: () => _action(NirangNative.resumeUpdateDownload),
+              icon: const Icon(Icons.refresh_rounded),
+            ),
           if (d.failed && d.url.isNotEmpty)
             IconButton(
               tooltip: context.s('downloadWithBrowser'),
-              onPressed: () => NirangNative.openExternalUrl(d.url),
+              onPressed: () => NirangNative.openExternalUrl(
+                officialUpdateBrowserDestination(
+                  Uri.tryParse(d.url),
+                ).toString(),
+              ),
               icon: const Icon(Icons.open_in_browser_rounded),
             ),
           if (!d.idle)
@@ -224,14 +237,19 @@ class _UpdateDownloadDialogState extends State<_UpdateDownloadDialog> {
   void initState() {
     super.initState();
     _subscription = NirangNative.updateDownloadEvents.listen(_apply);
-    _statusPoll = Timer.periodic(
-      const Duration(milliseconds: 750),
-      (_) => unawaited(_refreshSnapshot()),
-    );
     WidgetsBinding.instance.addPostFrameCallback((_) => _start());
   }
 
   Future<void> _start() async {
+    if (!mounted) return;
+    setState(
+      () => _download = const UpdateDownloadSnapshot(state: 'downloading'),
+    );
+    _statusPoll?.cancel();
+    _statusPoll = Timer.periodic(
+      const Duration(milliseconds: 750),
+      (_) => unawaited(_refreshSnapshot()),
+    );
     try {
       _apply(
         await NirangNative.startUpdateDownload(
@@ -320,13 +338,20 @@ class _UpdateDownloadDialogState extends State<_UpdateDownloadDialog> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            LinearProgressIndicator(
-              value: d.state == 'verifying' ? null : progress,
-            ),
+            if (!d.failed)
+              LinearProgressIndicator(
+                value: d.state == 'verifying' ? null : progress,
+              ),
             const SizedBox(height: 10),
             Text('${_bytes(d.received)} / ${_bytes(d.total)}'),
             const SizedBox(height: 6),
-            Text(context.s('downloadContinuesInBackground')),
+            Text(
+              context.s(
+                d.failed
+                    ? 'updateDownloadRecoveryHint'
+                    : 'downloadContinuesInBackground',
+              ),
+            ),
           ],
         ),
         actions: [
@@ -339,13 +364,18 @@ class _UpdateDownloadDialogState extends State<_UpdateDownloadDialog> {
             TextButton(
               onPressed: () async {
                 await NirangNative.openExternalUrl(
-                  widget.asset.downloadUrl.toString(),
+                  officialUpdateBrowserDestination(
+                    widget.asset.downloadUrl,
+                  ).toString(),
                 );
-                if (!widget.mandatory && context.mounted) {
-                  Navigator.pop(context);
-                }
               },
               child: Text(context.s('downloadWithBrowser')),
+            ),
+          if (d.failed)
+            FilledButton.icon(
+              onPressed: _start,
+              icon: const Icon(Icons.refresh_rounded),
+              label: Text(context.s('retryUpdateDownload')),
             ),
           if (d.complete)
             FilledButton.icon(
@@ -426,8 +456,8 @@ String _statusText(BuildContext context, UpdateDownloadSnapshot d) {
   if (d.state == 'verifying') return context.s('verifyingUpdate');
   if (d.active) return context.s('downloadingUpdate');
   if (d.complete) return '${context.s('readyToInstall')} ${d.version}'.trim();
-  if (d.canResume) return context.s('downloadPaused');
   if (d.failed) return context.s('updateDownloadFailed');
+  if (d.canResume) return context.s('downloadPaused');
   return context.s('noUpdateDownload');
 }
 

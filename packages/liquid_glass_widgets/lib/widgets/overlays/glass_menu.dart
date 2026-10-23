@@ -307,6 +307,7 @@ class GlassMenu extends StatefulWidget {
     this.trigger,
     this.triggerBuilder,
     this.useGlassTriggerFade = false,
+    this.useRootOverlay = false,
     required this.items,
     this.menuAlignment,
     this.autoAdjustToScreen = false,
@@ -346,6 +347,9 @@ class GlassMenu extends StatefulWidget {
 
   @override
   State<GlassMenu> createState() => _GlassMenuState();
+
+  /// Escape a local captured drag overlay; popups must not capture themselves.
+  final bool useRootOverlay;
 }
 
 /// Drives a [GlassMenu] imperatively, bypassing the trigger tap.
