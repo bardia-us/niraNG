@@ -6,6 +6,7 @@ object ServerEligibility {
         if (NOTICE_MARKERS.any(normalizedName::contains) && VERSION_MARKER.containsMatchIn(normalizedName)) {
             return "This entry is subscription information, not a connectable server"
         }
+        server.customProfile?.let { return if(it.engine in setOf("xray","sing-box","aether")) null else "Unsupported custom profile engine" }
         val address = server.address.trim().lowercase()
         if (address in NON_CONNECTABLE_ADDRESSES) return "This server address is not connectable"
         if (server.port !in 1..65_535) return "This server port is invalid"

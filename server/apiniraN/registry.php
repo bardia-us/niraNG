@@ -4,6 +4,7 @@ declare(strict_types=1);
 const NIRANG_DEFAULT_MINIMUM_ANDROID_VERSION = '1.1.1';
 const NIRANG_DEFAULT_MINIMUM_ANDROID_BUILD = 0;
 const NIRANG_DEFAULT_MINIMUM_WINDOWS_VERSION = '0.3.1';
+const NIRANG_DEFAULT_MINIMUM_WINDOWS_UPDATE_VERSION = '0.0.0';
 
 function registry_environment(string $name): ?string
 {
@@ -120,6 +121,11 @@ function registry_database(): PDO
     registry_set_default($pdo, 'minimum_android_version', $legacyAndroidMinimum);
     registry_set_default($pdo, 'minimum_android_build', (string)NIRANG_DEFAULT_MINIMUM_ANDROID_BUILD);
     registry_set_default($pdo, 'minimum_windows_version', NIRANG_DEFAULT_MINIMUM_WINDOWS_VERSION);
+    registry_set_default(
+        $pdo,
+        'minimum_windows_update_version',
+        NIRANG_DEFAULT_MINIMUM_WINDOWS_UPDATE_VERSION
+    );
     return $pdo;
 }
 
@@ -251,6 +257,19 @@ function registry_is_outdated(string $version, string $minimum): bool
     return version_compare(preg_replace('/[-+].*$/', '', $version), preg_replace('/[-+].*$/', '', $minimum), '<');
 }
 
+/** Forced-update policy is independent from the Device Registry display policy. */
+function registry_minimum_update_version(PDO $pdo, string $platform): string
+{
+    if ($platform === 'windows') {
+        return registry_setting(
+            $pdo,
+            'minimum_windows_update_version',
+            NIRANG_DEFAULT_MINIMUM_WINDOWS_UPDATE_VERSION
+        );
+    }
+    return registry_minimum_version($pdo, $platform);
+}
+
 function registry_normalize_release_version(?string $version): ?string
 {
     if (!is_string($version)) return null;
@@ -376,6 +395,21 @@ function registry_bearer_token(): ?string
 function registry_token_hash(string $token): string
 {
     return hash('sha256', $token);
+}
+
+/** Authenticated platform + explicit version, never a spoofable User-Agent. */
+function registry_profile_capability_headers(string $platform, array $payload): array
+{
+    return $platform === 'android' && ($payload['profile_format_version'] ?? null) === 1
+        ? ['X-Nira-Profile-Version: 1'] : [];
+}
+
+/** Keep protocol bodies exact for old servers; negotiate representation via one strict header. */
+function registry_profile_capability_request_headers(string $platform, array $server): array
+{
+    $capability=($server['HTTP_X_NIRA_PROFILE_VERSION']??null)==='1'
+        ? ['profile_format_version'=>1] : [];
+    return registry_profile_capability_headers($platform,$capability);
 }
 
 function registry_subscription_auth_headers(

@@ -15,12 +15,16 @@ class OpticalListControls extends StatelessWidget {
     required this.controls,
     required this.stageBuilder,
     this.retainedControlKey,
+    this.rowExtents,
     super.key,
   });
 
   final ScrollController scroll;
   final double paddingTop;
   final List<Widget> controls;
+
+  /// Animated group layout uses the same extents as the source list.
+  final List<double>? rowExtents;
   final Widget Function(Widget controls) stageBuilder;
 
   /// A proxy can cross the viewport while its original slot scrolls away.
@@ -32,6 +36,57 @@ class OpticalListControls extends StatelessWidget {
     final retained = retainedControlKey == null
         ? -1
         : controls.indexWhere((control) => control.key == retainedControlKey);
+    final extents = rowExtents;
+    if (extents != null && extents.any((extent) => extent != serverRowExtent)) {
+      final tops = <double>[];
+      var top = paddingTop;
+      for (final extent in extents) {
+        tops.add(top);
+        top += extent;
+      }
+      return LayoutBuilder(
+        builder: (context, constraints) => AnimatedBuilder(
+          animation: scroll,
+          builder: (context, _) {
+            final offset = scroll.hasClients ? scroll.offset : 0.0;
+            return stageBuilder(
+              Stack(
+                fit: StackFit.expand,
+                clipBehavior: Clip.none,
+                children: [
+                  for (var index = 0; index < controls.length; index++)
+                    if (index == retained ||
+                        (extents[index] > 0 &&
+                            tops[index] + extents[index] >= offset - 64 &&
+                            tops[index] <= offset + constraints.maxHeight + 64))
+                      PositionedDirectional(
+                        key: controls[index].key,
+                        top: tops[index] - offset,
+                        end: 21,
+                        height: extents[index],
+                        width: 44,
+                        child: ClipRect(
+                          child: OverflowBox(
+                            alignment: Alignment.topCenter,
+                            minHeight: serverRowExtent,
+                            maxHeight: serverRowExtent,
+                            child: Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Align(
+                                alignment: Alignment.topCenter,
+                                child: controls[index],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                ],
+              ),
+            );
+          },
+        ),
+      );
+    }
     return LayoutBuilder(
       builder: (context, constraints) {
         (int, int, double)? cachedLayout;

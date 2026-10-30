@@ -32,15 +32,11 @@ import dev.nirang.client.xray.XrayConfigBuilder
 import dev.nirang.client.xray.XrayCore
 import dev.nirang.client.xray.IranCidrRepository
 import java.net.InetAddress
-import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 class NirangVpnService : VpnService() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val worker = VpnTaskRunner()
-    private val coreStopWorker = Executors.newSingleThreadExecutor { runnable ->
-        Thread(runnable, "nirang-core-stop").apply { isDaemon = true }
-    }
     private val startGuard = AtomicBoolean(false)
     private val foregroundActive = AtomicBoolean(false)
     private val operationGate = ConnectionOperationGate()
@@ -56,6 +52,8 @@ class NirangVpnService : VpnService() {
     }
     private var vpnInterface: ParcelFileDescriptor? = null
     private var currentConfig: String? = null
+    @Volatile private var connectionCore: ConnectionCore? = null
+    @Volatile private var fallbackCoreOwner: Any? = null
     @Volatile private var currentServerId: String? = null
     private var currentServerName: String? = null
     private var currentMode: String = "vpn"
@@ -85,11 +83,14 @@ class NirangVpnService : VpnService() {
             ACTION_STOP -> stopImmediately(false)
             ACTION_STOP_PRESERVING_ERROR -> stopImmediately(true)
             ACTION_STOP_FOR_RESTART -> {
-                val operation = operationGate.cancel()
                 val generation = intent.getLongExtra(EXTRA_RESTART_GENERATION, 0L)
+                if (!VpnRestartCoordinator.isCurrentGeneration(generation)) return@runCatching
+                val operation = operationGate.cancel()
                 val serverId = intent.getStringExtra(EXTRA_SERVER_ID)
                 val serverName = intent.getStringExtra(EXTRA_SERVER_NAME)
-                submit { stopForRestartInternal(generation, serverId, serverName, operation) }
+                // Aether can occupy the worker while registering/scanning. Detach
+                // now; queuing stop behind it leaves restart uncancellable for minutes.
+                stopForRestartInternal(generation, serverId, serverName, operation)
             }
             ACTION_START -> {
                 if (
@@ -142,7 +143,6 @@ class NirangVpnService : VpnService() {
         }
         NirangTileService.requestRefresh(applicationContext)
         worker.shutdownNow()
-        coreStopWorker.shutdown()
         super.onDestroy()
     }
 
@@ -175,30 +175,33 @@ class NirangVpnService : VpnService() {
         currentMode = settings.connectionMode
 
         try {
-            val iranCidrs = routingCidrs(settings)
+            CoreTeardownFence.shared.awaitPreviousStops { operationGate.isCurrent(operation) }
+            val iranCidrs = if(server.customProfile == null || server.customProfile.engine == "aether") routingCidrs(settings) else emptyList()
             if (currentMode == "vpn" && prepare(this) != null) error("VPN permission is not granted")
-            currentConfig = if (currentMode == "vpn") {
-                XrayConfigBuilder.buildVpnConfig(server, settings, iranCidrs)
-            } else {
-                XrayConfigBuilder.buildProxyConfig(server, settings, iranCidrs)
-            }
-            vpnInterface = if (currentMode == "vpn") {
-                buildVpnInterface(server.name, settings) ?: error("Android could not establish the VPN interface")
+            val core=ConnectionCore(this,server,settings,iranCidrs) { operationGate.isCurrent(operation) }
+            core.validate()
+            connectionCore=core
+            currentConfig=core.configuration
+            core.prepare()
+            check(operationGate.isCurrent(operation)) { CANCELLED_OPERATION }
+            vpnInterface = if (currentMode == "vpn" && !core.ownsTunnel) {
+                (if(server.customProfile?.engine == "xray") buildCustomVpnInterface(server.name,core.tunMtu(),settings) else buildVpnInterface(server.name,settings))
+                    ?: error("Android could not establish the VPN interface")
             } else {
                 null
             }
             check(operationGate.isCurrent(operation)) { CANCELLED_OPERATION }
             ConnectionStore.transition(ConnectionState.CONNECTING, server.id, server.name)
-            XrayCore.start(this, currentConfig!!, vpnInterface?.fd ?: 0)
+            core.start(vpnInterface?.fd ?: if(core.ownsTunnel) -1 else 0)
             if (!operationGate.isCurrent(operation)) {
                 cleanupResources()
                 return
             }
-            registerNetworkCallback(operation)
+            if(!core.ownsTunnel) registerNetworkCallback(operation)
             ConnectionStore.transition(ConnectionState.CONNECTED, server.id, server.name)
             markLastWorking(server.id)
             SafeLog.info(this, "VPN started")
-            SafeLog.info(this, "Xray started")
+            SafeLog.info(this, "Connection core started")
             requestPublicIpRefresh(settings.ipCheckUrl, server.id, operation)
             refreshConnectedServerPing(repository, server.id)
         } catch (error: Throwable) {
@@ -206,8 +209,8 @@ class NirangVpnService : VpnService() {
                 cleanupResources()
                 return
             }
-            if (allowFallback && tryStartLastWorkingServer(settings, repository, operation)) return
-            failAndStop(error.message ?: "Connection failed")
+            if (allowFallback && server.customProfile == null && tryStartLastWorkingServer(settings, repository, operation)) return
+            failAndStop(if(server.customProfile != null) "Custom connection failed; verify this profile and its core compatibility" else error.message ?: "Connection failed")
             return
         } finally {
             startGuard.set(false)
@@ -224,9 +227,11 @@ class NirangVpnService : VpnService() {
             getSharedPreferences(VPN_STATE_PREFS, MODE_PRIVATE).getString(LAST_WORKING_SERVER_ID, null)
         }.getOrNull() ?: return false
         val fallback = repository.server(fallbackId) ?: return false
+        if(fallback.customProfile != null) return false
         val fd = vpnInterface?.fd ?: if (currentMode == "proxy") 0 else return false
         return runCatching {
-            XrayCore.stop()
+            connectionCore?.stop() ?: fallbackCoreOwner?.let(XrayCore::stop)
+            connectionCore=null
             check(operationGate.isCurrent(operation)) { CANCELLED_OPERATION }
             val fallbackConfig = if (currentMode == "vpn") {
                 XrayConfigBuilder.buildSafeFallbackConfig(fallback)
@@ -234,9 +239,11 @@ class NirangVpnService : VpnService() {
                 XrayConfigBuilder.buildProxyConfig(fallback, settings, routingCidrs(settings))
             }
             ConnectionStore.transition(ConnectionState.CONNECTING, fallback.id, fallback.name)
-            XrayCore.start(this, fallbackConfig, fd)
+            val fallbackOwner = Any()
+            fallbackCoreOwner = fallbackOwner
+            XrayCore.start(this, fallbackConfig, fd, fallbackOwner) { operationGate.isCurrent(operation) }
             if (!operationGate.isCurrent(operation)) {
-                XrayCore.stop()
+                XrayCore.stop(fallbackOwner)
                 return@runCatching false
             }
             currentServerId = fallback.id
@@ -296,6 +303,18 @@ class NirangVpnService : VpnService() {
                 builder.setHttpProxy(ProxyInfo.buildDirectProxy("127.0.0.1", XrayConfigBuilder.LOCAL_HTTP_PROXY_PORT))
             }
         }
+        return builder.establish()
+    }
+
+    private fun buildCustomVpnInterface(name:String,mtu:Int,settings:NativeSettings):ParcelFileDescriptor? {
+        // Only Android FD plumbing. No global DNS/routing/protocol settings are
+        // copied into the full Xray JSON; its original core policies remain intact.
+        val builder=Builder().setSession("niraNG · $name").setMtu(mtu)
+            .addAddress("172.19.0.1",30).addRoute("0.0.0.0",0)
+            .addAddress("fdfe:dcba:9877::1",126).addRoute("::",0)
+            .addDnsServer("1.1.1.1").setBlocking(true)
+        applyPerAppPolicy(builder,settings)
+        if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) builder.setMetered(false)
         return builder.establish()
     }
 
@@ -390,12 +409,12 @@ class NirangVpnService : VpnService() {
         for (delay in delays) {
             if (!operationGate.isCurrent(operation) || !underlyingNetworks.isCurrent(candidate)) return
             try {
-                XrayCore.stop()
+                connectionCore?.stop() ?: fallbackCoreOwner?.let(XrayCore::stop)
                 Thread.sleep(delay)
                 if (!operationGate.isCurrent(operation) || !underlyingNetworks.isCurrent(candidate)) return
-                XrayCore.start(this, config, fd)
+                connectionCore?.start(fd) ?: fallbackCoreOwner?.let { XrayCore.start(this, config, fd, it) { operationGate.isCurrent(operation) } }
                 if (!operationGate.isCurrent(operation) || !underlyingNetworks.isCurrent(candidate)) {
-                    XrayCore.stop()
+                    connectionCore?.stop() ?: fallbackCoreOwner?.let(XrayCore::stop)
                     return
                 }
                 val completed = underlyingNetworks.completeReconnect(candidate) {
@@ -404,7 +423,7 @@ class NirangVpnService : VpnService() {
                     }
                 }
                 if (!completed || !operationGate.isCurrent(operation)) {
-                    XrayCore.stop()
+                    connectionCore?.stop() ?: fallbackCoreOwner?.let(XrayCore::stop)
                     return
                 }
                 SafeLog.info(this, "VPN reconnected")
@@ -429,6 +448,11 @@ class NirangVpnService : VpnService() {
     ): Boolean {
         if (!operationGate.isCurrent(operation) || currentServerId != expectedServerId ||
             ConnectionStore.state() != ConnectionState.CONNECTED) return false
+        if(connectionCore?.canCheckIp() == false) {
+            ConnectionStore.setPublicIp(expectedServerId,null,null,null)
+            SafeLog.info(this,"Public IP check unavailable: custom profile has no compatible local HTTP input")
+            return false
+        }
         val request = publicIpRefreshGate.tryBegin(
             manual,
             PublicIpRequest(providerUrl, expectedServerId, operation),
@@ -551,6 +575,7 @@ class NirangVpnService : VpnService() {
     }
 
     private fun stopImmediately(preserveError: Boolean) {
+        AetherPreparationCoordinator.shared.cancel(AsyncNativeStop::execute)
         foregroundActive.set(false)
         operationGate.cancel()
         VpnRestartCoordinator.cancel()
@@ -570,7 +595,13 @@ class NirangVpnService : VpnService() {
     private fun stopForRestartInternal(generation: Long, serverId: String?, serverName: String?, operation: Long) {
         if (!operationGate.isCurrent(operation)) return
         foregroundActive.set(false)
-        cleanupResources()
+        closeTunnelAndCallbacks()
+        currentConfig = null
+        currentServerId = null
+        currentServerName = null
+        currentMode = "vpn"
+        // Native close remains asynchronous and fenced before any later startup.
+        stopCoreAsync()
         if (!operationGate.isCurrent(operation)) return
         ConnectionStore.transition(ConnectionState.RESTARTING, serverId, serverName)
         SafeLog.info(this, "VPN service stopped for restart")
@@ -580,7 +611,9 @@ class NirangVpnService : VpnService() {
     }
 
     private fun cleanupResources() {
-        runCatching { XrayCore.stop() }
+        runCatching { connectionCore?.stop() ?: fallbackCoreOwner?.let(XrayCore::stop) }
+        connectionCore=null
+        fallbackCoreOwner=null
         runCatching { vpnInterface?.close() }
         vpnInterface = null
         currentConfig = null
@@ -598,9 +631,15 @@ class NirangVpnService : VpnService() {
     }
 
     private fun stopCoreAsync() {
+        val core=connectionCore
+        connectionCore=null
+        val fallbackOwner=fallbackCoreOwner
+        fallbackCoreOwner=null
+        core?.cancel()
+        if(core == null && fallbackOwner == null) return
         runCatching {
-            coreStopWorker.execute {
-                runCatching { XrayCore.stop() }
+            CoreTeardownFence.shared.schedule {
+                runCatching { core?.stop() ?: fallbackOwner?.let(XrayCore::stop) }
                     .onFailure { SafeLog.warning(this, "Xray stop did not complete cleanly") }
             }
         }
@@ -708,6 +747,8 @@ class NirangVpnService : VpnService() {
         private const val CANCELLED_OPERATION = "Connection operation was cancelled"
         @Volatile private var liveInstance: NirangVpnService? = null
 
+        internal fun activeServerId(): String? = liveInstance?.currentServerId
+
         fun refreshPublicIp(context: Context): Boolean {
             val service = liveInstance ?: return false
             val serverId = service.currentServerId ?: return false
@@ -729,6 +770,7 @@ class NirangVpnService : VpnService() {
         }
 
         fun stop(context: Context) {
+            AetherPreparationCoordinator.shared.cancel(AsyncNativeStop::execute)
             VpnRestartCoordinator.cancel()
             ConnectionStore.transition(ConnectionState.DISCONNECTED)
             runCatching {

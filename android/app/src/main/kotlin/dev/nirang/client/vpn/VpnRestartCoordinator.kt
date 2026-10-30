@@ -25,44 +25,93 @@ object VpnRestartCoordinator {
     private val stoppedGeneration = AtomicLong(0)
     private val latest = AtomicReference<Request?>(null)
     private val draining = AtomicBoolean(false)
+    // Cancellation and the final service commands share one linearization point.
+    private val operationLock = Any()
+    @Volatile private var preparingAether:dev.nirang.client.cores.aether.AetherSession?=null
 
     fun request(context: Context, serverId: String): Boolean {
         val appContext = context.applicationContext
         val repository = SubscriptionRepository(appContext)
         val target = repository.server(serverId) ?: return false
-        val activeId = ConnectionStore.snapshot()["serverId"] as? String
-        val request = Request(generation.incrementAndGet(), target.id, activeId)
-        latest.set(request)
-        ConnectionStore.transition(ConnectionState.RESTARTING, target.id, target.name)
+        // ConnectionStore may already name a queued replacement. Rollback must
+        // retain the service's real current profile across rapid requests.
+        synchronized(operationLock) {
+            preparingAether?.let { session -> AsyncNativeStop.execute(session::stop) }
+            val activeId = NirangVpnService.activeServerId()
+            val request = Request(generation.incrementAndGet(), target.id, activeId)
+            latest.set(request)
+            ConnectionStore.transition(ConnectionState.RESTARTING, target.id, target.name)
+        }
         if (draining.compareAndSet(false, true)) executor.execute { drain(appContext) }
         return true
     }
 
     /** Cancels queued/in-flight restarts so they cannot revive a manually stopped VPN. */
     fun cancel() {
-        generation.incrementAndGet()
-        latest.set(null)
+        synchronized(operationLock) {
+            generation.incrementAndGet()
+            latest.set(null)
+            preparingAether?.let { session -> AsyncNativeStop.execute(session::stop) }
+        }
     }
 
     internal fun onServiceStopped(generation: Long) {
         stoppedGeneration.accumulateAndGet(generation, ::maxOf)
     }
 
+    internal fun isCurrentGeneration(token: Long): Boolean = generation.get() == token
+
     private fun drain(context: Context) {
         try {
             while (!Thread.currentThread().isInterrupted) {
                 Thread.sleep(COALESCE_DELAY_MS)
-                var request = latest.getAndSet(null) ?: break
+                val request = latest.getAndSet(null) ?: break
                 if (!isCurrent(request)) continue
                 val repository = SubscriptionRepository(context)
-                var target = repository.server(request.serverId)
+                val target = repository.server(request.serverId)
                 if (target == null) {
                     fail(context, "Selected server is no longer available")
                     NirangVpnService.stopPreservingError(context)
                     continue
                 }
 
-                NirangVpnService.stopForRestart(context, request.generation, target.id, target.name)
+                // Reject incompatible native JSON before tearing down a healthy
+                // connection. Native errors are not echoed with raw profile data.
+                try {
+                    ConnectionPreflight.validate(context,target)
+                    target.customProfile?.takeIf { it.engine == "aether" }?.let { profile ->
+                        val preparing=dev.nirang.client.cores.aether.AetherSession(context,onProgress={
+                            check(isCurrent(request)) { "Connection preparation cancelled" }
+                        })
+                        synchronized(operationLock) {
+                            check(isCurrent(request)) { "Connection preparation cancelled" }
+                            preparingAether=preparing
+                        }
+                        try {
+                            check(isCurrent(request)) { "Connection preparation cancelled" }
+                            preparing.prepare(profile.payload,if(dev.nirang.client.xray.XrayCore.isRunning()) 10809 else 0)
+                        } finally {
+                            preparing.stop()
+                            if(preparingAether === preparing) preparingAether=null
+                        }
+                    }
+                } catch (_:Throwable) {
+                    if(!isCurrent(request)) continue
+                    rollbackSelection(repository,request.previousServerId)
+                    val previous=request.previousServerId?.let(repository::server)
+                    if(previous != null && (dev.nirang.client.xray.XrayCore.isRunning() || dev.nirang.client.cores.singbox.NativeSingBox.isRunning())) {
+                        ConnectionStore.transition(ConnectionState.CONNECTED,previous.id,previous.name,"Profile rejected; current connection was retained")
+                    } else fail(context,"Selected profile is not compatible with its Android core")
+                    continue
+                }
+
+                val stopping = synchronized(operationLock) {
+                    if (!isCurrent(request)) false else {
+                        NirangVpnService.stopForRestart(context, request.generation, target.id, target.name)
+                        true
+                    }
+                }
+                if (!stopping) continue
                 if (!waitForStop(request)) {
                     if (!isCurrent(request)) continue
                     NirangVpnService.stopPreservingError(context)
@@ -70,27 +119,35 @@ object VpnRestartCoordinator {
                     continue
                 }
 
-                // Requests received while the old TUN was closing supersede the earlier target.
-                latest.getAndSet(null)?.let { newer ->
-                    request = newer
-                    target = repository.server(newer.serverId)
-                }
+                // A newer target goes through the next iteration's own preflight.
                 if (!isCurrent(request)) continue
-                if (target == null) {
-                    fail(context, "Selected server is no longer available")
-                    NirangVpnService.stopPreservingError(context)
-                    continue
-                }
                 val selectedTarget = target
 
                 Thread.sleep(RESTART_DELAY_MS)
                 if (!isCurrent(request)) continue
-                repository.select(selectedTarget.id)
-                NativeEvents.emit("servers", repository.safeServers())
-                ConnectionStore.transition(ConnectionState.RESTARTING, selectedTarget.id, selectedTarget.name)
-                NirangVpnService.start(context, selectedTarget.id, allowFallback = false)
+                val starting = synchronized(operationLock) {
+                    if (!isCurrent(request)) false else {
+                        repository.select(selectedTarget.id)
+                        NativeEvents.emit("servers", repository.safeServers())
+                        // A synchronous observer may itself cancel or replace the request.
+                        if (!isCurrent(request)) false else {
+                            ConnectionStore.transition(ConnectionState.RESTARTING, selectedTarget.id, selectedTarget.name)
+                            if (!isCurrent(request)) false else {
+                                NirangVpnService.start(context, selectedTarget.id, allowFallback = false)
+                                true
+                            }
+                        }
+                    }
+                }
+                if (!starting) continue
 
-                when (waitForStart(request, selectedTarget.id)) {
+                // Registration was preflighted above. Scan time follows the user's
+                // bounded setting, with the ordinary service-start budget added.
+                val timeout=if(selectedTarget.customProfile?.engine == "aether") {
+                    dev.nirang.client.cores.aether.AetherOptions.parse(selectedTarget.customProfile.payload)
+                        .startupTimeoutSeconds * 1_000L + START_TIMEOUT_MS
+                } else START_TIMEOUT_MS
+                when (waitForStart(request, selectedTarget.id,timeout)) {
                     StartResult.CONNECTED -> SafeLog.info(context, "VPN service restarted")
                     StartResult.FAILED -> rollbackSelection(repository, request.previousServerId)
                     StartResult.CANCELLED -> Unit
@@ -126,8 +183,8 @@ object VpnRestartCoordinator {
         return false
     }
 
-    private fun waitForStart(request: Request, expectedServerId: String): StartResult {
-        val deadline = System.currentTimeMillis() + START_TIMEOUT_MS
+    private fun waitForStart(request: Request, expectedServerId: String, timeoutMillis:Long): StartResult {
+        val deadline = System.currentTimeMillis() + timeoutMillis
         while (System.currentTimeMillis() < deadline) {
             if (!isCurrent(request)) return StartResult.CANCELLED
             val snapshot = ConnectionStore.snapshot()
@@ -143,7 +200,7 @@ object VpnRestartCoordinator {
         return StartResult.TIMED_OUT
     }
 
-    private fun isCurrent(request: Request): Boolean = generation.get() == request.generation
+    private fun isCurrent(request: Request): Boolean = isCurrentGeneration(request.generation)
 
     private fun rollbackSelection(repository: SubscriptionRepository, previousServerId: String?) {
         if (previousServerId != null && repository.server(previousServerId) != null) {

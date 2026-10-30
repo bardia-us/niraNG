@@ -268,6 +268,11 @@ object DeviceRegistrationManager {
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
             setRequestProperty("Accept", "application/json, text/plain")
             setRequestProperty("User-Agent", "niraNG-device-access/${BuildConfig.VERSION_NAME}")
+            // Negotiate representation without adding fields to the deployed
+            // strict device-auth schema. Old API versions safely ignore it.
+            if (payload.optString("action") == "subscription") {
+                setRequestProperty("X-Nira-Profile-Version", "1")
+            }
             if (token != null) setRequestProperty("Authorization", "Bearer $token")
         }
         val cancellation = deadline?.watch(connection)

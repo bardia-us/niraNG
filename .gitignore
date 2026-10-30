@@ -45,3 +45,6 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Rebuilt from pinned source by tool/build_singbox.ps1; provenance stays tracked.
+/android/app/libs/libbox.aar

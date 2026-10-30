@@ -106,6 +106,14 @@ class PingManager(
             acquired = true
             if (generation.get() != expectedGeneration || Thread.currentThread().isInterrupted) return
             val server = repository.server(serverId) ?: return
+            // Full profiles have no single TCP endpoint. Their real-delay path below
+            // starts an independent native session with private loopback listeners.
+            if (tcpOnly && server.customProfile != null) {
+                repository.updatePing(serverId, null, "unavailable")
+                emit(serverId, null, "unavailable")
+                lifecycle.finish(serverId)
+                return
+            }
             if (ServerEligibility.rejectionReason(server) != null) {
                 repository.updatePing(serverId, null, "failed")
                 emit(serverId, null, "failed")
@@ -113,17 +121,27 @@ class PingManager(
                 return
             }
             val delay = runCatching {
+                val cancellation = ProbeCancellation(dev.nirang.client.vpn.AsyncNativeStop::execute)
+                val started = java.util.concurrent.CountDownLatch(if(server.customProfile != null) 1 else 0)
                 val probe = probeExecutor.submit<Long> {
-                    if (tcpOnly) {
+                    try {
+                    if (server.customProfile != null) {
+                        CustomProfileLatencyProbe.measure(context,server.customProfile,TEST_URL,cancellation) { started.countDown() }
+                    } else if (tcpOnly) {
                         TcpLatencyProbe.measure(server.address, server.port)
                     } else {
                         val config = XrayConfigBuilder.buildProbeConfig(server, NativeSettings(context))
                         XrayCore.measureOutboundDelay(config, TEST_URL)
                     }
+                    } finally { started.countDown() }
                 }
                 try {
-                    probe.get(PING_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                    // Waiting for the global native memory budget is queue time,
+                    // not a failed network measurement. Cancellation interrupts this wait.
+                    started.await()
+                    probe.get(if(server.customProfile?.engine == "aether") AETHER_TIMEOUT_SECONDS else PING_TIMEOUT_SECONDS, TimeUnit.SECONDS)
                 } finally {
+                    cancellation.cancel()
                     if (!probe.isDone) probe.cancel(true)
                 }
             }.getOrDefault(-1L)
@@ -154,6 +172,7 @@ class PingManager(
     companion object {
         private const val MAX_CONCURRENCY = 32
         private const val PING_TIMEOUT_SECONDS = 5L
+        private const val AETHER_TIMEOUT_SECONDS = 45L
         private const val TEST_URL = "https://www.google.com/generate_204"
     }
 }

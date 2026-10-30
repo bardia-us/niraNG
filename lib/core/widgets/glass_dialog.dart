@@ -95,6 +95,7 @@ class NirangAlertDialog extends StatelessWidget {
     this.actions = const [],
     this.contentPadding = const EdgeInsets.fromLTRB(22, 14, 22, 8),
     this.scrollContent = true,
+    this.emphasized = false,
   });
 
   final Widget? icon;
@@ -103,6 +104,7 @@ class NirangAlertDialog extends StatelessWidget {
   final List<Widget> actions;
   final EdgeInsetsGeometry contentPadding;
   final bool scrollContent;
+  final bool emphasized;
 
   // Paint the clay INSIDE ButtonStyleButton, using its real input states.
   // An outer decoration is covered by FilledButton's opaque Material and
@@ -153,6 +155,7 @@ class NirangAlertDialog extends StatelessWidget {
       surfaceTintColor: Colors.transparent,
       insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
       child: GlassSurface(
+        emphasized: emphasized,
         messageSurface: true,
         // Spread background lettering, not foreground text. Keep the clear
         // lens/tint/Clay actions and small popover menus' original material.

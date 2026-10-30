@@ -7,7 +7,9 @@ object ServerSelection {
         requiresSwitch: Boolean,
         persist: (String) -> Unit,
         queueSwitch: (String) -> Unit,
+        validateCandidate: () -> Unit = {},
     ) {
+        validateCandidate()
         // Requested configuration and verified live connection are different
         // states. Publish the choice before the restart queue touches Xray.
         persist(id)

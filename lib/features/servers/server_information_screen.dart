@@ -89,7 +89,7 @@ class ServerInformationScreen extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: 12),
-        if (server.profileEditable) ...[
+        if (server.profileEditable && server.profileKind == 'uri') ...[
           FilledButton.tonalIcon(
             key: const ValueKey('edit-server-profile'),
             onPressed: () => Navigator.of(context).push<void>(

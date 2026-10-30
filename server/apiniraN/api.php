@@ -204,7 +204,7 @@ function handle_registration(PDO $pdo, array $payload, int $schema): void
     }
     $android = in_array($schema, [3, 4, 6, 7], true);
     $platform = $android ? 'android' : 'windows';
-    $minimum = registry_minimum_version($pdo, $platform);
+    $minimum = registry_minimum_update_version($pdo, $platform);
     $minimumBuild = $android ? registry_minimum_android_build($pdo) : 0;
     $appBuild = $schema === 7 ? registry_valid_build($payload['app_build'] ?? null) : ($android ? 0 : null);
     if ($schema === 7 && $appBuild === null) respond(422, ['ok' => false, 'error' => 'validation_failed']);
@@ -319,7 +319,7 @@ function authenticate_device(PDO $pdo, array $payload): array
     } else {
         respond(400, ['ok' => false, 'error' => 'unsupported_schema']);
     }
-    $minimum = registry_minimum_version($pdo, $expectedPlatform);
+    $minimum = registry_minimum_update_version($pdo, $expectedPlatform);
     $minimumBuild = $expectedPlatform === 'android' ? registry_minimum_android_build($pdo) : 0;
     $installationId = valid_installation_id($payload['installation_id'] ?? null);
     $deviceKey = valid_device_key($payload['device_key'] ?? null);
@@ -379,7 +379,10 @@ function proxy_subscription(PDO $pdo, array $payload): void
         respond(503, ['ok' => false, 'error' => 'subscription_unavailable']);
     }
     $forwardHeaders = [];
-    $requestHeaders = ['Accept: text/plain, application/json', 'Cache-Control: no-cache'];
+    $requestHeaders = array_merge(
+        ['Accept: text/plain, application/json', 'Cache-Control: no-cache'],
+        registry_profile_capability_request_headers($access['platform'], $_SERVER)
+    );
     $hmacSecret = registry_environment('NIRAN_SUBSCRIPTION_HMAC_SECRET');
     if (is_string($hmacSecret) && strlen($hmacSecret) >= 32) {
         $requestHeaders = array_merge(
@@ -397,7 +400,7 @@ function proxy_subscription(PDO $pdo, array $payload): void
             $parts = explode(':', $line, 2);
             if (count($parts) === 2) {
                 $name = strtolower(trim($parts[0]));
-                if (in_array($name, ['subscription-userinfo', 'etag', 'last-modified'], true)) $forwardHeaders[$name] = trim($parts[1]);
+                if (in_array($name, ['subscription-userinfo', 'etag', 'last-modified', 'x-nira-profile-version'], true)) $forwardHeaders[$name] = trim($parts[1]);
             }
             return strlen($line);
         },

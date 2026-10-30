@@ -1,0 +1,85 @@
+diff --git a/aether/src/https.rs b/aether/src/https.rs
+index 0abe902..020e9c3 100644
+--- a/aether/src/https.rs
++++ b/aether/src/https.rs
+@@ -5,7 +5,7 @@
+ 
+ use std::time::Duration;
+ 
+-use boring::ssl::{ConnectConfiguration, SslConnector, SslMethod};
++use boring::ssl::{ConnectConfiguration, SslConnector, SslMethod, SslVerifyMode};
+ use bytes::Bytes;
+ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+ use tokio::net::TcpStream;
+@@ -162,14 +162,18 @@ async fn exchange(
+ fn configuration(fingerprint: &Fingerprint) -> Result<ConnectConfiguration> {
+     let mut builder =
+         SslConnector::builder(SslMethod::tls()).map_err(|e| AetherError::Tls(e.to_string()))?;
+-    // TLS server-certificate verification disabled (unconditional), as the fingerprint has it:
+-    // the server name may be neither the HTTP host nor the address.
+     fingerprint.apply(&mut builder, ALPN_H2_HTTP1)?;
++    // nira-https-peer-v1: Fingerprint shapes TLS but must not disable authentication for
++    // registration, key enrollment, device refresh or ECH DoH. The app supplies the Android
++    // system CA directory. A certificate/name failure is an error, never an insecure retry.
++    builder.set_default_verify_paths().map_err(|e| AetherError::Tls(e.to_string()))?;
++    builder.set_verify(SslVerifyMode::PEER);
+     let mut config = builder
+         .build()
+         .configure()
+         .map_err(|e| AetherError::Tls(e.to_string()))?;
+     fingerprint.prepare(&mut config, ALPN_H2_HTTP1)?;
++    config.set_verify_hostname(true);
+     Ok(config)
+ }
+ 
+@@ -587,6 +591,50 @@ pub(crate) async fn test_server(
+ mod tests {
+     use super::*;
+ 
++    #[test]
++    fn nira_https_requires_peer_authentication() {
++        let config = configuration(&Fingerprint::default()).expect("HTTPS configuration");
++        assert!(config.verify_mode().contains(boring::ssl::SslVerifyMode::PEER));
++    }
++
++    #[tokio::test]
++    async fn nira_https_rejects_untrusted_api_server_before_body() {
++        let _setting = crate::upstream::hold_setting().await;
++        let (address, listener, acceptor) = test_server(ALPN_H2_HTTP1).await;
++        let served = tokio::spawn(async move {
++            let (socket, _) = listener.accept().await.expect("API connection");
++            assert!(tokio_boring::accept(&acceptor, socket).await.is_err());
++        });
++        let headers = headers();
++        let request = Request { method: "POST", host: "api.devices.cloudflare.com", port: 443,
++            address: Some(("127.0.0.1", address.port())), sni: None,
++            path: "/v0a4471/reg", headers: &headers, body: Some(b"private-registration") };
++        assert!(send(&request, &Fingerprint::default(), None, Duration::from_secs(5)).await.is_err());
++        served.await.expect("untrusted server refused");
++    }
++
++    #[tokio::test]
++    async fn nira_https_checks_hostname_even_with_trusted_certificate() {
++        for hostname_check in [false, true] {
++            let (address, listener, acceptor) = test_server(ALPN_H2_HTTP1).await;
++            let certificate = acceptor.context().certificate().expect("server certificate").to_owned();
++            let served = tokio::spawn(async move {
++                let (socket, _) = listener.accept().await.expect("API connection");
++                let result = tokio_boring::accept(&acceptor, socket).await;
++                assert_eq!(result.is_err(), hostname_check);
++            });
++            let mut config = configuration(&Fingerprint::default()).expect("verified HTTPS");
++            let mut store = boring::x509::store::X509StoreBuilder::new().expect("test trust store");
++            store.add_cert(certificate).expect("trust test certificate");
++            config.set_verify_cert_store(store.build()).expect("set test trust store");
++            if !hostname_check { config.set_verify_hostname(false); }
++            let tcp = TcpStream::connect(address).await.expect("local API connection");
++            let result = tokio_boring::connect(config, "wrong-api.invalid", tcp).await;
++            assert_eq!(result.is_err(), hostname_check);
++            served.await.expect("server completed");
++        }
++    }
++
+     fn headers() -> Vec<(String, String)> {
+         vec![
+             ("Content-Type".to_string(), "application/json".to_string()),

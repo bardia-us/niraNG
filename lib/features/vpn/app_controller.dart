@@ -56,6 +56,11 @@ class AppController extends AsyncNotifier<AppSnapshot> {
   }
 
   AppSnapshot? get _current => state.asData?.value;
+  Future<void> reloadServers() async {
+    final bootstrap=await NirangNative.getBootstrap();
+    final parsed=_parseBootstrap(bootstrap);
+    _set((value)=>value.copyWith(servers:parsed.servers));
+  }
 
   Future<void> refreshPublicIp() =>
       _operationGuard.run('refreshPublicIp', () async {

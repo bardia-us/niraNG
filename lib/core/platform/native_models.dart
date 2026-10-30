@@ -23,6 +23,10 @@ class ServerInfo {
     this.echOutbound = '',
     this.allowInsecure = false,
     this.profileEditable = false,
+    this.profileKind = 'uri',
+    this.engine = 'xray',
+    this.origin = 'subscription',
+    this.psiphonEnabled = false,
     this.credentialLabel = '',
     this.credentialMasked = '',
     this.realityPublicKeyMasked = '',
@@ -47,6 +51,10 @@ class ServerInfo {
     echOutbound: '${map['echOutbound'] ?? ''}',
     allowInsecure: map['allowInsecure'] == true,
     profileEditable: map['profileEditable'] == true,
+    profileKind: '${map['profileKind'] ?? 'uri'}',
+    engine: '${map['engine'] ?? 'xray'}',
+    origin: '${map['origin'] ?? 'subscription'}',
+    psiphonEnabled: map['psiphonEnabled'] == true,
     credentialLabel: '${map['credentialLabel'] ?? ''}',
     credentialMasked: '${map['credentialMasked'] ?? ''}',
     realityPublicKeyMasked: '${map['realityPublicKeyMasked'] ?? ''}',
@@ -67,6 +75,9 @@ class ServerInfo {
   final String fingerprint, cipherSuites, finalMask, alpn;
   final String echConfigList, echOutbound;
   final bool allowInsecure, profileEditable;
+  final String profileKind, engine;
+  final String origin;
+  final bool psiphonEnabled;
   final String credentialLabel;
   final String credentialMasked;
   final String realityPublicKeyMasked;
@@ -97,6 +108,10 @@ class ServerInfo {
     echOutbound: echOutbound,
     allowInsecure: allowInsecure,
     profileEditable: profileEditable,
+    profileKind: profileKind,
+    engine: engine,
+    origin: origin,
+    psiphonEnabled: psiphonEnabled,
     credentialLabel: credentialLabel,
     credentialMasked: credentialMasked,
     realityPublicKeyMasked: realityPublicKeyMasked,

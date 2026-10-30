@@ -5,9 +5,9 @@
 <h1 align="center">niraNG</h1>
 
 <p align="center">
-  کلاینت اندروید Xray با رابط Liquid Glass، اتصال VPN و پراکسی محلی
+  کلاینت اندروید Xray، sing-box و Aether با رابط Liquid Glass، VPN و پراکسی محلی
   <br>
-  An Android Xray client with Liquid Glass UI, VPN and local proxy support
+  An Android Xray, sing-box and Aether client with Liquid Glass UI, VPN and local proxy support
 </p>
 
 <p align="center">
@@ -24,14 +24,14 @@
 
 | نسخه | مناسب برای | دانلود |
 | --- | --- | --- |
-| **Universal** | ARM64، ARM32 و x86-64 در یک فایل | [APK](https://github.com/bardia-us/niraNG/releases/download/v1.2.3/niraNG-v1.2.3-universal.apk) |
-| **arm64-v8a** | بیشتر گوشی‌های جدید با اندروید ۶۴بیتی ARM | [APK](https://github.com/bardia-us/niraNG/releases/download/v1.2.3/niraNG-v1.2.3-arm64-v8a.apk) |
-| **armeabi-v7a** | دستگاه‌های ARM با اندروید ۳۲بیتی | [APK](https://github.com/bardia-us/niraNG/releases/download/v1.2.3/niraNG-v1.2.3-armeabi-v7a.apk) |
-| **x86_64** | دستگاه‌ها و شبیه‌سازهای x86-64؛ نه بیشتر گوشی‌ها | [APK](https://github.com/bardia-us/niraNG/releases/download/v1.2.3/niraNG-v1.2.3-x86_64.apk) |
+| **Universal** | ARM64، ARM32 و x86-64 در یک فایل | [APK](https://github.com/bardia-us/niraNG/releases/download/v1.2.4/niraNG-v1.2.4-universal.apk) |
+| **arm64-v8a** | بیشتر گوشی‌های جدید با اندروید ۶۴بیتی ARM | [APK](https://github.com/bardia-us/niraNG/releases/download/v1.2.4/niraNG-v1.2.4-arm64-v8a.apk) |
+| **armeabi-v7a** | دستگاه‌های ARM با اندروید ۳۲بیتی | [APK](https://github.com/bardia-us/niraNG/releases/download/v1.2.4/niraNG-v1.2.4-armeabi-v7a.apk) |
+| **x86_64** | دستگاه‌ها و شبیه‌سازهای x86-64؛ نه بیشتر گوشی‌ها | [APK](https://github.com/bardia-us/niraNG/releases/download/v1.2.4/niraNG-v1.2.4-x86_64.apk) |
 
 نیازمند **Android 7.0 یا جدیدتر** و یکی از معماری‌های بالا است. Universal به معنی پشتیبانی از تمام نسخه‌ها و دستگاه‌های اندروید نیست.
 
-لینک‌های جدول مربوط به **v1.2.3** هستند؛ برای انتشارهای بعدی همیشه [صفحهٔ آخرین نسخه](https://github.com/bardia-us/niraNG/releases/latest) را بررسی کنید. [تغییرات فارسی و انگلیسی این نسخه](assets/release_notes/1.2.3.md)
+لینک‌های جدول مربوط به **v1.2.4** هستند؛ برای انتشارهای بعدی همیشه [صفحهٔ آخرین نسخه](https://github.com/bardia-us/niraNG/releases/latest) را بررسی کنید. [تغییرات فارسی و انگلیسی این نسخه](assets/release_notes/1.2.4.md)
 
 ## نسخهٔ ویندوز: niraN
 
@@ -48,7 +48,9 @@
 
 - **اتصال و مدیریت سرورها:** Xray-core، پروتکل‌های VLESS، VMess و Trojan، تست TCP و تأخیر واقعی، مرتب‌سازی و تعویض سرور.
 - **VPN و پراکسی محلی:** حالت VPN و Proxy-only، با SOCKS محلی روی پورت پیش‌فرض `10808`.
-- **اشتراک:** دریافت و به‌روزرسانی اشتراک مدیریت‌شده، نمایش مصرف و مقدار باقی‌مانده.
+- **اشتراک و JSON:** لینک‌های معمولی و JSON کامل Xray و sing-box کنار هم؛ JSON مسیریابی و DNS خودش را حفظ می‌کند.
+- **اتر و سایفون:** پروفایل شخصی MASQUE، وارپ/WireGuard و WireGuard روی MASQUE، زنجیرهٔ اختیاری سایفون، انتخاب کشور و تنظیمات ساده/پیشرفته. اتر به اندروید ۱۰ به بالا نیاز دارد.
+- **پینگ و مصرف:** پینگ واقعی برای JSON و اتر؛ ثبت مصرف JSON کامل Xray بدون دوباره‌شماری خروجی‌های زنجیره‌ای. مصرف اندازه‌گیری‌شده با سهمیهٔ سرویس‌دهنده یکسان نیست.
 - **شبکه و TLS:** تنظیمات DNS و Routing، بای‌پس شبکهٔ محلی و تنظیمات CDN/TLS، شامل pin گواهی SHA-256، ECH و خروجی کمکی ECH resolver.
 - **ترافیک Home:** جمع ارسال و دریافت اندازه‌گیری‌شدهٔ امروز و ماه جاری؛ مستقل از سهمیهٔ سرویس‌دهنده.
 - **ظاهر و حرکت:** Liquid Glass، انیمیشن‌های نرم، تم روشن/تاریک، رنگ‌های مختلف و بازخورد صدا یا لرزش.
@@ -62,7 +64,7 @@
 3. پس از تأیید دسترسی، یک سرور انتخاب کنید و **Connect** را بزنید. در حالت VPN، درخواست مجوز VPN اندروید را تأیید کنید.
 4. اگر حرکت صفحه‌ها روی گوشی سنگین است، **Performance Mode** را از تنظیمات روشن کنید.
 
-این برنامه برای اشتراک مدیریت‌شده طراحی شده و واردکردن یا اشتراک‌گذاری کانفیگ خام را ارائه نمی‌کند. لینک تلگرام برنامه از داخل تنظیمات در دسترس است.
+اشتراک‌های مدیریت‌شده می‌توانند لینک معمولی، JSON کامل و پروفایل اتر داشته باشند. پروفایل‌های شخصی اتر از بخش جداگانهٔ Aether ساخته می‌شوند. لینک تلگرام برنامه از داخل تنظیمات در دسترس است.
 
 ## چند نکتهٔ کاربردی
 
@@ -74,7 +76,7 @@
 
 ## English
 
-**niraNG** is the Android app in the niraN family. It combines Xray connectivity with a Liquid Glass interface, light/dark themes and a lightweight Performance Mode.
+**niraNG** is the Android app in the niraN family. It combines Xray, sing-box and Aether connectivity with a Liquid Glass interface, light/dark themes and a lightweight Performance Mode.
 
 ### Download
 
@@ -88,12 +90,17 @@
 
 VLESS, VMess and Trojan through Xray; VPN and local SOCKS proxy; managed subscriptions and usage information; latency testing and sorting; DNS/routing and CDN/TLS settings; Persian/English UI; sound/haptic feedback; selectable logs.
 
-Version **1.2.3** adds daily/monthly measured traffic, SHA-256 certificate pinning and ECH resolver outbound editing, with lighter decorative controls and refined optical glass. See the [bilingual release notes](assets/release_notes/1.2.3.md). Measured traffic is not provider quota usage; 120 FPS is not guaranteed on every device.
+Version **1.2.4** adds full Xray/sing-box JSON subscriptions, personal Aether profiles with optional Psiphon, real JSON/Aether latency probes, and full-Xray JSON traffic accounting. It improves connection cancellation, restarts and server controls while retaining TLS verification and the existing Xray core. Aether requires Android **10+**. See the [bilingual release notes](assets/release_notes/1.2.4.md). Measured traffic is not provider quota usage; historic gaps remain partial and 120 FPS is not guaranteed on every device.
 
 Install updates **over the existing app** to keep your settings. Select a server, tap **Connect**, and approve Android's VPN permission when using VPN mode. Enable **Performance Mode** for a simpler, matte interface without glass shaders or blur.
 
-The app uses managed subscriptions and does not offer raw configuration import or sharing. Report issues with your device model, Android/app versions and reproduction steps; never include credentials or private subscription links.
+Managed subscriptions support ordinary links, full JSON and Aether profiles. Personal Aether presets can be created separately with simple or advanced settings. Report issues with your device model, Android/app versions and reproduction steps; never include credentials or private subscription links.
 
 ---
 
 مجوزها و اطلاعیه‌های اجزای ثالث · [Third-party notices](THIRD_PARTY_NOTICES.md)
+
+
+## ساخت از سورس · Build from source
+
+Flutter and Android SDK/NDK are required. Xray and Aether/Psiphon runtime inputs are retained with provenance and licenses. The generated sing-box AAR is not tracked: build it first with `tool/build_singbox.ps1`, then use `tool/build_release.ps1` for the three ABI APKs and Universal. See [sing-box source/build metadata](android/app/libs/libbox-build.json), [Aether runtime](tool/AETHER_RUNTIME.md), and [Xray telemetry rebuild](tool/XRAY_TRAFFIC.md). Release signing credentials are private and are not included.

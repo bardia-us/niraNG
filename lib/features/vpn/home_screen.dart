@@ -112,6 +112,18 @@ class _ConnectionCard extends StatelessWidget {
     final statusColor = _statusColor(context, connection.state);
     final countryCode = connection.publicCountry?.trim().toUpperCase();
     final publicIp = connection.publicIp;
+    final isPsiphon =
+        selected?.profileKind == 'aether' && selected!.psiphonEnabled;
+    final observedCountry =
+        connection.isConnected &&
+            connection.serverId == selected?.id &&
+            connection.publicIpChecked &&
+            publicIp != null &&
+            publicIp.isNotEmpty &&
+            countryCode != null &&
+            RegExp(r'^[A-Z]{2}$').hasMatch(countryCode)
+        ? countryCode
+        : '';
     final publicIpValue = publicIp == null
         ? (connection.isConnected && !connection.publicIpChecked
               ? context.s('checking')
@@ -188,7 +200,7 @@ class _ConnectionCard extends StatelessWidget {
             Row(
               children: [
                 CountryFlagBadge(
-                  countryCode: selected.country,
+                  countryCode: isPsiphon ? observedCountry : selected.country,
                   width: 31,
                   height: 23,
                 ),
@@ -266,11 +278,12 @@ class _ConnectionAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final canCancel = connection.isBusy && connection.state != 'stopping';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
         LiquidConnectButton(
-          onPressed: connection.isConnected
+          onPressed: connection.isConnected || canCancel
               ? () => _perform(context, controller.disconnect)
               : connection.canConnect
               ? () => _perform(context, controller.connect)
@@ -286,6 +299,8 @@ class _ConnectionAction extends StatelessWidget {
           label: context.s(
             connection.isConnected
                 ? 'disconnect'
+                : canCancel
+                ? 'cancel'
                 : connection.isBusy
                 ? connection.state
                 : 'connect',

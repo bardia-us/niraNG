@@ -1,0 +1,100 @@
+{
+  "verifiedAtUtc": "2026-10-29T21:50:05.839848+00:00",
+  "manifestSha256": "0991b7c3e1722a20413d44bdf1e5a81509cb21561ab1ba13aebea2365e0fe130",
+  "securityPatch": "nira-https-peer-v1",
+  "securityPatchSha256": "3e1f47b043472da7286981ea8c3ab5d2d44ee88de663f8ffe0a4abb9fe0e36ca",
+  "aetherCommit": "d58f9d568083129ce2c767c85054021eb3ee6a38",
+  "psiphonCommit": "83aa73b9b982e7421e00117f5b0c5aceb5dda452",
+  "packagedArtifacts": {
+    "arm64-v8a": {
+      "aether": {
+        "sha256": "2d320874c53df78b896a4a04dc61b223c0ecda496e8aa94675dc9dc8a65931a6",
+        "bytes": 9944720,
+        "loadAlignments": [
+          16384,
+          16384,
+          16384,
+          16384
+        ]
+      },
+      "psiphon": {
+        "sha256": "7cab04ebf82ceed76ae53b99c306db26233b80825b930e2e7288f07a4087387a",
+        "bytes": 20906146,
+        "loadAlignments": [
+          65536,
+          65536,
+          65536
+        ]
+      }
+    },
+    "armeabi-v7a": {
+      "aether": {
+        "sha256": "3f7a66023e83e6d4deafcb6f99c6b07f1552dde7718f62bc45df12f8bbd36053",
+        "bytes": 6693688,
+        "loadAlignments": [
+          16384,
+          16384,
+          16384,
+          16384
+        ]
+      },
+      "psiphon": {
+        "sha256": "719bf754d197ecb2b320e6251ace79109dc1972c6675206950bf8cb5a55f03ca",
+        "bytes": 21299362,
+        "loadAlignments": [
+          65536,
+          65536,
+          65536
+        ]
+      }
+    },
+    "x86_64": {
+      "aether": {
+        "sha256": "c0c71ca5adb1aaf859319d5d7506cec25b48c51abc6f6a5fee1082c622f0053b",
+        "bytes": 11232608,
+        "loadAlignments": [
+          16384,
+          16384,
+          16384,
+          16384
+        ]
+      },
+      "psiphon": {
+        "sha256": "0ffe5cf61bb12bf14310c1dd24ba6af0b15475baf52291121af793508129484f",
+        "bytes": 22528162,
+        "loadAlignments": [
+          4096,
+          4096,
+          4096
+        ]
+      }
+    }
+  },
+  "x86_64Psiphon16KiBCandidate": {
+    "sha256": "03a604a0aeb11e15597d58dcca347be1d9c8354934368144654be3b90535e0ea",
+    "bytes": 22544546,
+    "loadAlignments": [
+      16384,
+      16384,
+      16384
+    ],
+    "path": "build\\aether-upstream\\psiphon-built\\x86_64\\psiphon-tunnel-core",
+    "staged": false,
+    "sourceRevision": "83aa73b9b982e7421e00117f5b0c5aceb5dda452",
+    "sourceModified": false
+  },
+  "evidence": {
+    "nativeTlsLog": "build/aether-upstream/native-green.log",
+    "nativeTlsTestsPassed": 3,
+    "hostPolicyTestsPassed": 13,
+    "nativeBuildLog": "build/aether-upstream/android-all.log",
+    "psiphonCandidateBuildLog": "build/aether-upstream/psiphon-x86_64.log",
+    "abiSelector": "Process.is64Bit + matching SUPPORTED_32_BIT_ABIS/SUPPORTED_64_BIT_ABIS; 32-on-64 regression covered",
+    "serverEntriesCount": 429
+  },
+  "frozen": true,
+  "remaining": [
+    "Optional: promote already built 16KiB x86_64 Psiphon candidate, update staging/provenance and reverify before claiming x86_64 16KiB support",
+    "Device traffic and lifecycle checks are separate; no live tunnel success claimed here"
+  ]
+}

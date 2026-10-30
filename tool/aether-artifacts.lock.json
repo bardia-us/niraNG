@@ -1,0 +1,26 @@
+{
+  "aetherCommit": "d58f9d568083129ce2c767c85054021eb3ee6a38",
+  "psiphonCommit": "83aa73b9b982e7421e00117f5b0c5aceb5dda452",
+  "psiphonSource": "https://github.com/CluvexStudio/psiphon-tunnel-core",
+  "abis": {
+    "arm64-v8a": {
+      "archiveSha256": "2857c8ec11090bacb40c94dc1126af1abb59d8270e86992fc239affb61dd2f48",
+      "psiphonSha256": "7cab04ebf82ceed76ae53b99c306db26233b80825b930e2e7288f07a4087387a",
+      "archiveUrl": "https://github.com/patterniha/Aether/releases/download/v2.4.0/aether-android-arm64.tar.gz"
+    },
+    "armeabi-v7a": {
+      "archiveSha256": "d3d37017151c482e04eab857f87e212ba39eb6f5694f31f6e307d1d2e987b75b",
+      "psiphonSha256": "719bf754d197ecb2b320e6251ace79109dc1972c6675206950bf8cb5a55f03ca",
+      "archiveUrl": "https://github.com/patterniha/Aether/releases/download/v2.4.0/aether-android-armv7.tar.gz"
+    },
+    "x86_64": {
+      "archiveSha256": "7ec197b85d157e4c38e68d181c28bd15d4f02e59f23fcf508d4b92e14e7d7bca",
+      "psiphonSha256": "0ffe5cf61bb12bf14310c1dd24ba6af0b15475baf52291121af793508129484f",
+      "archiveUrl": "https://github.com/patterniha/Aether/releases/download/v2.4.0/aether-android-x86_64.tar.gz"
+    }
+  },
+  "serverEntriesSha256": "7a33b4b814df670bec3765989010230a90fd0a37a1672f4138f26166f8420f1c",
+  "serverEntriesCount": 429,
+  "serverEntriesSource": "https://s3.amazonaws.com//psiphon/web/mjr4-p23r-puwl/server_list_compressed",
+  "signedPackageSha256": "a806792f312e6e83b80bf1ddee4f1c23fcb107eb2fa4ff641c5b8fc987eeebf7"
+}

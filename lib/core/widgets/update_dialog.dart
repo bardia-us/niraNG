@@ -325,6 +325,7 @@ class _UpdateDownloadDialogState extends State<_UpdateDownloadDialog> {
     return PopScope(
       canPop: !widget.mandatory,
       child: NirangAlertDialog(
+        emphasized: true,
         icon: Icon(
           d.failed
               ? Icons.error_outline

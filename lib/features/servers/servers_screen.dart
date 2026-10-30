@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -12,6 +13,8 @@ import '../../core/platform/native_models.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/user_facing_error.dart';
 import '../../core/widgets/country_flag_badge.dart';
+import '../../core/widgets/psiphon_brand_icon.dart';
+import '../../core/widgets/clay_surface.dart';
 import '../../core/widgets/server_name_text.dart';
 import '../../core/widgets/glass_surface.dart';
 import '../../core/widgets/glass_dialog.dart';
@@ -23,6 +26,10 @@ import '../../core/widgets/live_liquid_glass.dart';
 import '../../core/widgets/menu_activity.dart';
 import '../vpn/app_controller.dart';
 import 'server_information_screen.dart';
+import 'aether_profile_screen.dart';
+
+String _profileText(BuildContext context, String en, String fa) =>
+    Localizations.localeOf(context).languageCode == 'fa' ? fa : en;
 
 class ServersScreen extends ConsumerStatefulWidget {
   const ServersScreen({super.key, this.liveHeaderBackdrop = false});
@@ -34,7 +41,7 @@ class ServersScreen extends ConsumerStatefulWidget {
 }
 
 class _ServersScreenState extends ConsumerState<ServersScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   final _headerKey = GlobalKey();
   final _scrollController = ScrollController();
   // Header 4.5 and its independent button 2.4 share the raw input, not optics.
@@ -43,6 +50,20 @@ class _ServersScreenState extends ConsumerState<ServersScreen>
     regionalBlurSigmas: const [4.5, 2.4],
   );
   bool _reordering = false;
+  bool _subscriptionExpanded = true;
+  bool _aetherExpanded = true;
+  late final _subscriptionExpansion = AnimationController(
+    vsync: this,
+    value: 1,
+    duration: const Duration(milliseconds: 320),
+  );
+  late final _aetherExpansion = AnimationController(
+    vsync: this,
+    value: 1,
+    duration: const Duration(milliseconds: 320),
+  );
+  AnimationController? _revealing;
+  double _revealStart = 0, _revealTarget = 0;
   String? _draggingId;
   int? _reorderPointer;
   final _rowPointers = <String, int>{};
@@ -63,6 +84,74 @@ class _ServersScreenState extends ConsumerState<ServersScreen>
   void initState() {
     super.initState();
     liveGlassReadyListenable.addListener(_opticsReadyChanged);
+    _subscriptionExpansion.addListener(_groupFrame);
+    _aetherExpansion.addListener(_groupFrame);
+  }
+
+  void _groupFrame() {
+    if (!mounted) return;
+    setState(() {});
+    _listSource.invalidate();
+    final animation = _revealing;
+    if (animation == null) return;
+    final desired = ui.lerpDouble(
+      _revealStart,
+      _revealTarget,
+      Curves.easeInOutCubic.transform(animation.value),
+    )!;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients || _reordering) return;
+      _scrollController.jumpTo(
+        desired.clamp(0.0, _scrollController.position.maxScrollExtent),
+      );
+    });
+    if (animation.isCompleted) _revealing = null;
+  }
+
+  void _toggleGroup(bool aether, int count) {
+    if (_reordering) return;
+    final animation = aether ? _aetherExpansion : _subscriptionExpansion;
+    final opening = aether ? !_aetherExpanded : !_subscriptionExpanded;
+    _revealing = null;
+    if (opening && _scrollController.hasClients) {
+      final subscriptionCount =
+          ref
+              .read(appControllerProvider)
+              .asData
+              ?.value
+              .servers
+              .where((s) => s.profileKind != 'aether')
+              .length ??
+          0;
+      final headerTop =
+          MediaQuery.paddingOf(context).top +
+          80 +
+          (aether
+              ? serverRowExtent +
+                    subscriptionCount *
+                        serverRowExtent *
+                        Curves.easeInOutCubic.transform(
+                          _subscriptionExpansion.value,
+                        )
+              : 0);
+      _revealStart = _scrollController.offset;
+      _revealTarget = math.max(
+        _revealStart,
+        headerTop +
+            serverRowExtent * (1 + math.min(count, 3)) +
+            24 -
+            _scrollController.position.viewportDimension,
+      );
+      if (_revealTarget > _revealStart) _revealing = animation;
+    }
+    setState(() {
+      if (aether) {
+        _aetherExpanded = opening;
+      } else {
+        _subscriptionExpanded = opening;
+      }
+    });
+    opening ? animation.forward() : animation.reverse();
   }
 
   void _opticsReadyChanged() {
@@ -108,11 +197,18 @@ class _ServersScreenState extends ConsumerState<ServersScreen>
           icon: Icons.network_ping_rounded,
           enabled: !isPinging,
         ),
-        LiquidActionItem(
-          value: 'info',
-          label: context.s('serverInformation'),
-          icon: Icons.info_outline_rounded,
-        ),
+        if (server.profileKind == 'aether')
+          LiquidActionItem(
+            value: 'aether',
+            label: _profileText(context, 'Aether settings', 'تنظیمات Aether'),
+            icon: Icons.tune_rounded,
+          ),
+        if (server.profileKind != 'aether')
+          LiquidActionItem(
+            value: 'info',
+            label: context.s('serverInformation'),
+            icon: Icons.info_outline_rounded,
+          ),
         LiquidActionItem(
           value: 'delete',
           label: context.s('delete'),
@@ -144,6 +240,8 @@ class _ServersScreenState extends ConsumerState<ServersScreen>
     for (final link in links) {
       link.dispose();
     }
+    _subscriptionExpansion.dispose();
+    _aetherExpansion.dispose();
     _reorderPulse.dispose();
     _scrollController.dispose();
     liveGlassReadyListenable.removeListener(_opticsReadyChanged);
@@ -184,47 +282,86 @@ class _ServersScreenState extends ConsumerState<ServersScreen>
         widget.liveHeaderBackdrop &&
         ui.ImageFilter.isShaderFilterSupported;
     const headerHeight = 64.0;
+    // Header slots share the existing fixed geometry with the optical stage.
+    // Collapsing removes both the cards and their controls from that geometry.
+    final subscription = app.servers
+        .where((s) => s.profileKind != 'aether')
+        .toList();
+    final aether = app.servers.where((s) => s.profileKind == 'aether').toList();
+    final subscriptionFactor = Curves.easeInOutCubic.transform(
+      _subscriptionExpansion.value,
+    );
+    final aetherFactor = Curves.easeInOutCubic.transform(
+      _aetherExpansion.value,
+    );
+    final entries = <ServerInfo?>[];
+    final rowExtents = <double>[];
+    // Reveal a normal-height prefix and one partial tail, rather than crushing
+    // every row toward zero height. Near zero the latter mounts an entire large
+    // subscription in one viewport, defeating sliver laziness during animation.
+    void appendGroup(List<ServerInfo> rows, double factor) {
+      entries.add(null);
+      rowExtents.add(serverRowExtent);
+      final revealedRows = rows.length * factor;
+      final count = revealedRows.ceil().clamp(0, rows.length);
+      for (var index = 0; index < count; index++) {
+        entries.add(rows[index]);
+        rowExtents.add(
+          serverRowExtent * (revealedRows - index).clamp(0.0, 1.0),
+        );
+      }
+    }
+
+    appendGroup(subscription, subscriptionFactor);
+    final aetherHeaderIndex = entries.length;
+    appendGroup(aether, aetherFactor);
+    final animatingGroups =
+        _subscriptionExpansion.isAnimating || _aetherExpansion.isAnimating;
     final chromeTop = MediaQuery.paddingOf(context).top;
     final rowOptical = optical;
+    final knownServerIds = {for (final server in app.servers) server.id};
     _rowLinks.removeWhere((id, link) {
-      if (app.servers.any((server) => server.id == id)) return false;
+      if (knownServerIds.contains(id)) return false;
       link.dispose();
       return true;
     });
-    _rowMenuKeys.removeWhere(
-      (id, _) => !app.servers.any((server) => server.id == id),
-    );
-    _rowPointers.removeWhere(
-      (id, _) => !app.servers.any((server) => server.id == id),
-    );
+    _rowMenuKeys.removeWhere((id, _) => !knownServerIds.contains(id));
+    _rowPointers.removeWhere((id, _) => !knownServerIds.contains(id));
     for (final server in app.servers) {
       _rowLinks.putIfAbsent(server.id, OpticalRowLink.new);
       _rowMenuKeys.putIfAbsent(server.id, GlobalKey.new);
     }
     final rowControls = rowOptical
         ? <Widget>[
-            for (final server in app.servers)
-              KeyedSubtree(
-                key: ValueKey(server.id),
-                child: _draggingId == server.id
-                    ? const SizedBox.square(dimension: 44)
-                    : OpticalControlFollow(
-                        link: _rowLinks[server.id]!,
-                        enabled: _reordering,
-                        motion: _reorderPulse,
-                        // Keep free overflow above adjacent cards, but retain the
-                        // static decorative paint while its outer position changes.
-                        child: OpticalPaintObserver(
-                          onPaint: _listSource.invalidate,
-                          child: _rowControl(
-                            context,
-                            controller,
-                            server,
-                            isPinging: app.isPinging,
+            for (var slot = 0; slot < entries.length; slot++)
+              if (entries[slot] == null)
+                SizedBox(key: ValueKey('server-group-control-$slot'))
+              else ...[
+                for (final server in [entries[slot]!])
+                  KeyedSubtree(
+                    key: ValueKey(server.id),
+                    child: _draggingId == server.id
+                        ? const SizedBox.square(dimension: 44)
+                        : OpticalControlFollow(
+                            link: _rowLinks[server.id]!,
+                            enabled: _reordering,
+                            motion: _reorderPulse,
+                            // Keep free overflow above adjacent cards, but retain the
+                            // static decorative paint while its outer position changes.
+                            child: OpticalPaintObserver(
+                              onPaint: _listSource.invalidate,
+                              child: Builder(
+                                builder: (context) => _rowControl(
+                                  context,
+                                  controller,
+                                  server,
+                                  isPinging: app.isPinging,
+                                ),
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-              ),
+                  ),
+              ],
           ]
         : const <Widget>[];
     final backdrop = Stack(
@@ -241,284 +378,366 @@ class _ServersScreenState extends ConsumerState<ServersScreen>
                           Theme.of(context),
                           reducedEffects: view.performanceMode,
                         ),
-                        child: app.servers.isEmpty
-                            ? Padding(
-                                padding: EdgeInsets.only(
-                                  top: chromeTop + headerHeight + 10,
-                                ),
-                                child: _EmptyServers(app: app),
-                              )
-                            : Builder(
-                                // The moving proxy must stay inside the list's
-                                // capture boundary. A route-root proxy required a
-                                // replacement lens and changed the entire matte
-                                // membership at drag start/drop.
-                                builder: (context) => ReorderableListView.builder(
-                                  scrollController: _scrollController,
-                                  itemExtent: serverRowExtent,
-                                  onReorderStart: (index) {
-                                    setState(() {
-                                      _reordering = true;
-                                      _draggingId = app.servers[index].id;
-                                      _reorderPointer =
-                                          _rowPointers[_draggingId];
-                                    });
-                                    if (optical) _reorderPulse.repeat();
-                                  },
-                                  scrollCacheExtent:
-                                      const ScrollCacheExtent.pixels(360),
-                                  buildDefaultDragHandles: false,
-                                  itemCount: app.servers.length,
-                                  padding: EdgeInsets.fromLTRB(
-                                    8,
-                                    chromeTop + headerHeight + 16,
-                                    8,
-                                    MediaQuery.paddingOf(context).bottom + 16,
+                        child: Builder(
+                          // The moving proxy must stay inside the list's
+                          // capture boundary. A route-root proxy required a
+                          // replacement lens and changed the entire matte
+                          // membership at drag start/drop.
+                          builder: (context) => ReorderableListView.builder(
+                            scrollController: _scrollController,
+                            itemExtent: animatingGroups
+                                ? null
+                                : serverRowExtent,
+                            itemExtentBuilder: animatingGroups
+                                ? (index, _) => rowExtents[index]
+                                : null,
+                            dragBoundaryProvider: (listContext) =>
+                                _ServerGroupDragBoundary(() {
+                                  final box =
+                                      context.findRenderObject()! as RenderBox;
+                                  final origin = box.localToGlobal(Offset.zero);
+                                  final isAether = aether.any(
+                                    (s) => s.id == _draggingId,
+                                  );
+                                  final first = isAether
+                                      ? aetherHeaderIndex + 1
+                                      : 1;
+                                  final end = isAether
+                                      ? entries.length
+                                      : aetherHeaderIndex;
+                                  final offset = _scrollController.hasClients
+                                      ? _scrollController.offset
+                                      : 0.0;
+                                  final top =
+                                      origin.dy +
+                                      chromeTop +
+                                      headerHeight +
+                                      16 -
+                                      offset +
+                                      rowExtents
+                                          .take(first)
+                                          .fold(0.0, (a, b) => a + b);
+                                  final height = rowExtents
+                                      .skip(first)
+                                      .take(end - first)
+                                      .fold(0.0, (a, b) => a + b);
+                                  return Rect.fromLTWH(
+                                    origin.dx + 8,
+                                    top,
+                                    box.size.width - 16,
+                                    math.max(serverRowExtent, height),
+                                  );
+                                }),
+                            onReorderStart: (index) {
+                              setState(() {
+                                _reordering = true;
+                                _draggingId = entries[index]?.id;
+                                _reorderPointer = _rowPointers[_draggingId];
+                              });
+                              if (optical) _reorderPulse.repeat();
+                            },
+                            scrollCacheExtent: const ScrollCacheExtent.pixels(
+                              360,
+                            ),
+                            buildDefaultDragHandles: false,
+                            itemCount: entries.length,
+                            padding: EdgeInsets.fromLTRB(
+                              8,
+                              chromeTop + headerHeight + 16,
+                              8,
+                              MediaQuery.paddingOf(context).bottom + 16,
+                            ),
+                            onReorderItem: (oldIndex, newIndex) {
+                              final moving = entries[oldIndex];
+                              final target = entries[newIndex];
+                              if (moving == null ||
+                                  target == null ||
+                                  (moving.profileKind == 'aether') !=
+                                      (target.profileKind == 'aether')) {
+                                return;
+                              }
+                              final sourceIndex = app.servers.indexOf(moving);
+                              final targetIndex = app.servers.indexOf(target);
+                              unawaited(
+                                _perform(
+                                  context,
+                                  () => controller.reorderServers(
+                                    sourceIndex,
+                                    targetIndex > sourceIndex
+                                        ? targetIndex + 1
+                                        : targetIndex,
                                   ),
-                                  onReorderItem: (oldIndex, newIndex) {
-                                    unawaited(
-                                      _perform(
-                                        context,
-                                        () => controller.reorderServers(
-                                          oldIndex,
-                                          newIndex > oldIndex
-                                              ? newIndex + 1
-                                              : newIndex,
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                  proxyDecorator: (child, index, animation) =>
-                                      _ReorderProxyLifetime(
-                                        animation: animation,
-                                        onRemoved: _finishReorder,
-                                        child: _ReorderMenuScope(
-                                          child: view.performanceMode
-                                              ? child
-                                              : AnimatedBuilder(
-                                                  animation: animation,
-                                                  builder: (context, _) {
-                                                    final pressed = Curves
-                                                        .easeOutCubic
-                                                        .transform(
-                                                          animation.value,
-                                                        );
-                                                    return Transform.translate(
-                                                      offset: Offset(
-                                                        0,
-                                                        pressed * 2,
-                                                      ),
-                                                      child: Transform.scale(
-                                                        scale:
-                                                            1 -
-                                                            (pressed * .015),
-                                                        child: child,
-                                                      ),
-                                                    );
-                                                  },
+                                ),
+                              );
+                            },
+                            proxyDecorator: (child, index, animation) =>
+                                _ReorderProxyLifetime(
+                                  animation: animation,
+                                  onRemoved: _finishReorder,
+                                  child: _ReorderMenuScope(
+                                    child: view.performanceMode
+                                        ? child
+                                        : AnimatedBuilder(
+                                            animation: animation,
+                                            builder: (context, _) {
+                                              final pressed = Curves
+                                                  .easeOutCubic
+                                                  .transform(animation.value);
+                                              return Transform.translate(
+                                                offset: Offset(0, pressed * 2),
+                                                child: Transform.scale(
+                                                  scale: 1 - (pressed * .015),
+                                                  child: child,
                                                 ),
-                                        ),
-                                      ),
-                                  itemBuilder: (context, index) {
-                                    final server = app.servers[index];
-                                    return Padding(
-                                      key: ValueKey(server.id),
-                                      padding: const EdgeInsets.only(bottom: 5),
-                                      child: OpticalPaintObserver(
-                                        onPaint: _listSource.invalidate,
-                                        child: ReorderableDelayedDragStartListener(
-                                          index: index,
-                                          child: _PressScale(
-                                            enabled: !view.performanceMode,
-                                            onPointerStarted: (pointer) =>
-                                                _rowPointers[server.id] =
-                                                    pointer,
-                                            onMotion: (active) =>
-                                                _rowPressedMotion(
-                                                  server.id,
-                                                  active,
-                                                ),
-                                            child: AnimatedContainer(
-                                              duration: Duration(
-                                                milliseconds:
-                                                    view.performanceMode
-                                                    ? 85
-                                                    : 140,
+                                              );
+                                            },
+                                          ),
+                                  ),
+                                ),
+                            itemBuilder: (context, index) {
+                              if (entries[index] == null) {
+                                final isAether = index == aetherHeaderIndex;
+                                return _groupHeader(
+                                  context,
+                                  isAether,
+                                  isAether
+                                      ? aether.length
+                                      : subscription.length,
+                                );
+                              }
+                              final server = entries[index]!;
+                              return ClipRect(
+                                key: ValueKey(server.id),
+                                clipBehavior:
+                                    rowExtents[index] < serverRowExtent
+                                    ? Clip.hardEdge
+                                    : Clip.none,
+                                child: OverflowBox(
+                                  alignment: Alignment.topCenter,
+                                  minHeight: serverRowExtent,
+                                  maxHeight: serverRowExtent,
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(bottom: 5),
+                                    child: OpticalPaintObserver(
+                                      onPaint: _listSource.invalidate,
+                                      child: ReorderableDelayedDragStartListener(
+                                        index: index,
+                                        enabled: !animatingGroups,
+                                        child: _PressScale(
+                                          enabled: !view.performanceMode,
+                                          onPointerStarted: (pointer) =>
+                                              _rowPointers[server.id] = pointer,
+                                          onMotion: (active) =>
+                                              _rowPressedMotion(
+                                                server.id,
+                                                active,
                                               ),
-                                              curve: Curves.easeOutCubic,
-                                              decoration: BoxDecoration(
+                                          child: AnimatedContainer(
+                                            duration: Duration(
+                                              milliseconds: view.performanceMode
+                                                  ? 85
+                                                  : 140,
+                                            ),
+                                            curve: Curves.easeOutCubic,
+                                            decoration: BoxDecoration(
+                                              color: server.selected
+                                                  ? Theme.of(context)
+                                                        .colorScheme
+                                                        .primaryContainer
+                                                        .withValues(alpha: .26)
+                                                  : Theme.of(context)
+                                                        .colorScheme
+                                                        .surfaceContainerLow
+                                                        .withValues(alpha: .42),
+                                              borderRadius:
+                                                  BorderRadius.circular(26),
+                                              border: Border.all(
                                                 color: server.selected
                                                     ? Theme.of(context)
                                                           .colorScheme
-                                                          .primaryContainer
+                                                          .primary
                                                           .withValues(
-                                                            alpha: .26,
+                                                            alpha: .28,
                                                           )
                                                     : Theme.of(context)
                                                           .colorScheme
-                                                          .surfaceContainerLow
+                                                          .outlineVariant
                                                           .withValues(
-                                                            alpha: .42,
+                                                            alpha: .22,
                                                           ),
-                                                borderRadius:
-                                                    BorderRadius.circular(13),
-                                                border: Border.all(
-                                                  color: server.selected
-                                                      ? Theme.of(context)
-                                                            .colorScheme
-                                                            .primary
-                                                            .withValues(
-                                                              alpha: .28,
-                                                            )
-                                                      : Theme.of(context)
-                                                            .colorScheme
-                                                            .outlineVariant
-                                                            .withValues(
-                                                              alpha: .22,
-                                                            ),
-                                                ),
                                               ),
-                                              child: ClipRRect(
-                                                borderRadius:
-                                                    BorderRadius.circular(13),
-                                                child: Material(
-                                                  type:
-                                                      MaterialType.transparency,
-                                                  child: ListTile(
-                                                    minLeadingWidth: 26,
-                                                    horizontalTitleGap: 12,
-                                                    contentPadding:
-                                                        const EdgeInsets.symmetric(
-                                                          horizontal: 12,
-                                                          vertical: 1,
-                                                        ),
-                                                    splashColor:
-                                                        Theme.of(context)
-                                                            .colorScheme
-                                                            .primary
-                                                            .withValues(
-                                                              alpha: .10,
-                                                            ),
-                                                    leading:
-                                                        _SelectionIndicator(
-                                                          selected:
-                                                              server.selected,
-                                                          reducedEffects: view
-                                                              .performanceMode,
-                                                        ),
-                                                    title: Row(
-                                                      children: [
+                                            ),
+                                            child: ClipRRect(
+                                              borderRadius:
+                                                  BorderRadius.circular(26),
+                                              child: Material(
+                                                type: MaterialType.transparency,
+                                                child: ListTile(
+                                                  minLeadingWidth: 26,
+                                                  horizontalTitleGap: 12,
+                                                  contentPadding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 12,
+                                                        vertical: 1,
+                                                      ),
+                                                  splashColor: Theme.of(context)
+                                                      .colorScheme
+                                                      .primary
+                                                      .withValues(alpha: .10),
+                                                  leading: _SelectionIndicator(
+                                                    selected: server.selected,
+                                                    reducedEffects:
+                                                        view.performanceMode,
+                                                  ),
+                                                  title: Row(
+                                                    children: [
+                                                      if (server.profileKind ==
+                                                          'aether')
+                                                        Row(
+                                                          mainAxisSize:
+                                                              MainAxisSize.min,
+                                                          textDirection:
+                                                              TextDirection.ltr,
+                                                          children: [
+                                                            if (server
+                                                                    .psiphonEnabled &&
+                                                                RegExp(
+                                                                  r'^[A-Za-z]{2}$',
+                                                                ).hasMatch(
+                                                                  server
+                                                                      .country,
+                                                                )) ...[
+                                                              CountryFlagBadge(
+                                                                countryCode:
+                                                                    server
+                                                                        .country,
+                                                                width: 25,
+                                                                height: 18,
+                                                              ),
+                                                              const SizedBox(
+                                                                width: 6,
+                                                              ),
+                                                            ],
+                                                            if (server
+                                                                .psiphonEnabled)
+                                                              PsiphonBrandIcon(
+                                                                key: ValueKey(
+                                                                  'aether-brand-${server.id}',
+                                                                ),
+                                                              )
+                                                            else
+                                                              const Icon(
+                                                                Icons
+                                                                    .public_rounded,
+                                                                size: 20,
+                                                              ),
+                                                          ],
+                                                        )
+                                                      else
                                                         CountryFlagBadge(
                                                           countryCode:
                                                               server.country,
                                                           width: 25,
                                                           height: 18,
                                                         ),
-                                                        const SizedBox(
-                                                          width: 8,
-                                                        ),
-                                                        Expanded(
-                                                          child: ServerNameText(
-                                                            server.name,
-                                                            maxLines: 1,
-                                                            style: Theme.of(context)
-                                                                .textTheme
-                                                                .bodyLarge
-                                                                ?.copyWith(
-                                                                  fontSize: 15,
-                                                                  letterSpacing:
-                                                                      0,
-                                                                  fontWeight:
-                                                                      FontWeight
-                                                                          .w600,
-                                                                ),
-                                                            overflow:
-                                                                TextOverflow
-                                                                    .ellipsis,
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                    subtitle: Text(
-                                                      '${server.protocol}  ${server.transport}',
-                                                      maxLines: 1,
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                    ),
-                                                    trailing: Row(
-                                                      mainAxisSize:
-                                                          MainAxisSize.min,
-                                                      children: [
-                                                        _Latency(
-                                                          server: server,
-                                                        ),
-                                                        const SizedBox(
-                                                          width: 10,
-                                                        ),
-                                                        if (rowOptical)
-                                                          OpticalRowAnchor(
-                                                            link:
-                                                                _rowLinks[server
-                                                                    .id]!,
-                                                            child: Builder(
-                                                              builder: (rowContext) =>
-                                                                  _ReorderMenuScope.of(
-                                                                    rowContext,
-                                                                  )
-                                                                  ? SizedBox.square(
-                                                                      dimension:
-                                                                          44,
-                                                                      child: OverflowBox(
-                                                                        minWidth:
-                                                                            44,
-                                                                        maxWidth:
-                                                                            44,
-                                                                        minHeight:
-                                                                            44,
-                                                                        maxHeight:
-                                                                            44,
-                                                                        child: _rowControl(
-                                                                          rowContext,
-                                                                          controller,
-                                                                          server,
-                                                                          isPinging:
-                                                                              app.isPinging,
-                                                                        ),
-                                                                      ),
-                                                                    )
-                                                                  : const SizedBox(
-                                                                      width: 44,
-                                                                      height:
-                                                                          44,
-                                                                    ),
-                                                            ),
-                                                          )
-                                                        else
-                                                          SizedBox.square(
-                                                            dimension: 44,
-                                                            child: OverflowBox(
-                                                              minWidth: 44,
-                                                              maxWidth: 44,
-                                                              minHeight: 44,
-                                                              maxHeight: 44,
-                                                              child: _rowControl(
-                                                                context,
-                                                                controller,
-                                                                server,
-                                                                isPinging: app
-                                                                    .isPinging,
+                                                      const SizedBox(width: 8),
+                                                      Expanded(
+                                                        child: ServerNameText(
+                                                          server.name,
+                                                          maxLines: 1,
+                                                          style: Theme.of(context)
+                                                              .textTheme
+                                                              .bodyLarge
+                                                              ?.copyWith(
+                                                                fontSize: 15,
+                                                                letterSpacing:
+                                                                    0,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w600,
                                                               ),
+                                                          overflow: TextOverflow
+                                                              .ellipsis,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  subtitle: Text(
+                                                    server.profileKind == 'uri'
+                                                        ? '${server.protocol}  ${server.transport}'
+                                                        : '${server.engine} · ${server.profileKind == 'json' ? 'JSON' : server.transport}',
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                                  trailing: Row(
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
+                                                    children: [
+                                                      _Latency(server: server),
+                                                      const SizedBox(width: 10),
+                                                      if (rowOptical)
+                                                        OpticalRowAnchor(
+                                                          link:
+                                                              _rowLinks[server
+                                                                  .id]!,
+                                                          child: Builder(
+                                                            builder: (rowContext) =>
+                                                                _ReorderMenuScope.of(
+                                                                  rowContext,
+                                                                )
+                                                                ? SizedBox.square(
+                                                                    dimension:
+                                                                        44,
+                                                                    child: OverflowBox(
+                                                                      minWidth:
+                                                                          44,
+                                                                      maxWidth:
+                                                                          44,
+                                                                      minHeight:
+                                                                          44,
+                                                                      maxHeight:
+                                                                          44,
+                                                                      child: _rowControl(
+                                                                        rowContext,
+                                                                        controller,
+                                                                        server,
+                                                                        isPinging:
+                                                                            app.isPinging,
+                                                                      ),
+                                                                    ),
+                                                                  )
+                                                                : const SizedBox(
+                                                                    width: 44,
+                                                                    height: 44,
+                                                                  ),
+                                                          ),
+                                                        )
+                                                      else
+                                                        SizedBox.square(
+                                                          dimension: 44,
+                                                          child: OverflowBox(
+                                                            minWidth: 44,
+                                                            maxWidth: 44,
+                                                            minHeight: 44,
+                                                            maxHeight: 44,
+                                                            child: _rowControl(
+                                                              context,
+                                                              controller,
+                                                              server,
+                                                              isPinging:
+                                                                  app.isPinging,
                                                             ),
                                                           ),
-                                                      ],
-                                                    ),
-                                                    onTap: () => _perform(
-                                                      context,
-                                                      () => controller
-                                                          .selectServer(
-                                                            server.id,
-                                                          ),
-                                                    ),
+                                                        ),
+                                                    ],
+                                                  ),
+                                                  onTap: () => _perform(
+                                                    context,
+                                                    () =>
+                                                        controller.selectServer(
+                                                          server.id,
+                                                        ),
                                                   ),
                                                 ),
                                               ),
@@ -526,10 +745,13 @@ class _ServersScreenState extends ConsumerState<ServersScreen>
                                           ),
                                         ),
                                       ),
-                                    );
-                                  },
+                                    ),
+                                  ),
                                 ),
-                              ),
+                              );
+                            },
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -545,6 +767,7 @@ class _ServersScreenState extends ConsumerState<ServersScreen>
                 scroll: _scrollController,
                 paddingTop: chromeTop + headerHeight + 16,
                 controls: rowControls,
+                rowExtents: rowExtents,
                 retainedControlKey: _draggingId == null
                     ? null
                     : ValueKey(_draggingId!),
@@ -666,6 +889,144 @@ class _ServersScreenState extends ConsumerState<ServersScreen>
     );
   }
 
+  Widget _groupHeader(BuildContext context, bool aether, int count) {
+    final expanded = aether ? _aetherExpanded : _subscriptionExpanded;
+    final reduced = ref.watch(performanceModeProvider);
+    return Padding(
+      key: ValueKey('server-group-row-${aether ? 'aether' : 'subscription'}'),
+      padding: const EdgeInsets.fromLTRB(2, 6, 2, 8),
+      child: ClaySurface(
+        radius: 26,
+        color: Theme.of(context).colorScheme.surfaceContainerHigh,
+        child: Material(
+          type: MaterialType.transparency,
+          borderRadius: BorderRadius.circular(26),
+          clipBehavior: Clip.antiAlias,
+          child: Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  key: ValueKey(
+                    'server-group-${aether ? 'aether' : 'subscription'}',
+                  ),
+                  borderRadius: BorderRadius.circular(26),
+                  onTap: _reordering ? null : () => _toggleGroup(aether, count),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
+                    ),
+                    child: Row(
+                      children: [
+                        AnimatedRotation(
+                          turns: expanded
+                              ? .25
+                              : (Directionality.of(context) == TextDirection.rtl
+                                    ? .5
+                                    : 0),
+                          duration: const Duration(milliseconds: 240),
+                          child: const Icon(
+                            Icons.chevron_right_rounded,
+                            textDirection: TextDirection.ltr,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            aether
+                                ? 'Aether'
+                                : _profileText(
+                                    context,
+                                    'Subscription servers',
+                                    'سرورهای اشتراک',
+                                  ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.titleSmall,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          '$count',
+                          style: Theme.of(context).textTheme.labelMedium,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              if (aether)
+                IconButton(
+                  key: const ValueKey('aether-group-info'),
+                  tooltip: _profileText(context, 'About Aether', 'دربارهٔ اتر'),
+                  onPressed: () => showNirangDialog<void>(
+                    context: context,
+                    builder: (context) => NirangAlertDialog(
+                      title: Text(
+                        _profileText(
+                          context,
+                          'Aether connections',
+                          'اتصال‌های اتر',
+                        ),
+                      ),
+                      content: Text(
+                        _profileText(
+                          context,
+                          'These are personal connection paths, separate from subscription servers. Customize them here. They have no nira subscription quota; speed and availability depend on your network and the service provider.',
+                          'این‌ها مسیرهای اتصال شخصی‌اند و از سرورهای اشتراک جدا هستند؛ می‌تونی همین‌جا شخصی‌سازی‌شون کنی. سقف حجمِ اشتراک نیرا روی آن‌ها اعمال نمی‌شه؛ سرعت و دسترسی به اینترنت شما و سرویس‌دهنده بستگی داره.',
+                        ),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: Text(context.s('close')),
+                        ),
+                      ],
+                    ),
+                  ),
+                  icon: const Icon(Icons.info_outline_rounded, size: 20),
+                  visualDensity: VisualDensity.compact,
+                ),
+              if (aether)
+                Padding(
+                  padding: const EdgeInsetsDirectional.only(end: 6),
+                  child: _PressScale(
+                    enabled: !reduced,
+                    child: TextButton.icon(
+                      key: const ValueKey('add-aether-profile'),
+                      style: TextButton.styleFrom(
+                        shape: const StadiumBorder(),
+                        minimumSize: const Size(48, 44),
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                      ),
+                      onPressed: _reordering ? null : () => _openAether(),
+                      icon: const Icon(Icons.add_rounded, size: 20),
+                      label: Text(_profileText(context, 'Add', 'افزودن')),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openAether([ServerInfo? server]) async {
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        settings: const RouteSettings(name: '/aether-profile'),
+        builder: (_) => AetherProfileScreen(server: server),
+      ),
+    );
+    if (changed == true && mounted) {
+      await _perform(
+        context,
+        ref.read(appControllerProvider.notifier).reloadServers,
+      );
+    }
+  }
+
   Widget _buildServerPageActions(
     BuildContext context,
     AppController controller,
@@ -726,6 +1087,8 @@ class _ServersScreenState extends ConsumerState<ServersScreen>
     String action,
   ) async {
     switch (action) {
+      case 'aether':
+        await _openAether(server);
       case 'select':
         await _perform(context, () => controller.selectServer(server.id));
       case 'ping':
@@ -881,11 +1244,24 @@ class _ServerActionsSheetOverlayState extends State<_ServerActionsSheetOverlay>
                             title: Text(context.s('testLatency')),
                             onTap: () => _close('ping'),
                           ),
-                          ListTile(
-                            leading: const Icon(Icons.info_outline_rounded),
-                            title: Text(context.s('serverInformation')),
-                            onTap: () => _close('info'),
-                          ),
+                          if (widget.server.profileKind == 'aether')
+                            ListTile(
+                              leading: const Icon(Icons.tune_rounded),
+                              title: Text(
+                                _profileText(
+                                  context,
+                                  'Aether settings',
+                                  'تنظیمات Aether',
+                                ),
+                              ),
+                              onTap: () => _close('aether'),
+                            ),
+                          if (widget.server.profileKind != 'aether')
+                            ListTile(
+                              leading: const Icon(Icons.info_outline_rounded),
+                              title: Text(context.s('serverInformation')),
+                              onTap: () => _close('info'),
+                            ),
                           ListTile(
                             leading: Icon(
                               Icons.delete_outline_rounded,
@@ -1357,6 +1733,12 @@ class _Latency extends StatelessWidget {
         style: TextStyle(color: Theme.of(context).colorScheme.primary),
       );
     }
+    if (server.status == 'unavailable') {
+      return Text(
+        context.s('probeUnavailable'),
+        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+      );
+    }
     if (server.status == 'timeout') {
       return Text(
         context.s('timeout'),
@@ -1458,34 +1840,6 @@ class _ReorderMenuScope extends InheritedWidget {
   bool updateShouldNotify(_ReorderMenuScope oldWidget) => false;
 }
 
-class _EmptyServers extends StatelessWidget {
-  const _EmptyServers({required this.app});
-  final AppSnapshot app;
-  @override
-  Widget build(BuildContext context) => Center(
-    child: Padding(
-      padding: const EdgeInsets.all(28),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.dns_outlined, size: 44),
-          const SizedBox(height: 12),
-          Text(
-            app.subscriptionConfigured
-                ? context.s('emptyServers')
-                : context.s('notConfigured'),
-            textAlign: TextAlign.center,
-          ),
-          if (!app.subscriptionConfigured) ...[
-            const SizedBox(height: 8),
-            Text(context.s('configureHint'), textAlign: TextAlign.center),
-          ],
-        ],
-      ),
-    ),
-  );
-}
-
 Future<void> _perform(
   BuildContext context,
   Future<void> Function() operation,
@@ -1505,5 +1859,29 @@ Future<void> _perform(
         ),
       );
     }
+  }
+}
+
+class _ServerGroupDragBoundary extends DragBoundaryDelegate<Rect> {
+  _ServerGroupDragBoundary(this.bounds);
+  final Rect Function() bounds;
+  @override
+  bool isWithinBoundary(Rect object) =>
+      nearestPositionWithinBoundary(object) == object;
+  @override
+  Rect nearestPositionWithinBoundary(Rect object) {
+    final area = bounds();
+    return Rect.fromLTWH(
+      object.left.clamp(
+        area.left,
+        math.max(area.left, area.right - object.width),
+      ),
+      object.top.clamp(
+        area.top,
+        math.max(area.top, area.bottom - object.height),
+      ),
+      object.width,
+      object.height,
+    );
   }
 }

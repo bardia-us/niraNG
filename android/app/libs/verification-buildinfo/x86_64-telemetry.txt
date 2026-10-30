@@ -1,0 +1,64 @@
+C:\Users\Bardia Behrad\Desktop\niraNG\android\app\libs\tmp_w33cdgi\x86_64.so: go1.26.7
+	path	gobind/gobind
+	mod	gobind	(devel)	
+	dep	github.com/2dust/AndroidLibXrayLite	v0.0.0-00010101000000-000000000000
+	=>	C:\Users\Bardia Behrad\Desktop\niraNG\build\native\xray-pinned\source	(devel)	
+	
+	dep	github.com/andybalholm/brotli	v1.2.0	h1:ukwgCxwYrmACq68yiUqwIWnGY0cTPox/M94sVwToPjQ=
+	dep	github.com/apernet/quic-go	v0.61.1-0.20260806010916-184d081eef3e	h1:5mgtR5gwIgBKMiGI1QdXldZZ+SNor06Nbu1wCBulQBg=
+	dep	github.com/cloudflare/circl	v1.6.5	h1:O64F26HEqNhznd/hrC5KZXVKYuKM2rx4deZDTc4ihQA=
+	dep	github.com/ghodss/yaml	v1.0.1-0.20220118164431-d8423dcdf344	h1:Arcl6UOIS/kgO2nW3A65HN+7CMjSDP/gofXL4CZt1V4=
+	dep	github.com/google/btree	v1.1.3	h1:CVpQJjYgC4VbzxeGVHfvZrv1ctoYCAI8vbl07Fcxlyg=
+	dep	github.com/google/gopacket	v1.1.19	h1:ves8RnFZPGiFnTS0uPQStjwru6uO6h+nlr9j6fL7kF8=
+	dep	github.com/google/uuid	v1.6.0	h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
+	dep	github.com/gorilla/websocket	v1.5.3	h1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aNNg=
+	dep	github.com/huin/goupnp	v1.2.0	h1:uOKW26NG1hsSSbXIZ1IR7XP9Gjd1U8pnLaCMgntmkmY=
+	dep	github.com/jackpal/go-nat-pmp	v1.0.2	h1:KzKSgb7qkJvOUTqYl9/Hg/me3pWgBmERKrTGD7BdWus=
+	dep	github.com/juju/ratelimit	v1.0.2	h1:sRxmtRiajbvrcLQT7S+JbqU0ntsb9W2yhSdNN8tWfaI=
+	dep	github.com/klauspost/compress	v1.18.2	h1:iiPHWW0YrcFgpBYhsA6D1+fqHssJscY/Tm/y2Uqnapk=
+	dep	github.com/klauspost/cpuid/v2	v2.4.0	h1:S6Hrbc7+ywsr0r+RLapfGBHfyefhCTwEh3A0tV913Dw=
+	dep	github.com/koron/go-ssdp	v0.0.4	h1:1IDwrghSKYM7yLf7XCzbByg2sJ/JcNOZRXS2jczTwz0=
+	dep	github.com/libp2p/go-nat	v1.0.1-0.20250821073202-01afc089f138	h1:YohuNPT/1k3VcThCQlBZ43PCPWPfMRS1zcxWBF2SLK8=
+	dep	github.com/libp2p/go-netroute	v0.2.1	h1:V8kVrpD8GK0Riv15/7VN6RbUQ3URNZVosw7H2v9tksU=
+	dep	github.com/miekg/dns	v1.1.73	h1:uhT8nJxmTrPJYClxVxTCX+CVn6qnzSiybRk72Z6DgrE=
+	dep	github.com/pelletier/go-toml	v1.9.5	h1:4yBQzkHv+7BHq2PQUZF3Mx0IYxG7LsP222s7Agd3ve8=
+	dep	github.com/pion/dtls/v3	v3.1.5	h1:9xJtVsHwMYeSjPp5Hh1FTis4DchnQWtnOa5o+6ygqfc=
+	dep	github.com/pion/logging	v0.2.4	h1:tTew+7cmQ+Mc1pTBLKH2puKsOvhm32dROumOZ655zB8=
+	dep	github.com/pion/stun/v3	v3.1.7	h1:uRXMTlGLf89WgItGNyZ6aR5jMTX0NBbybXADpQCzn+E=
+	dep	github.com/pion/transport/v4	v4.1.0	h1:8S+nF2reM2cJuqC6g78OVy2BBgmbdns+acx3jA97BvQ=
+	dep	github.com/pires/go-proxyproto	v0.15.0	h1:dTshmNbFm/D+0+sbrxUuddPOZ5Y0B7c5NhtsBkm6LqI=
+	dep	github.com/quic-go/qpack	v0.6.0	h1:g7W+BMYynC1LbYLSqRt8PBg5Tgwxn214ZZR34VIOjz8=
+	dep	github.com/refraction-networking/utls	v1.8.3-0.20260301010127-aa6edf4b11af	h1:er2acxbi3N1nvEq6HXHUAR1nTWEJmQfqiGR8EVT9rfs=
+	dep	github.com/robfig/cron/v3	v3.0.1	h1:WdRxkvbJztn8LMz/QEvLN5sBU+xKpSqwwUO1Pjr4qDs=
+	dep	github.com/sagernet/sing	v0.7.13	h1:XNYgd8e3cxMULs/LLJspdn/deHrnPWyrrglNHeCUAYM=
+	dep	github.com/sagernet/sing-shadowsocks	v0.2.9	h1:Paep5zCszRKsEn8587O0MnhFWKJwDW1Y4zOYYlIxMkM=
+	dep	github.com/vishvananda/netlink	v1.3.1	h1:3AEMt62VKqz90r0tmNhog0r/PpWKmrEShJU0wJW6bV0=
+	dep	github.com/vishvananda/netns	v0.0.5	h1:DfiHV+j8bA32MFM7bfEunvT8IAqQ/NzSJHtcmW5zdEY=
+	dep	github.com/wlynxg/anet	v0.0.5	h1:J3VJGi1gvo0JwZ/P1/Yc/8p63SoW98B5dHkYDmpgvvU=
+	dep	github.com/xtls/reality	v0.0.0-20260322125925-9234c772ba8f	h1:iy2JRioxmUpoJ3SzbFPyTxHZMbR/rSHP7dOOgYaq1O8=
+	dep	github.com/xtls/xray-core	v1.260327.1-0.20260728075948-5ca6f4b7d4dc
+	=>	C:\Users\Bardia Behrad\Desktop\niraNG\build\native\xray-pinned\core-source	(devel)	
+	
+	dep	go4.org/netipx	v0.0.0-20231129151722-fdeea329fbba	h1:0b9z3AuHCjxk0x/opv64kcgZLBseWJUpBw5I82+2U4M=
+	dep	golang.org/x/crypto	v0.55.0	h1:+KWHjbgOaAQ66dh/YlkZKHlz9ZUlq61AFirAR9ntP8M=
+	dep	golang.org/x/exp	v0.0.0-20240506185415-9bf2ced13842	h1:vr/HnozRka3pE4EsMEg1lgkXJkTFJCVUX+S/ZT6wYzM=
+	dep	golang.org/x/mobile	v0.0.0-20260709172247-6129f5bee9d5	h1:Mn1OzFmF0ZKX/ZayHz/UdnWHufPp1wlD9lZ5U8LRDFY=
+	dep	golang.org/x/net	v0.58.0	h1:ynWG7rqYi4ccpTEuPZ2QGWHktVEM9DMCj9yzDE0Q7To=
+	dep	golang.org/x/sync	v0.22.0	h1:SZjpbeLmrCk4xhRSZFNZW5gFUeCeFgjekvI/+gfScek=
+	dep	golang.org/x/sys	v0.47.0	h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=
+	dep	golang.org/x/text	v0.41.0	h1:vz/seA0lnX87Othu2f/0L24RcgrXD9/YFTSuGjj3rH8=
+	dep	golang.org/x/time	v0.14.0	h1:MRx4UaLrDotUKUdCIqzPC48t1Y9hANFKIRpNx+Te8PI=
+	dep	golang.zx2c4.com/wireguard	v0.0.0-20250521234502-f333402bd9cb	h1:whnFRlWMcXI9d+ZbWg+4sHnLp52d5yiIPUxMBSt4X9A=
+	dep	google.golang.org/genproto/googleapis/rpc	v0.0.0-20260526163538-3dc84a4a5aaa	h1:mZHHdPZl0dbGHCflZgAq/Q468DWVFcU2whhB2KAo8fk=
+	dep	google.golang.org/grpc	v1.83.1	h1:HIO0+BEtBP6soyqvqC8sNUjZ7bTs+0hFQuFF+RAy++Y=
+	dep	google.golang.org/protobuf	v1.36.12	h1:pJOKDDOyeXErUroCihFAd5LQuwXBSpVnKGrj5o/fwxc=
+	dep	gopkg.in/yaml.v2	v2.4.0	h1:D8xgwECY7CYvx+Y2n4sBz93Jn9JRvxdiyyo8CTfuKaY=
+	dep	gvisor.dev/gvisor	v0.0.0-20260122175437-89a5d21be8f0	h1:Lk6hARj5UPY47dBep70OD/TIMwikJ5fGUGX0Rm3Xigk=
+	dep	lukechampine.com/blake3	v1.4.1	h1:I3Smz7gso8w4/TunLKec6K2fn+kyKtDxr/xcQEN84Wg=
+	build	-buildmode=c-shared
+	build	-compiler=gc
+	build	-trimpath=true
+	build	CGO_ENABLED=1
+	build	GOARCH=amd64
+	build	GOOS=android
+	build	GOAMD64=v1

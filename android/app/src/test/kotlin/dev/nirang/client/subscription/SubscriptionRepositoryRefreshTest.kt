@@ -13,6 +13,41 @@ class SubscriptionRepositoryRefreshTest {
     @get:Rule val temporary = TemporaryFolder()
 
     @Test
+    fun `source refresh and restart preserve local Aether identity edits and hidden state`() {
+        val fixture = Fixture(temporary.newFolder())
+        val repository = fixture.repository(localAether = true)
+        val defaults = repository.snapshot().servers
+        assertEquals(2, defaults.size)
+        val local = defaults.first()
+        val values = repository.aetherProfile(local.id)["values"] as Map<String, *>
+        repository.saveAetherProfile(local.id, "My private preset", values)
+        repository.delete(defaults.last().id)
+        val refreshed = repository.refresh()
+        assertEquals(3, refreshed.servers.size)
+        assertEquals("My private preset", repository.server(local.id)!!.name)
+        assertEquals(1, repository.deletedCount())
+        val persisted = File(fixture.directory, "subscription-cache.json").readText()
+        assertFalse(persisted.contains("My private preset"))
+        val restarted = fixture.repository(localAether = true)
+        assertEquals("My private preset", restarted.server(local.id)!!.name)
+        assertEquals(1, restarted.deletedCount())
+        assertEquals(2, restarted.visibleServerIds().size)
+    }
+
+    @Test
+    fun `failed local preset save preserves published and durable settings`() {
+        val fixture = Fixture(temporary.newFolder())
+        val repository = fixture.repository(localAether = true)
+        val local = repository.snapshot().servers.first()
+        val values = repository.aetherProfile(local.id)["values"] as Map<String, *>
+        repository.saveAetherProfile(local.id, "Saved name", values)
+        fixture.failure = "persist"
+        assertThrows(IOException::class.java) { repository.saveAetherProfile(local.id, "Lost name", values) }
+        assertEquals("Saved name", repository.server(local.id)!!.name)
+        assertEquals("Saved name", fixture.repository(localAether = true).server(local.id)!!.name)
+    }
+
+    @Test
     fun `successful refresh restores every source field and clears edits across restart`() {
         val fixture = Fixture(temporary.newFolder())
         val repository = fixture.repository()
@@ -159,7 +194,7 @@ class SubscriptionRepositoryRefreshTest {
         var failure: String? = null
         var reads = 0
 
-        fun repository() = SubscriptionRepository(
+        fun repository(localAether: Boolean = false) = SubscriptionRepository(
             prefs = preferences,
             cacheDirectory = directory,
             fetchSubscription = {
@@ -173,6 +208,7 @@ class SubscriptionRepositoryRefreshTest {
                 file.writeText(text)
             },
             log = { _, _ -> },
+            enableLocalAether = localAether,
         )
     }
 

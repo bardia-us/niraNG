@@ -1,0 +1,10 @@
+{
+  "record": {
+    "id": "php_kotlin_unicode_v1",
+    "name": "ایران 🇮🇷 JSON",
+    "kind": "json",
+    "engine": "xray",
+    "payload": "{\n  \"outbounds\": [{\"protocol\":\"freedom\",\"tag\":\"خروج 🇮🇷\"}],\n  \"unknown\": {\"keep\": true}\n}\n"
+  },
+  "line": "nira-profile://v1/eyJ2ZXJzaW9uIjoxLCJpZCI6InBocF9rb3RsaW5fdW5pY29kZV92MSIsIm5hbWUiOiLYp9uM2LHYp9mGIPCfh67wn4e3IEpTT04iLCJraW5kIjoianNvbiIsImVuZ2luZSI6InhyYXkiLCJwYXlsb2FkIjoie1xuICBcIm91dGJvdW5kc1wiOiBbe1wicHJvdG9jb2xcIjpcImZyZWVkb21cIixcInRhZ1wiOlwi2K7YsdmI2Kwg8J-HrvCfh7dcIn1dLFxuICBcInVua25vd25cIjoge1wia2VlcFwiOiB0cnVlfVxufVxuIn0"
+}

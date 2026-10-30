@@ -14,7 +14,11 @@ data class SubscriptionParseStats(val total: Int, val parsed: Int, val skipped: 
     val complete: Boolean get() = parsed > 0 && skipped == 0 && failed == 0
     fun summary() = "total=$total parsed=$parsed skipped=$skipped failed=$failed duplicates=$duplicates"
 }
-data class SubscriptionParseResult(val servers: List<ServerRecord>, val stats: SubscriptionParseStats, val failures: List<String>)
+data class SubscriptionParseResult(val servers: List<ServerRecord>, val stats: SubscriptionParseStats, val failures: List<String>, val customFailures: Int = 0) {
+    fun requireCompleteCustomProfiles() {
+        require(customFailures == 0) { "Custom subscription profiles are invalid; existing servers were preserved" }
+    }
+}
 
 object SubscriptionParser {
     fun parse(body: String): List<ServerRecord> = parseDetailed(body).servers
@@ -25,6 +29,7 @@ object SubscriptionParser {
         val records = linkedMapOf<String, ServerRecord>()
         val failures = mutableListOf<String>()
         var total = 0; var parsed = 0; var skipped = 0; var failed = 0; var duplicates = 0
+        var customFailures = 0
         content.lineSequence().map(String::trim).filter { it.isNotEmpty() && !it.startsWith("#") }
             .forEachIndexed { index, line ->
                 total++
@@ -32,6 +37,9 @@ object SubscriptionParser {
                 val recognized = scheme in RECOGNIZED_SCHEMES
                 val record = runCatching {
                     when (scheme) {
+                        "nira-profile" -> CustomProfileCodec.decode(line).let { profile ->
+                            ServerRecord("custom_${profile.id}", profile.name, inferCountry(profile.name), "custom", "", 0, "", "json", "custom", emptyMap(), customProfile = profile)
+                        }
                         "vless", "trojan" -> parseStandardUri(line, scheme)
                         "vmess" -> parseVmess(line)
                         "ss" -> parseShadowsocks(line)
@@ -43,6 +51,7 @@ object SubscriptionParser {
                     }
                 }.onFailure { error ->
                     failed++
+                    if (scheme == "nira-profile") customFailures++
                     failures += "entry=${index + 1} protocol=$scheme error=${error.javaClass.simpleName}"
                 }.getOrNull()
                 if (record == null) {
@@ -50,9 +59,16 @@ object SubscriptionParser {
                     return@forEachIndexed
                 }
                 parsed++
-                if (records.putIfAbsent(record.id, record) != null) duplicates++
+                val previous = records.putIfAbsent(record.id, record)
+                if (previous != null) {
+                    duplicates++
+                    if (record.customProfile != null && record.customProfile != previous.customProfile) {
+                        failed++; customFailures++
+                        failures += "entry=${index + 1} protocol=nira-profile error=ConflictingId"
+                    }
+                }
             }
-        return SubscriptionParseResult(records.values.toList(), SubscriptionParseStats(total, parsed, skipped, failed, duplicates), failures.take(8))
+        return SubscriptionParseResult(records.values.toList(), SubscriptionParseStats(total, parsed, skipped, failed, duplicates), failures.take(8), customFailures)
     }
 
     fun parseUsage(header: String?): SubscriptionUsage {
@@ -193,7 +209,7 @@ object SubscriptionParser {
         return linkedMapOf("germany" to "DE", "deutschland" to "DE", "netherlands" to "NL", "holland" to "NL", "finland" to "FI", "turkey" to "TR", "türkiye" to "TR", "france" to "FR", "united states" to "US", "usa" to "US", "canada" to "CA", "united kingdom" to "GB", "singapore" to "SG", "japan" to "JP", "iran" to "IR", "sweden" to "SE").entries.firstOrNull { lower.contains(it.key) }?.value ?: ""
     }
 
-    private val RECOGNIZED_SCHEMES = setOf("vless", "trojan", "vmess", "ss", "socks", "socks5", "http", "https", "hy2", "hysteria2", "hysteria")
+    private val RECOGNIZED_SCHEMES = setOf("nira-profile", "vless", "trojan", "vmess", "ss", "socks", "socks5", "http", "https", "hy2", "hysteria2", "hysteria")
     private val SHADOWSOCKS_METHODS = setOf("aes-128-gcm", "aead_aes_128_gcm", "aes-256-gcm", "aead_aes_256_gcm", "chacha20-poly1305", "aead_chacha20_poly1305", "chacha20-ietf-poly1305", "xchacha20-poly1305", "aead_xchacha20_poly1305", "xchacha20-ietf-poly1305", "2022-blake3-aes-128-gcm", "2022-blake3-aes-256-gcm", "2022-blake3-chacha20-poly1305")
     private const val REGIONAL_START = 0x1F1E6
     private val REGIONAL_RANGE = REGIONAL_START..0x1F1FF

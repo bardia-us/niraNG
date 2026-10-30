@@ -43,6 +43,7 @@ class GlassSurface extends ConsumerWidget {
     this.messageSurface = false,
     this.backdropBlur,
     this.opticalSettings,
+    this.emphasized = false,
   });
   final Widget child;
   final EdgeInsetsGeometry? padding;
@@ -55,6 +56,7 @@ class GlassSurface extends ConsumerWidget {
   /// A local diffusion override for text-rich dialogs, not a tint/backer.
   final double? backdropBlur;
   final glass.LiquidGlassSettings? opticalSettings;
+  final bool emphasized;
 
   static glass.LiquidGlassSettings settingsFor(
     Brightness brightness, {
@@ -95,7 +97,12 @@ class GlassSurface extends ConsumerWidget {
     if (performance) {
       return Opacity(
         opacity: fallbackVisibility,
-        child: FrostedSurface(radius: radius, opaque: true, child: content),
+        child: FrostedSurface(
+          radius: radius,
+          opaque: true,
+          emphasized: emphasized,
+          child: content,
+        ),
       );
     }
     if (DecorativeGlassScope.of(context)) {
@@ -195,6 +202,7 @@ class FrostedSurface extends ConsumerWidget {
     this.sigma = 12,
     this.tintAlpha,
     this.backdropKey,
+    this.emphasized = false,
     super.key,
   });
   final Widget child;
@@ -203,16 +211,31 @@ class FrostedSurface extends ConsumerWidget {
   final double sigma;
   final double? tintAlpha;
   final BackdropKey? backdropKey;
+  final bool emphasized;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final solid = opaque || ref.watch(performanceModeProvider);
-    final surface = ColoredBox(
-      color: scheme.surfaceContainerHigh.withValues(
-        alpha: solid ? 1 : (tintAlpha ?? .76).clamp(0, 1),
-      ),
+    final base = emphasized && solid
+        ? scheme.surfaceContainerLowest
+        : scheme.surfaceContainerHigh;
+    final content = ColoredBox(
+      color: base.withValues(alpha: solid ? 1 : (tintAlpha ?? .76).clamp(0, 1)),
       child: Material(type: MaterialType.transparency, child: child),
     );
+    final surface = emphasized && solid
+        ? DecoratedBox(
+            key: const ValueKey('emphasized-dialog-surface'),
+            decoration: BoxDecoration(
+              color: base,
+              borderRadius: BorderRadius.circular(radius),
+              border: Border.all(
+                color: scheme.onSurface.withValues(alpha: .24),
+              ),
+            ),
+            child: Padding(padding: const EdgeInsets.all(1), child: content),
+          )
+        : content;
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius),
       child: solid

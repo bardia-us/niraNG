@@ -177,6 +177,10 @@ void main() {
         testWidgets(
           'header retains live optics over decorative rows with host=$hostGlass/$direction/$brightness',
           (tester) async {
+            // A single server plus section headers needs a compact viewport
+            // to allow scrolling the section header above the capture region.
+            await tester.binding.setSurfaceSize(const Size(800, 200));
+            addTearDown(() => tester.binding.setSurfaceSize(null));
             liveGlassReadyListenable.value = true;
             Widget page = const ServersScreen();
             // An outer optical host must not make the header button refract its
@@ -208,6 +212,14 @@ void main() {
                 ),
               ),
             );
+            await tester.pumpAndSettle();
+            // Keep a server inside the sampled header region after the new
+            // subscription-section header. The pixel assertion below must
+            // still detect that server's name changing without a touch.
+            tester
+                .widget<ReorderableListView>(find.byType(ReorderableListView))
+                .scrollController!
+                .jumpTo(65);
             await tester.pumpAndSettle();
             final trigger = find.byWidgetPredicate(
               (w) => w is glass.GlassButton && w.label == 'Server page actions',
@@ -336,7 +348,7 @@ void main() {
             await tester.tap(trigger);
             await tester.pumpAndSettle();
             expect(find.text('Update now'), findsOneWidget);
-            await tester.tapAt(const Offset(4, 250));
+            await tester.tapAt(const Offset(4, 190));
             await tester.pumpAndSettle();
             expect(find.text('Update now'), findsNothing);
             expect(tester.takeException(), isNull);

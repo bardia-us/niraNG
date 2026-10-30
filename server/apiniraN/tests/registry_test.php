@@ -26,10 +26,18 @@ try {
     assert_same('1.1.1', registry_minimum_version($pdo, 'android'), 'default Android minimum version');
     assert_same(0, registry_minimum_android_build($pdo), 'legacy Android clients remain allowed by default');
     assert_same('0.3.1', registry_minimum_version($pdo, 'windows'), 'default Windows minimum version');
+    assert_same('0.0.0', registry_minimum_update_version($pdo, 'windows'), 'Windows forced updates are disabled by default');
+    assert_same('1.1.1', registry_minimum_update_version($pdo, 'android'), 'Android update policy keeps its existing display/build path');
     assert_same(true, registry_is_outdated('1.1.0+12', '1.1.1'), '1.1.0 must be outdated');
     assert_same(false, registry_is_outdated('1.1.1+13', '1.1.1'), '1.1.1 must be controllable');
     assert_same(true, registry_is_outdated('0.3.0+3', '0.3.1'), 'niraN 0.3.0 must be outdated');
     assert_same(false, registry_is_outdated('0.3.1+4', '0.3.1'), 'niraN 0.3.1 must be controllable');
+
+    $settings = $pdo->prepare('UPDATE admin_settings SET setting_value = :value WHERE setting_key = :key');
+    $settings->execute([':key' => 'minimum_windows_version', ':value' => '0.3.1']);
+    $settings->execute([':key' => 'minimum_windows_update_version', ':value' => '0.3.6']);
+    assert_same('0.3.1', registry_minimum_version($pdo, 'windows'), 'Windows registry display policy stays independent');
+    assert_same('0.3.6', registry_minimum_update_version($pdo, 'windows'), 'Windows forced-update policy is stored independently');
 
     $headers = registry_subscription_auth_headers(
         'https://example.com/subs/index.php?id=test',

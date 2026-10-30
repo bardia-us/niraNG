@@ -1,5 +1,5 @@
 name: nirang
-description: "niraNG — a focused, battery-conscious Xray client for Android."
+description: "niraNG â€” a focused Android client for Xray, sing-box and Aether."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.2.3+54
+version: 1.2.4+58
 
 environment:
   sdk: ^3.10.4
@@ -58,6 +58,7 @@ flutter:
   # the material Icons class.
   uses-material-design: true
   assets:
+    - assets/branding/psiphon-official.png
     - assets/branding/nirang-logo-concept.png
     - assets/branding/nirang-mark.svg
     - assets/branding/nirang-mark.png
@@ -66,6 +67,9 @@ flutter:
     - assets/release_notes/1.2.1.md
     - assets/release_notes/1.2.2.md
     - assets/release_notes/1.2.3.md
+    - assets/release_notes/1.2.4.md
+    - assets/release_notes/1.3.0.md
+    - assets/release_notes/1.3.1.md
 
   # To add assets to your application, add an assets section, like this:
   # assets:

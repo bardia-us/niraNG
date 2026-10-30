@@ -1,0 +1,60 @@
+
+// Nira telemetry regression: the counter wrapper must preserve FullCone packet
+// destinations and reply source addresses through the real TUN Handler.
+type telemetryPacketDispatcher struct {
+	t *testing.T
+	targets []xnet.Destination
+	replies []xnet.Destination
+}
+func (*telemetryPacketDispatcher) Type() interface{} {return routing.DispatcherType()}
+func (*telemetryPacketDispatcher) Start() error {return nil}
+func (*telemetryPacketDispatcher) Close() error {return nil}
+func (*telemetryPacketDispatcher) Dispatch(context.Context,xnet.Destination) (*transport.Link,error) {return nil,nil}
+func (d *telemetryPacketDispatcher) DispatchLink(ctx context.Context,dest xnet.Destination,link *transport.Link) error {
+	for _,target:=range d.targets {
+		mb,err:=link.Reader.ReadMultiBuffer();if err!=nil {return err}
+		if len(mb)!=1 || mb[0].UDP==nil || *mb[0].UDP!=target {d.t.Errorf("UDP destination lost or changed: got %v want %v",mb,target)}
+		buf.ReleaseMulti(mb)
+	}
+	var replies buf.MultiBuffer
+	for _,reply:=range d.replies {b:=buf.FromBytes([]byte("reply"));target:=reply;b.UDP=&target;replies=append(replies,b)}
+	return link.Writer.WriteMultiBuffer(replies)
+}
+
+func TestTelemetryPreservesTunUdpPacketDestinationsAndReplySources(t *testing.T) {
+	source:=xnet.UDPDestination(xnet.IPAddress([]byte{10,0,0,2}),1234)
+	first:=xnet.UDPDestination(xnet.LocalHostIP,2345)
+	second:=xnet.UDPDestination(xnet.LocalHostIP,6789)
+	var replySources []xnet.Destination
+	u:=newUdpConnectionHandler(nil,func(data []byte,src,dst xnet.Destination) error {
+		if dst!=source {t.Errorf("UDP reply destination changed: %v",dst)}
+		replySources=append(replySources,src)
+		return nil
+	})
+	c:=&udpConn{handler:u,egress:make(chan *packet,2),src:source,dst:first}
+	u.udpConns[source]=c
+	c.egress<-&packet{data:[]byte("first"),dest:&first}
+	c.egress<-&packet{data:[]byte("second"),dest:&second}
+	up,down:=new(testCounter),new(testCounter)
+	d:=&telemetryPacketDispatcher{t:t,targets:[]xnet.Destination{first,second},replies:[]xnet.Destination{second,first}}
+	h:=&Handler{ctx:context.Background(),config:&Config{},dispatcher:d,uplinkCounter:up,downlinkCounter:down}
+	h.HandleConnection(c,first)
+	if up.Value()!=11 || down.Value()!=10 {t.Fatalf("wrong real packet bytes: up=%d down=%d",up.Value(),down.Value())}
+	if len(replySources)!=2 || replySources[0]!=second || replySources[1]!=first {t.Fatalf("UDP reply sources lost: %v",replySources)}
+}
+
+func TestTelemetryUdpCountsOnlyCompletedPacketWrites(t *testing.T) {
+	source:=xnet.UDPDestination(xnet.LocalHostIP,1234)
+	target:=xnet.UDPDestination(xnet.LocalHostIP,4321)
+	calls:=0
+	u:=newUdpConnectionHandler(nil,func(data []byte,src,dst xnet.Destination) error {
+		calls++
+		if calls==2 {return net.ErrClosed}
+		return nil
+	})
+	down:=new(testCounter)
+	c:=&telemetryUDPConnection{udpConn:&udpConn{handler:u,src:source,dst:target},downlink:down}
+	mb:=buf.MultiBuffer{buf.FromBytes([]byte("first")),buf.FromBytes([]byte("second")),buf.FromBytes([]byte("not attempted"))}
+	if err:=c.WriteMultiBuffer(mb);err!=net.ErrClosed {t.Fatalf("packet write error not retained: %v",err)}
+	if down.Value()!=5 || calls!=2 {t.Fatalf("partial packet writes miscounted: bytes=%d calls=%d",down.Value(),calls)}
+}

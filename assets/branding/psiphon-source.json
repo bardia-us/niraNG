@@ -1,0 +1,31 @@
+{
+  "source": "https://psiphon.ca/fa/index.html",
+  "tree": "c2c043da1208b34d28c3fdeef72b43dcd470dacb",
+  "retrieved": "2026-10-30",
+  "artifacts": {
+    "app/src/main/java/com/psiphon3/psiphonlibrary/RegionListPreference.java": {
+      "gitBlob": "5367b843ebead6ed1ad3e4b1a9f6c5ff9d602a59",
+      "sha256": "a1e8b19c1b82f5b92127f83305110cbb7654afbca89bc919f69825006bcd6c30"
+    },
+    "https://psiphon.ca/apple-icon.png?apple-icon.35-l8w82qu8o5.png": {
+      "local": "research-only-original-apple-icon.png",
+      "sha256": "ccdafd6ae1f9c30f47766a8845a00e957aa3e4e3ada19f28c8b95b5484c4b0b7",
+      "bytes": 22577,
+      "format": "Unmodified official 180x180 PNG declared by current website",
+      "production": false
+    },
+    "https://www.psiphon.ca/img/about/psiphon_favicon_svg_square_v1.svg": {
+      "local": "psiphon-official.svg",
+      "sha256": "e19a69e767a8ef0f56df9efed3ca2575f1884550f40dabc690aa762703e9f747",
+      "bytes": 2749,
+      "productionRaster": {
+        "local": "psiphon-official.png",
+        "bytes": 67164,
+        "sha256": "37b32bf7a298e48b7f9dcda2eda08baca981b877cfc9d052a3d39a1227dc34bf",
+        "renderer": "Chrome via Playwright, 400x400 viewport/deviceScaleFactor1; original SVG without recolor/crop/added rim; rounded clipping is widget-only"
+      }
+    }
+  },
+  "regionCount": 49,
+  "note": "Production PNG is a deterministic 400x400 raster of the untouched modern official SVG; it replaces the lower resolution apple-touch icon and its baked white rim. Source SVG hash unchanged. Region catalog still official supported selection, not guaranteed exits."
+}

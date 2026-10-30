@@ -2,6 +2,8 @@ package dev.nirang.client.model
 
 import org.json.JSONArray
 import org.json.JSONObject
+import dev.nirang.client.subscription.CustomProfile
+import dev.nirang.client.subscription.CustomProfileCodec
 
 enum class ConnectionState(val wireValue: String) {
     DISCONNECTED("disconnected"),
@@ -28,15 +30,23 @@ data class ServerRecord(
     val parameters: Map<String, String>,
     var pingMs: Long? = null,
     var pingStatus: String = "idle",
+    val customProfile: CustomProfile? = null,
+    val origin: String = "subscription",
 ) {
     val profileEditable: Boolean get() = protocol.lowercase() in setOf("vless", "vmess", "trojan", "http") &&
         security.lowercase() in setOf("tls", "reality") && transport.lowercase() !in setOf("hysteria", "quic")
 
+    private fun aetherOptions(): JSONObject? = customProfile?.takeIf { it.kind == "aether" }?.let { JSONObject(it.payload) }
+
     fun safeMetadata(selectedId: String?): Map<String, Any?> = mapOf(
         "id" to id,
+        "profileKind" to (customProfile?.kind ?: "uri"),
+        "engine" to (customProfile?.engine ?: "xray"),
+        "origin" to origin,
         "name" to name,
-        "country" to country,
-        "protocol" to protocol.uppercase(),
+        "country" to (aetherOptions()?.takeIf { it.optString("psiphon","off") != "off" }?.optString("psiphonRegion")?.takeIf { it != "auto" && it.isNotEmpty() } ?: country),
+        "psiphonEnabled" to (aetherOptions()?.optString("psiphon","off")?.let { it != "off" } ?: false),
+        "protocol" to (customProfile?.engine ?: protocol).uppercase(),
         "transport" to transportLabel(),
         "security" to securityLabel(),
         "port" to port,
@@ -73,6 +83,8 @@ data class ServerRecord(
         put("parameters", JSONObject(parameters))
         put("pingMs", pingMs ?: JSONObject.NULL)
         put("pingStatus", pingStatus)
+        customProfile?.let { put("customProfile", it.toPrivateJson()) }
+        put("origin",origin)
     }
 
     private fun transportLabel(): String {
@@ -112,6 +124,8 @@ data class ServerRecord(
                 parameters = params,
                 pingMs = if (json.isNull("pingMs")) null else json.optLong("pingMs"),
                 pingStatus = json.optString("pingStatus", "idle"),
+                customProfile = json.optJSONObject("customProfile")?.let(CustomProfileCodec::fromPrivateJson),
+                origin = if (json.optString("origin") == "local") "local" else "subscription",
             )
         }
     }

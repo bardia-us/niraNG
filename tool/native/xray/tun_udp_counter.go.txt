@@ -1,0 +1,32 @@
+
+// telemetryUDPConnection preserves the packet MultiBuffer interfaces used by
+// udpConn. Wrapping it as a plain stat.CounterConnection hides per-packet UDP
+// destination/source metadata and changes FullCone routing when stats are on.
+type telemetryUDPConnection struct {
+	*udpConn
+	uplink, downlink stats.Counter
+}
+
+func (c *telemetryUDPConnection) ReadMultiBuffer() (buf.MultiBuffer, error) {
+	mb, err := c.udpConn.ReadMultiBuffer()
+	if c.uplink != nil {
+		c.uplink.Add(int64(mb.Len()))
+	}
+	return mb, err
+}
+
+func (c *telemetryUDPConnection) WriteMultiBuffer(mb buf.MultiBuffer) error {
+	// Count completed packet writes individually: a later failed packet must
+	// neither lose earlier successful bytes nor claim the failed payload.
+	for i, b := range mb {
+		size := int64(b.Len())
+		if err := c.udpConn.WriteMultiBuffer(buf.MultiBuffer{b}); err != nil {
+			buf.ReleaseMulti(mb[i+1:])
+			return err
+		}
+		if c.downlink != nil {
+			c.downlink.Add(size)
+		}
+	}
+	return nil
+}

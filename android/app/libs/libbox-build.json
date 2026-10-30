@@ -1,0 +1,18 @@
+{
+  "version": "1.14.4",
+  "source": "https://github.com/SagerNet/sing-box",
+  "commit": "c005f35300ce76427dc285481ec5695f5b179cd2",
+  "go": "go1.25.5",
+  "gomobile": "v0.1.12",
+  "ndk": "28.2.13676358",
+  "androidApi": 24,
+  "target": "android/arm,android/arm64,android/amd64",
+  "tags": "with_gvisor,with_quic,with_wireguard,with_utls,with_clash_api,with_low_memory",
+  "artifact": "android/app/libs/libbox.aar",
+  "sha256": "d63ec38895d8ad3b818470c27647e0dbc214911ce6649582a61cb1554c041de9",
+  "license": "GPL-3.0-or-later",
+  "tlsCompatibilityOverride": false,
+  "runtimeNamespace": "nirasbgo",
+  "namespacePatchSha256": "534979e3640bae806bf9734f0edb5fde251fda0e0099383fd7bfb4290005211a",
+  "probePatchSha256": "cddd3ebcda2278bbf3afcebc59981fb727cb56a19a49d62ac26354bebc72d97a"
+}

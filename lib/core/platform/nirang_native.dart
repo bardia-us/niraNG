@@ -35,6 +35,8 @@ class NirangNative {
 
   static Future<Map<dynamic, dynamic>> initialize() async =>
       (await _methods.invokeMethod<Map<dynamic, dynamic>>('initialize')) ?? {};
+  static Future<Map<dynamic,dynamic>> getBootstrap() async =>
+      await _methods.invokeMethod<Map<dynamic,dynamic>>('getBootstrap') ?? {};
 
   static Future<Map<dynamic, dynamic>> refreshSubscription() async =>
       (await _methods.invokeMethod<Map<dynamic, dynamic>>(
@@ -64,6 +66,16 @@ class NirangNative {
 
   static Future<bool> refreshPublicIp() async =>
       await _methods.invokeMethod<bool>('refreshPublicIp') ?? false;
+  static Future<Map<dynamic,dynamic>> getAetherProfile(String id) async =>
+      await _methods.invokeMethod<Map<dynamic,dynamic>>('getAetherProfile',{'id':id}) ?? {};
+  static Future<List<dynamic>> saveAetherProfile({String? id,required String name,required Map<String,Object?> values}) async =>
+      await _methods.invokeMethod<List<dynamic>>('saveAetherProfile',{'id':id,'name':name,'values':values}) ?? [];
+  static Future<Map<dynamic,dynamic>> prepareAetherProfile(String id,{bool rescan=false}) async =>
+      await _methods.invokeMethod<Map<dynamic,dynamic>>('prepareAetherProfile',{'id':id,'rescan':rescan}) ?? {};
+  static Future<bool> cancelAetherPreparation() async =>
+      await _methods.invokeMethod<bool>('cancelAetherPreparation') ?? false;
+  static Future<Map<String,Object?>> renewAetherIdentity(String id) async =>
+      Map<String,Object?>.from(await _methods.invokeMethod<Map>('renewAetherIdentity',{'id':id}) ?? {});
   static Future<Map<dynamic, dynamic>> measuredTraffic() async =>
       await _methods.invokeMethod<Map<dynamic, dynamic>>('getMeasuredTraffic') ??
       const {};

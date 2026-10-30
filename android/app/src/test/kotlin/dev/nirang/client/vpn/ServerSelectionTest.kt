@@ -6,6 +6,19 @@ import org.junit.Test
 
 class ServerSelectionTest {
     @Test
+    fun `rejected native profile never changes selection or queues a disconnect`() {
+        var selected="healthy"
+        var queued=false
+        try {
+            ServerSelection.select("bad",true,persist={selected=it},queueSwitch={queued=true},
+                validateCandidate={throw IllegalArgumentException("incompatible native config")})
+            throw AssertionError("Expected validation rejection")
+        } catch (_:IllegalArgumentException) {
+            assertEquals("healthy",selected)
+            assertFalse(queued)
+        }
+    }
+    @Test
     fun `requested selection is visible before queued core work completes`() {
         var selected = "old"
         var connected = false

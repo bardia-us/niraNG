@@ -33,6 +33,12 @@ import dev.nirang.client.vpn.NirangVpnService
 import dev.nirang.client.vpn.NirangTileService
 import dev.nirang.client.vpn.RestartPolicy
 import dev.nirang.client.vpn.ServerSelection
+import dev.nirang.client.vpn.ConnectionPreflight
+import dev.nirang.client.vpn.AetherPreparationCoordinator
+import dev.nirang.client.vpn.AetherProfileSave
+import dev.nirang.client.vpn.AsyncNativeStop
+import dev.nirang.client.xray.XrayCore
+import dev.nirang.client.cores.aether.AetherSession
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
@@ -55,6 +61,9 @@ class NirangBridge(
     // A startup API timeout must not queue local settings/server operations
     // behind an unavailable network.
     private val accessExecutor = Executors.newSingleThreadExecutor()
+    private val aetherExecutor = Executors.newSingleThreadExecutor()
+    private val aetherPreparing = AtomicBoolean(false)
+    private val aetherPreparations = AetherPreparationCoordinator.shared
     private val disposed = AtomicBoolean(false)
     private val repository = SubscriptionRepository(activity.applicationContext)
     private val pingManager = PingManager(activity.applicationContext, repository)
@@ -86,6 +95,26 @@ class NirangBridge(
             "refreshSubscription" -> refreshSubscription(result)
             "selectServer" -> selectServer(call, result)
             "reorderServers" -> reorderServers(call, result)
+            "getAetherProfile" -> success(result) { repository.aetherProfile(requireNotNull(call.argument<String>("id"))) }
+            "saveAetherProfile" -> success(result) {
+                val id=call.argument<String>("id")
+                val values=requireNotNull(call.argument<Map<String,Any?>>("values"))
+                val rows=AetherProfileSave.save(id,
+                    readPayload={ repository.server(it)?.customProfile?.payload },
+                    persist={ repository.saveAetherProfile(id,requireNotNull(call.argument<String>("name")),values) },
+                    activeServerId=NirangVpnService::activeServerId,
+                    isActive={ ConnectionStore.state() in RESTART_ELIGIBLE_STATES },
+                    restart={ NirangVpnService.restart(activity,it) },
+                )
+                NativeEvents.emit("servers",rows)
+                rows
+            }
+            "prepareAetherProfile" -> prepareAetherProfile(call,result)
+            "renewAetherIdentity" -> prepareAetherProfile(call,result,renew = true)
+            "cancelAetherPreparation" -> {
+                aetherPreparations.cancel(AsyncNativeStop::execute)
+                result.success(true)
+            }
             "updateServerProfile" -> success(result) {
                 val id = requireNotNull(call.argument<String>("id"))
                 val values = requireNotNull(call.argument<Map<String, Any?>>("values"))
@@ -96,6 +125,7 @@ class NirangBridge(
             "restoreDeletedServers" -> restoreDeletedServers(result)
             "connect" -> connect(call, result)
             "disconnect" -> {
+                aetherPreparations.cancel(AsyncNativeStop::execute)
                 NirangVpnService.stop(activity)
                 result.success(true)
             }
@@ -189,6 +219,8 @@ class NirangBridge(
         pingManager.close()
         executor.shutdownNow()
         accessExecutor.shutdownNow()
+        aetherPreparations.cancel(AsyncNativeStop::execute)
+        aetherExecutor.shutdownNow()
     }
 
     private fun initialize(result: MethodChannel.Result) {
@@ -324,11 +356,11 @@ class NirangBridge(
     }
 
     private fun selectServer(call: MethodCall, result: MethodChannel.Result) {
+        success(result) {
         val id = call.argument<String>("id")
         val server = id?.let(repository::server)
         if (id == null || server == null) {
-            result.error("not_found", "Server not found", null)
-            return
+            throw IllegalArgumentException("Server not found")
         }
         val connection = ConnectionStore.snapshot()
         val activeId = connection["serverId"] as? String
@@ -338,11 +370,13 @@ class NirangBridge(
             id, requiresSwitch,
             persist = { repository.select(it) },
             queueSwitch = { NirangVpnService.switchServer(activity, it) },
+            validateCandidate = { ConnectionPreflight.validate(activity,server) },
         )
         SafeLog.info(activity, if (requiresSwitch) "Server switch queued" else "Server selected")
         // Return the requested choice immediately. ConnectionStore still owns
         // the actual restart/connected/error status and restart rollback.
-        result.success(repository.safeServers())
+        repository.safeServers()
+        }
     }
 
     private fun installedApps(result: MethodChannel.Result) {
@@ -416,6 +450,7 @@ class NirangBridge(
     }
 
     private fun connect(call: MethodCall, result: MethodChannel.Result) {
+        aetherPreparations.cancel(AsyncNativeStop::execute)
         if (!DeviceRegistrationManager.hasConsent(activity)) {
             result.error("consent_required", "Device registration consent is required", null)
             return
@@ -426,6 +461,44 @@ class NirangBridge(
             return
         }
         continueConnect(requested, result)
+    }
+
+    private fun prepareAetherProfile(call:MethodCall,result:MethodChannel.Result,renew:Boolean = false) {
+        if(!aetherPreparing.compareAndSet(false,true)) { result.error("busy","Aether preparation is already running",null);return }
+        val generation = try { aetherPreparations.begin() } catch (_: IllegalStateException) {
+            aetherPreparing.set(false)
+            result.error("busy", "Aether preparation is already running", null)
+            return
+        }
+        aetherExecutor.execute {
+            try {
+                check(DeviceRegistrationManager.hasConsent(activity) && !DeviceRegistrationManager.isLocallyBlocked(activity)) { "Device access is required" }
+                val id=requireNotNull(call.argument<String>("id"))
+                val record=repository.server(id) ?: error("Aether profile not found")
+                val profile=record.customProfile?.takeIf { it.kind == "aether" } ?: error("Not an Aether profile")
+                val active=ConnectionStore.current()
+                val activeAether=(NirangVpnService.activeServerId() ?: active.serverId)?.let(repository::server)?.customProfile?.kind == "aether"
+                check(!activeAether || active.state !in ACTIVE_CONNECTION_STATES + ConnectionState.STOPPING) { "Disconnect Aether before preparing another profile" }
+                check(aetherPreparations.current(generation) && !disposed.get()) { "Aether preparation cancelled" }
+                val session=AetherSession(activity.applicationContext,onProgress={ stage ->
+                    check(aetherPreparations.current(generation) && !disposed.get()) { "Aether preparation cancelled" }
+                    NativeEvents.emit("aetherPreparation",mapOf("id" to id,"state" to stage))
+                })
+                check(aetherPreparations.install(generation, session::stop)) { "Aether preparation cancelled" }
+                check(aetherPreparations.current(generation) && !disposed.get()) { "Aether preparation cancelled" }
+                val rescan=call.argument<Boolean>("rescan") == true
+                if(rescan) session.scan(profile.payload)
+                else session.prepare(profile.payload,if(active.state == ConnectionState.CONNECTED && XrayCore.isRunning()) 10809 else 0, forceRenew = renew)
+                check(aetherPreparations.current(generation) && !disposed.get()) { "Aether preparation cancelled" }
+                val response=mapOf("state" to if(rescan) "ready" else "prepared")
+                postToFlutter { result.success(response) }
+            } catch(error:Throwable) {
+                postToFlutter { result.error("aether",safeError(error),null) }
+            } finally {
+                aetherPreparations.finish(generation)
+                aetherPreparing.set(false)
+            }
+        }
     }
 
     /** Uses the exact normal connect/access/permission path after a Tile-opened Activity is ready. */

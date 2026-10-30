@@ -76,6 +76,7 @@ android {
     packaging {
         jniLibs {
             useLegacyPackaging = true
+            keepDebugSymbols += setOf("**/libaether_nira.so", "**/libpsiphon_nira.so")
         }
     }
 
@@ -103,6 +104,7 @@ flutter {
 
 dependencies {
     implementation(files("libs/libv2ray.aar"))
+    implementation(files("libs/libbox.aar"))
     implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.work:work-runtime-ktx:2.10.5")
     testImplementation("junit:junit:4.13.2")

@@ -219,12 +219,18 @@ abstract final class NirangVisualEffects {
     final scheme = theme.colorScheme;
     if (theme.brightness == Brightness.dark) {
       return BoxDecoration(
+        // Optical capture owns this decoration, but not the Scaffold below it.
+        // Flatten each glow onto the selected canvas before sampling it.
+        color: background,
         gradient: RadialGradient(
           center: const Alignment(.72, -.82),
           radius: 1.45,
           colors: [
-            scheme.primary.withValues(alpha: .14),
-            scheme.secondary.withValues(alpha: .055),
+            Color.alphaBlend(scheme.primary.withValues(alpha: .14), background),
+            Color.alphaBlend(
+              scheme.secondary.withValues(alpha: .055),
+              background,
+            ),
             background,
           ],
           stops: const [0, .38, 1],

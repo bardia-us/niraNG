@@ -21,6 +21,7 @@ class SubscriptionRepository internal constructor(
     private val readCache: (File) -> SecureSubscriptionCache.Decoded,
     private val writeCache: (File, String) -> Unit,
     private val log: (Boolean, String) -> Unit,
+    private val enableLocalAether: Boolean = false,
 ) {
     constructor(context: Context) : this(
         context.getSharedPreferences("nirang_subscription", Context.MODE_PRIVATE),
@@ -29,10 +30,38 @@ class SubscriptionRepository internal constructor(
         SecureSubscriptionCache::read,
         SecureSubscriptionCache::writeAtomic,
         { warning, message -> if (warning) SafeLog.warning(context, message) else SafeLog.info(context, message) },
+        true,
     )
 
     private val cacheFile = File(cacheDirectory, "subscription-cache.json")
     private val profileOverridesFile = File(cacheDirectory, "server-profile-overrides.json")
+    private val localAetherStore = LocalAetherProfileStore(File(cacheDirectory,"local-aether-profiles.json"),
+        { readCache(it).text }, writeCache)
+
+    private fun localRecords(): List<ServerRecord> = if (!enableLocalAether) emptyList() else localAetherStore.load().map { profile ->
+        ServerRecord("local_aether_${profile.id}",profile.name,"","custom","",0,"","json","custom",emptyMap(),customProfile=profile,origin="local")
+    }
+
+    fun aetherProfile(id: String): Map<String,Any?> = synchronized(lock) {
+        ensureLoaded()
+        val record=server(id) ?: throw IllegalArgumentException("Aether profile not found")
+        val profile=record.customProfile?.takeIf { it.kind == "aether" } ?: throw IllegalArgumentException("Not an Aether profile")
+        val config=StrictProfileJson.objectValue(profile.payload,8192)
+        mapOf("id" to record.id,"name" to record.name,"origin" to record.origin,
+            "values" to config.keys().asSequence().associateWith { config.get(it) })
+    }
+
+    fun saveAetherProfile(id: String?, name: String, values: Map<String,*>): List<Map<String,Any?>> = synchronized(lock) {
+        require(enableLocalAether) { "Local Aether profiles are unavailable" }
+        ensureLoaded()
+        val old=id?.let { wanted -> snapshot.servers.firstOrNull { it.id == wanted && it.origin == "local" } ?: throw IllegalArgumentException("Only local Aether profiles can be edited") }
+        localAetherStore.save(old?.customProfile?.id,name,JSONObject(values).toString())
+        recordCommit()
+        val sources=snapshot.servers.filter { it.origin != "local" }
+        snapshot=snapshot.copy(servers=ServerOrderPolicy.apply(storedOrder(),sources+localRecords()))
+        ensureVisibleSelection(hiddenIds())
+        safeServers()
+    }
     private var profileOverrides = ServerProfileOverrides()
     private var profileOverrideRevision = ""
 
@@ -153,6 +182,9 @@ class SubscriptionRepository internal constructor(
         val bytes = remote.bytes
         if (bytes.size > MAX_SUBSCRIPTION_BYTES) throw IOException("Subscription response is too large")
         val parseResult = SubscriptionParser.parseDetailed(bytes.toString(Charsets.UTF_8))
+        // Do not commit only the URI half of a mixed subscription on a failed
+        // custom record; retain the last complete durable cache and selection.
+        parseResult.requireCompleteCustomProfiles()
         log(false, "Subscription parse ${parseResult.stats.summary()}")
         parseResult.failures.forEach { failure ->
             log(true, "Subscription parser $failure")
@@ -162,7 +194,7 @@ class SubscriptionRepository internal constructor(
         }
         val servers = SubscriptionSyncPolicy.resetLatency(
             SubscriptionSyncPolicy.reconcile(parseResult.servers),
-        )
+        ) + localRecords()
         if (!parseResult.stats.complete) {
             log(true, "Subscription contained skipped entries; usable remote profiles replaced the cache")
         }
@@ -188,8 +220,9 @@ class SubscriptionRepository internal constructor(
             .apply()
         // Delete is intentionally local and temporary. A successful full
         // sync restores every server still present in the subscription.
-        prefs.edit().remove(HIDDEN_SERVER_IDS).apply()
-        ensureVisibleSelection(emptySet())
+        val retainedLocalHidden=hiddenIds().filter { hidden -> servers.any { it.id == hidden && it.origin == "local" } }.toSet()
+        prefs.edit().putStringSet(HIDDEN_SERVER_IDS,retainedLocalHidden).apply()
+        ensureVisibleSelection(retainedLocalHidden)
         updated
     }
 
@@ -216,7 +249,8 @@ class SubscriptionRepository internal constructor(
 
     private fun ensureLoaded() {
         if (loaded && observedGeneration == commitGeneration) return
-        val loadedSnapshot = loadFromDisk()
+        val loadedSource = loadFromDisk()
+        val loadedSnapshot = loadedSource.copy(servers=loadedSource.servers.filter { it.origin != "local" } + localRecords())
         profileOverrides = if (profileOverridesFile.exists()) runCatching {
             val json = JSONObject(readCache(profileOverridesFile).text)
             if (json.optString(PROFILE_OVERRIDE_REVISION) != profileOverrideRevision) {
@@ -239,7 +273,7 @@ class SubscriptionRepository internal constructor(
     }
 
     private fun persist(value: SubscriptionSnapshot, revision: String = profileOverrideRevision) {
-        writeCache(cacheFile, value.toPrivateJson().put(PROFILE_OVERRIDE_REVISION, revision).toString())
+        writeCache(cacheFile, value.copy(servers=value.servers.filter { it.origin != "local" }).toPrivateJson().put(PROFILE_OVERRIDE_REVISION, revision).toString())
         recordCommit()
     }
 
