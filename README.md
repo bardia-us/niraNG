@@ -5,9 +5,9 @@
 <h1 align="center">niraNG</h1>
 
 <p align="center">
-  کلاینت اندروید Xray، sing-box و Aether با رابط Liquid Glass، VPN و پراکسی محلی
+  سرویس VPN اندروید با سرورهای آماده، Xray، sing-box، Aether و رابط Liquid Glass
   <br>
-  An Android Xray, sing-box and Aether client with Liquid Glass UI, VPN and local proxy support
+  An Android VPN service app with managed servers, Xray, sing-box, Aether and Liquid Glass UI
 </p>
 
 <p align="center">
@@ -17,6 +17,12 @@
   &nbsp;|&nbsp;
   <a href="#english">English</a>
 </p>
+
+## دربارهٔ برنامه
+
+**نیرا یک سرویس VPN با سرورهای آماده و اشتراک مدیریت‌شده است؛ کلاینت عمومی برای واردکردن کانفیگ یا ساب شخصی نیست.** پس از تأیید دسترسی، سرورهای سرویس در برنامه دریافت می‌شوند. بخش Aether امکان ساخت اتصال شخصیِ جداگانه را هم دارد.
+
+**nira is a VPN service app with ready-to-use servers and a managed subscription, rather than a general-purpose client for importing your own configurations or subscriptions.** Service servers are delivered after access approval. Aether separately supports personal connection profiles.
 
 ## دانلود اندروید
 
