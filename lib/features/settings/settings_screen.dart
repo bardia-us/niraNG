@@ -16,6 +16,8 @@ import '../../core/user_facing_error.dart';
 import '../vpn/app_controller.dart';
 import 'per_app_proxy_screen.dart';
 import '../logs/logs_screen.dart';
+import '../feedback/feedback_screen.dart';
+import '../../core/platform/nirang_native.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -843,6 +845,37 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             title: context.s('advanced'),
             icon: Icons.tune_rounded,
             children: [
+              ListTile(
+                leading: const Icon(Icons.feedback_outlined),
+                title: Text(
+                  Localizations.localeOf(context).languageCode == 'fa'
+                      ? 'ارسال فیدبک و گزارش مشکل'
+                      : 'Feedback & problem report',
+                ),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    settings: const RouteSettings(name: '/feedback'),
+                    builder: (_) => const FeedbackScreen(),
+                  ),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.code_rounded),
+                title: const Text('GitHub · niraNG'),
+                subtitle: Text(
+                  Localizations.localeOf(context).languageCode == 'fa'
+                      ? 'سورس برنامه و نسخه‌های منتشرشده'
+                      : 'Source code & releases',
+                ),
+                trailing: const Icon(Icons.open_in_new_rounded, size: 19),
+                onTap: () => _perform(
+                  context,
+                  () => NirangNative.openExternalUrl(
+                    'https://github.com/bardia-us/niraNG',
+                  ),
+                ),
+              ),
               ListTile(
                 leading: const Icon(Icons.public_rounded),
                 title: Text(context.s('ipProvider')),

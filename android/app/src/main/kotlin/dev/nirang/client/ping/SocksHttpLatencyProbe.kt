@@ -17,6 +17,21 @@ import javax.net.ssl.SSLSocketFactory
 internal object SocksHttpLatencyProbe {
     private val deadlines=Executors.newSingleThreadScheduledExecutor { Thread(it,"probe-http-deadline").apply { isDaemon=true } }
 
+    /** TCP destination reached through the same SOCKS tunnel; not a local-listener ping. */
+    fun measureTcp(port: Int, cancellation: ProbeCancellation, timeoutMillis: Int = 3000): Long {
+        val active=AtomicReference<Socket?>()
+        val start=System.nanoTime()
+        val deadline=start+TimeUnit.MILLISECONDS.toNanos(timeoutMillis.toLong())
+        val expiry=deadlines.schedule({ runCatching { active.get()?.close() } },timeoutMillis.toLong(),TimeUnit.MILLISECONDS)
+        try {
+            cancellation.check()
+            connect(port,URI("http://www.gstatic.com:443"),cancellation,deadline,active).use {
+                cancellation.check(); remaining(deadline)
+                return TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-start).coerceAtLeast(1)
+            }
+        } finally { expiry.cancel(false);active.getAndSet(null)?.let { runCatching { it.close() } } }
+    }
+
     fun measure(port: Int, url: String, cancellation: ProbeCancellation, timeoutMillis: Int = 4000): Long {
         val uri=URI(url)
         require(uri.scheme in setOf("http","https") && uri.host != null && uri.rawUserInfo == null)

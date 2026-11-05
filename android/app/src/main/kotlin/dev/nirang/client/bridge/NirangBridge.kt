@@ -62,6 +62,10 @@ class NirangBridge(
     // behind an unavailable network.
     private val accessExecutor = Executors.newSingleThreadExecutor()
     private val aetherExecutor = Executors.newSingleThreadExecutor()
+    private val feedbackExecutor = Executors.newSingleThreadExecutor()
+    private val feedbackSending = AtomicBoolean(false)
+    private val diagnosticsExecutor = Executors.newSingleThreadExecutor()
+    private val diagnostics = java.util.concurrent.atomic.AtomicReference<dev.nirang.client.ping.ProbeCancellation?>()
     private val aetherPreparing = AtomicBoolean(false)
     private val aetherPreparations = AetherPreparationCoordinator.shared
     private val disposed = AtomicBoolean(false)
@@ -80,6 +84,83 @@ class NirangBridge(
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
+            "uiCaptureContext" -> {
+                fun text(value:String):String {
+                    val cleaned=value.replace(Regex("[\\u0000-\\u001f\\u007f]")," ").trim()
+                    val points=cleaned.codePoints().limit(20).toArray();return String(points,0,points.size)
+                }
+                val power=activity.getSystemService(PowerManager::class.java)
+                result.success(mapOf(
+                    "manufacturer" to text(Build.MANUFACTURER),
+                    "model" to text(Build.MODEL),
+                    "android_sdk" to Build.VERSION.SDK_INT,
+                    "soc_model" to if(Build.VERSION.SDK_INT>=31) text(Build.SOC_MODEL) else null,
+                    "power_save" to runCatching { power?.isPowerSaveMode }.getOrNull(),
+                    "thermal_status" to if(Build.VERSION.SDK_INT>=29) runCatching { power?.currentThermalStatus }.getOrNull() else null,
+                ))
+            }
+            "feedbackContext" -> success(result) {
+                val server=repository.selectedServer()
+                // Limit report metadata only; preserve the selected source/config exactly.
+                val reportName=server?.name?.replace(Regex("[\\u0000-\\u001f\\u007f]")," ")?.trim()?.let { value ->
+                    val points=value.codePoints().limit(120).toArray()
+                    String(points,0,points.size).ifBlank { "Selected profile" }
+                }
+                val config=server?.let { it.customProfile?.payload ?: it.toPrivateJson().toString(2) }
+                buildMap<String,Any?> {
+                    if(server!=null) put("selected_server",mapOf("id" to server.id,"name" to reportName,"protocol" to server.protocol,"core" to (server.customProfile?.engine ?: "xray")))
+                    if(call.argument<Boolean>("includeConfig")==true && config!=null) {
+                        require(config.toByteArray(Charsets.UTF_8).size<=65536) { "Selected configuration is too large" }
+                        put("selected_config",config)
+                    }
+                }
+            }
+            "submitFeedback" -> {
+                val values=call.arguments as? Map<*,*> ?: run { result.error("feedback_failed","Invalid report",null);return }
+                if(!feedbackSending.compareAndSet(false,true)) { result.error("feedback_busy","Feedback is already sending",null);return }
+                feedbackExecutor.execute {
+                    try {
+                        val response=DeviceRegistrationManager.submitFeedback(activity.applicationContext,org.json.JSONObject(values))
+                        postToFlutter { result.success(response) }
+                    } catch(e:Exception) {
+                        val code=e.message?.takeIf { it in setOf("feedback_unavailable","feedback_rate_limited","feedback_conflict","feedback_unauthorized","feedback_too_large","feedback_failed") } ?: "feedback_failed"
+                        postToFlutter { result.error(code,"Feedback could not be delivered",null) }
+                    } finally { feedbackSending.set(false) }
+                }
+            }
+            "shareProblemReport" -> {
+                val text=call.argument<String>("text")
+                if(text==null || text.length>98304) { result.error("report","Invalid report",null);return }
+                try {
+                    activity.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                        type="text/plain"
+                        putExtra(Intent.EXTRA_TEXT,text)
+                    },null))
+                    result.success(null)
+                } catch(_:Exception) { result.error("report","Sharing is unavailable; copy the report instead",null) }
+            }
+            "getAetherEndpointSuggestion" -> success(result) {
+                val values=requireNotNull(call.argument<Map<String,Any?>>("values"))
+                dev.nirang.client.cores.aether.AetherEndpointMemory.suggestion(activity,org.json.JSONObject(values).toString())
+            }
+            "cancelConnectionDiagnosis" -> {
+                diagnostics.get()?.cancel()
+                result.success(null)
+            }
+            "diagnoseConnection" -> {
+                val cancellation=dev.nirang.client.ping.ProbeCancellation(AsyncNativeStop::execute)
+                if(!diagnostics.compareAndSet(null,cancellation)) { result.error("busy","A diagnostic is already running",null);return }
+                diagnosticsExecutor.execute {
+                    try {
+                        val requestId=call.argument<String>("requestId")?.takeIf { it.matches(Regex("[a-zA-Z0-9_-]{1,64}")) }
+                        val report=dev.nirang.client.vpn.ConnectionDiagnostics.run(activity.applicationContext,cancellation) { row ->
+                            if(requestId!=null) NativeEvents.emit("connectionDiagnostic",mapOf("requestId" to requestId,"row" to row))
+                        }
+                        postToFlutter { result.success(report) }
+                    } catch(e:Exception) { postToFlutter { result.error("diagnostic",safeError(e),null) } }
+                    finally { diagnostics.compareAndSet(cancellation,null) }
+                }
+            }
             "deviceRegistrationStatus" -> {
                 deviceRegistrationStatus(result)
             }
@@ -95,7 +176,12 @@ class NirangBridge(
             "refreshSubscription" -> refreshSubscription(result)
             "selectServer" -> selectServer(call, result)
             "reorderServers" -> reorderServers(call, result)
-            "getAetherProfile" -> success(result) { repository.aetherProfile(requireNotNull(call.argument<String>("id"))) }
+            "getAetherProfile" -> success(result) {
+                val id=requireNotNull(call.argument<String>("id"))
+                val state=ConnectionStore.snapshot()
+                repository.aetherProfile(id) + if(state["serverId"] == id && state["aetherEndpoint"] != null)
+                    mapOf("activePath" to mapOf("endpoint" to state["aetherEndpoint"],"innerEndpoint" to state["aetherInnerEndpoint"])) else emptyMap()
+            }
             "saveAetherProfile" -> success(result) {
                 val id=call.argument<String>("id")
                 val values=requireNotNull(call.argument<Map<String,Any?>>("values"))
@@ -109,6 +195,7 @@ class NirangBridge(
                 NativeEvents.emit("servers",rows)
                 rows
             }
+            "scanAetherDraft" -> scanAetherDraft(call,result)
             "prepareAetherProfile" -> prepareAetherProfile(call,result)
             "renewAetherIdentity" -> prepareAetherProfile(call,result,renew = true)
             "cancelAetherPreparation" -> {
@@ -176,13 +263,19 @@ class NirangBridge(
                 NativeSettings(activity).recordTelegramDecision(call.argument<String>("decision") ?: "later")
                 result.success(true)
             }
-            "recordWhatsNewSeen" -> {
-                activity.getSharedPreferences("nirang_installation", Activity.MODE_PRIVATE)
-                    .edit()
-                    .putInt("whatsNewSeenBuild", BuildConfig.BASE_VERSION_CODE)
-                    .putInt("whatsNewUpgradeFromBuild", 0)
-                    .apply()
-                result.success(true)
+            "claimWhatsNew" -> success(result) {
+                synchronized(whatsNewLock) {
+                    val installation = activity.getSharedPreferences("nirang_installation", Activity.MODE_PRIVATE)
+                    val build = BuildConfig.BASE_VERSION_CODE
+                    if (installation.getInt("whatsNewSeenBuild", 0) >= build) {
+                        false
+                    } else {
+                        installation.edit()
+                            .putInt("whatsNewSeenBuild", build)
+                            .putInt("whatsNewUpgradeFromBuild", 0)
+                            .commit()
+                    }
+                }
             }
             "recordFlutterError" -> {
                 val message = call.argument<String>("message").orEmpty()
@@ -221,6 +314,9 @@ class NirangBridge(
         accessExecutor.shutdownNow()
         aetherPreparations.cancel(AsyncNativeStop::execute)
         aetherExecutor.shutdownNow()
+        diagnostics.getAndSet(null)?.cancel()
+        feedbackExecutor.shutdownNow()
+        diagnosticsExecutor.shutdownNow()
     }
 
     private fun initialize(result: MethodChannel.Result) {
@@ -463,6 +559,42 @@ class NirangBridge(
         continueConnect(requested, result)
     }
 
+    private fun scanAetherDraft(call:MethodCall,result:MethodChannel.Result) {
+        if(!aetherPreparing.compareAndSet(false,true)) { result.error("busy","Aether preparation is already running",null);return }
+        val generation=try { aetherPreparations.begin() } catch(e:Exception) { aetherPreparing.set(false);result.error("busy","Aether operation in progress",null);return }
+        aetherExecutor.execute {
+            var directory:java.io.File?=null
+            try {
+                check(DeviceRegistrationManager.hasConsent(activity) && !DeviceRegistrationManager.isLocallyBlocked(activity)) { "Device access is required" }
+                val values=requireNotNull(call.argument<Map<String,Any?>>("values"))
+                val config=org.json.JSONObject(values).apply { put("startupTimeoutSeconds",90) }.toString()
+                val options=dev.nirang.client.cores.aether.AetherOptions.parse(config)
+                check(options.psiphon != "only") { "Psiphon-only has no WARP endpoint" }
+                directory=java.nio.file.Files.createTempDirectory(activity.noBackupFilesDir.toPath(),"aether-draft-").toFile()
+                android.system.Os.chmod(directory.absolutePath,448)
+                dev.nirang.client.ping.PrivateProbePorts.reserve(2).use { ports ->
+                    val session=AetherSession(activity.applicationContext,socksPort=ports.ports[0],psiphonPort=ports.ports[1],
+                        storageDirectory=directory,onProgress={ stage ->
+                            check(aetherPreparations.current(generation) && !disposed.get()) { "Aether scan cancelled" }
+                            NativeEvents.emit("aetherPreparation",mapOf("state" to stage))
+                        })
+                    check(aetherPreparations.install(generation,session::stop)) { "Aether scan cancelled" }
+                    ports.releaseForStart()
+                    try {
+                        session.scan(config)
+                        check(aetherPreparations.current(generation) && !disposed.get()) { "Aether scan cancelled" }
+                        val path=session.selectedPath ?: error("The core did not report an endpoint")
+                        postToFlutter {
+                            if (aetherPreparations.validResult(generation) && !disposed.get()) result.success(mapOf("state" to "ready","scan" to path))
+                            else result.error("cancelled","Aether scan cancelled",null)
+                        }
+                    } finally { session.stop() }
+                }
+            } catch(e:Throwable) { postToFlutter { result.error("aether",safeError(e),null) } }
+            finally { aetherPreparations.finish(generation);directory?.deleteRecursively();aetherPreparing.set(false) }
+        }
+    }
+
     private fun prepareAetherProfile(call:MethodCall,result:MethodChannel.Result,renew:Boolean = false) {
         if(!aetherPreparing.compareAndSet(false,true)) { result.error("busy","Aether preparation is already running",null);return }
         val generation = try { aetherPreparations.begin() } catch (_: IllegalStateException) {
@@ -647,7 +779,7 @@ class NirangBridge(
         }
         val allowed = uri.scheme.equals("https", true) &&
             uri.host.equals("github.com", true) &&
-            uri.path?.startsWith("/bardia-us/niraNG/releases/") == true
+            (uri.path == "/bardia-us/niraNG" || uri.path == "/bardia-us/niraNG/" || uri.path?.startsWith("/bardia-us/niraNG/releases/") == true)
         if (!allowed) {
             result.error("invalid_url", "Only official niraNG release links are allowed", null)
             return
@@ -691,13 +823,12 @@ class NirangBridge(
         var lastLaunchedBuild = installation.getInt("lastLaunchedBuild", 0)
         var upgradeFromBuild = installation.getInt("whatsNewUpgradeFromBuild", 0)
         if (lastLaunchedBuild <= 0) {
-            // Migration and genuine fresh installs establish a baseline; they
-            // are not updates and must not show What's New.
+            // Fresh installs establish a baseline and show bundled notes once;
+            // later launches use the persisted seen-build ledger.
             lastLaunchedBuild = appBuild
             upgradeFromBuild = 0
             installation.edit()
                 .putInt("lastLaunchedBuild", appBuild)
-                .putInt("whatsNewSeenBuild", appBuild)
                 .putInt("whatsNewUpgradeFromBuild", 0)
                 .apply()
         } else if (appBuild > lastLaunchedBuild) {
@@ -716,7 +847,7 @@ class NirangBridge(
             "coreVersion" to installation.getString("coreVersion", "Bundled"),
             "appVersion" to BuildConfig.VERSION_NAME,
             "appBuild" to appBuild,
-            "whatsNewSeenBuild" to installation.getInt("whatsNewSeenBuild", appBuild),
+            "whatsNewSeenBuild" to installation.getInt("whatsNewSeenBuild", 0),
             "whatsNewUpgradeFromBuild" to upgradeFromBuild,
             "subscriptionConfigured" to true,
             "telegramEligible" to NativeSettings(activity).telegramReminderEligible(),
@@ -746,6 +877,7 @@ class NirangBridge(
         .take(240)
 
     companion object {
+        private val whatsNewLock = Any()
         private const val METHOD_CHANNEL = "dev.nirang.client/control"
         private const val EVENT_CHANNEL = "dev.nirang.client/events"
         private const val UPDATE_EVENT_CHANNEL = "dev.nirang.client/update_download"

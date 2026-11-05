@@ -18,6 +18,7 @@ try {
         "$productionRoot/vpn/CoreTeardownFence.kt", "$productionRoot/vpn/ConnectionOperationGate.kt",
         "$productionRoot/cores/aether/AetherOptions.kt", "$productionRoot/cores/aether/PsiphonRegions.kt",
         "$productionRoot/cores/aether/AetherProcessOwner.kt",
+        "$productionRoot/cores/aether/AetherFingerprints.kt",
         "$testRoot/vpn/AetherProfileSaveTest.kt", "$testRoot/vpn/AetherPreparationCoordinatorTest.kt",
         "$testRoot/vpn/CoreTeardownFenceTest.kt", "$testRoot/vpn/ConnectionOperationGateTest.kt",
         "$testRoot/cores/aether/AetherProcessOwnerTest.kt"

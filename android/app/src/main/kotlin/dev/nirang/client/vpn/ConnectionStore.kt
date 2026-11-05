@@ -13,6 +13,9 @@ internal data class ConnectionSnapshot(
     val publicCity: String?,
     val publicIpChecked: Boolean,
     val error: String?,
+    val aetherEndpoint: String? = null,
+    val aetherInnerEndpoint: String? = null,
+    val aetherStage: String? = null,
 ) {
     fun toMap(): Map<String, Any?> = mapOf(
         "state" to state.wireValue,
@@ -23,6 +26,9 @@ internal data class ConnectionSnapshot(
         "publicCity" to publicCity,
         "publicIpChecked" to publicIpChecked,
         "error" to error,
+        "aetherStage" to aetherStage,
+        "aetherEndpoint" to aetherEndpoint,
+        "aetherInnerEndpoint" to aetherInnerEndpoint,
     )
 }
 
@@ -37,6 +43,9 @@ object ConnectionStore {
     private var publicCity: String? = null
     private var publicIpChecked = false
     private var error: String? = null
+    private var aetherStage: String? = null
+    private var aetherEndpoint: String? = null
+    private var aetherInnerEndpoint: String? = null
 
     fun transition(next: ConnectionState, id: String? = serverId, name: String? = serverName, message: String? = null) {
         synchronized(lock) {
@@ -53,12 +62,18 @@ object ConnectionStore {
                     ConnectionState.RECONNECTING,
                 )
             ) {
+                aetherStage = null
+                aetherEndpoint = null
+                aetherInnerEndpoint = null
                 publicIp = null
                 publicCountry = null
                 publicCity = null
                 publicIpChecked = false
             }
             if (next == ConnectionState.DISCONNECTED) {
+                aetherStage = null
+                aetherEndpoint = null
+                aetherInnerEndpoint = null
                 publicIp = null
                 publicCountry = null
                 publicCity = null
@@ -96,6 +111,23 @@ object ConnectionStore {
         return accepted
     }
 
+    fun updateAetherStage(expectedId: String, stage: String) {
+        if(stage !in setOf("registering","finding_endpoint","ready")) return
+        val accepted=synchronized(lock) {
+            if(serverId != expectedId || state in setOf(ConnectionState.STOPPING,ConnectionState.DISCONNECTED,ConnectionState.ERROR)) false
+            else { aetherStage=stage;true }
+        }
+        if(accepted) publish()
+    }
+
+    fun updateAetherEndpoint(expectedId: String, path: Map<String,String>) {
+        val accepted=synchronized(lock) {
+            if (serverId != expectedId || state in setOf(ConnectionState.STOPPING,ConnectionState.DISCONNECTED,ConnectionState.ERROR)) false
+            else { aetherEndpoint=path["endpoint"];aetherInnerEndpoint=path["innerEndpoint"];true }
+        }
+        if(accepted) publish()
+    }
+
     fun state(): ConnectionState = synchronized(lock) { state }
 
     internal fun current(): ConnectionSnapshot = synchronized(lock) {
@@ -108,6 +140,9 @@ object ConnectionStore {
             publicCity,
             publicIpChecked,
             error,
+            aetherEndpoint,
+            aetherInnerEndpoint,
+            aetherStage,
         )
     }
 

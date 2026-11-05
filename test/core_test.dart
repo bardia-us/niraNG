@@ -434,11 +434,16 @@ void main() {
     expect(notes.forLanguage('fa'), isNot(contains('forced updates')));
   });
 
-  test('What’s New is shown only after a real build upgrade', () {
+  test('What’s New is shown once per fresh install or installed upgrade', () {
+    expect(
+      shouldShowWhatsNew(appBuild: 19, seenBuild: 0, upgradedFromBuild: 0),
+      isTrue,
+      reason: 'A fresh install presents the bundled notes once.',
+    );
     expect(
       shouldShowWhatsNew(appBuild: 19, seenBuild: 19, upgradedFromBuild: 0),
       isFalse,
-      reason: 'Fresh installs establish a baseline without an update dialog.',
+      reason: 'A presented fresh-install notice stays dismissed.',
     );
     expect(
       shouldShowWhatsNew(appBuild: 19, seenBuild: 19, upgradedFromBuild: 0),
@@ -452,7 +457,7 @@ void main() {
     expect(
       shouldShowWhatsNew(appBuild: 20, seenBuild: 20, upgradedFromBuild: 19),
       isFalse,
-      reason: 'Acknowledged notes stay dismissed for the installed build.',
+      reason: 'Presented notes stay dismissed for the installed build.',
     );
   });
 

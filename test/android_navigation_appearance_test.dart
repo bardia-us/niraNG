@@ -14,6 +14,7 @@ import 'package:nirang/core/platform/native_models.dart';
 import 'package:nirang/core/theme/app_theme.dart';
 import 'package:nirang/core/widgets/glass_surface.dart';
 import 'package:nirang/core/widgets/menu_activity.dart';
+import 'package:nirang/core/widgets/whats_new_dialog.dart';
 import 'package:nirang/core/registration/device_registration.dart';
 import 'package:nirang/core/update_checker.dart';
 import 'package:nirang/features/vpn/app_controller.dart';
@@ -23,12 +24,25 @@ import 'package:nirang/features/servers/servers_screen.dart';
 import 'package:nirang/features/settings/settings_screen.dart';
 
 class _NavigationController extends AppController {
-  _NavigationController({this.feedbackMode = 'off'});
+  _NavigationController({this.feedbackMode = 'off', this.whatsNew = false});
 
   final String feedbackMode;
+  final bool whatsNew;
+  bool _claimedWhatsNew = false;
+
+  @override
+  Future<bool> claimWhatsNew() async {
+    if (_claimedWhatsNew) return false;
+    _claimedWhatsNew = true;
+    return true;
+  }
 
   @override
   Future<AppSnapshot> build() async => AppSnapshot(
+    appVersion: '1.2.5',
+    appBuild: 4059,
+    whatsNewSeenBuild: whatsNew ? 4058 : 4059,
+    whatsNewUpgradeFromBuild: whatsNew ? 4058 : 0,
     settings: NativeSettings(
       performanceMode: false,
       performanceModePrompted: true,
@@ -55,12 +69,16 @@ Future<void> _mountShell(
   WidgetTester tester, {
   String feedbackMode = 'off',
   Size? reportedViewport,
+  bool whatsNew = false,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         appControllerProvider.overrideWith(
-          () => _NavigationController(feedbackMode: feedbackMode),
+          () => _NavigationController(
+            feedbackMode: feedbackMode,
+            whatsNew: whatsNew,
+          ),
         ),
       ],
       child: MaterialApp(
@@ -85,6 +103,70 @@ Future<void> _mountShell(
 }
 
 void main() {
+  testWidgets('startup notes wait until an early Servers tap finishes', (
+    tester,
+  ) async {
+    final client = _PendingClient();
+    startupNetworkReady.value = true;
+    addTearDown(() => startupNetworkReady.value = false);
+    await HttpOverrides.runZoned(() async {
+      await _mountShell(tester, whatsNew: true);
+      await tester.tap(find.text('Servers').last);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 24));
+      client.pending.completeError(const SocketException('offline'));
+      await tester.pump();
+      expect(find.byType(WhatsNewDialog), findsNothing);
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<PageView>(find.byType(PageView)).controller!.page,
+        1,
+      );
+      expect(find.byType(WhatsNewDialog), findsOneWidget);
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    }, createHttpClient: (_) => client);
+  });
+  testWidgets(
+    'interrupted tab motion reconciles selection and accepts a retry',
+    (tester) async {
+      await _mountShell(tester);
+      await tester.tap(find.text('Servers').last);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 24));
+      final controller = tester
+          .widget<PageView>(find.byType(PageView))
+          .controller!;
+      controller.jumpToPage(0);
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+        controller.page!.round(),
+      );
+      await tester.tap(find.text('Servers').last);
+      await tester.pumpAndSettle();
+      expect(controller.page, 1);
+    },
+  );
+  testWidgets('startup popup cannot strand a selected Servers tab on Home', (
+    tester,
+  ) async {
+    await _mountShell(tester);
+    await tester.tap(find.text('Servers').last);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 24));
+    final lease = MenuActivity.begin();
+    await tester.pumpAndSettle();
+    MenuActivity.end(lease);
+    await tester.pumpAndSettle();
+    final pager = tester.widget<PageView>(find.byType(PageView));
+    expect(pager.controller!.page, 1);
+    expect(
+      tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+      1,
+    );
+  });
   testWidgets('non-overlapping shell blur panels share a pristine input', (
     tester,
   ) async {

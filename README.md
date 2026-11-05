@@ -5,9 +5,9 @@
 <h1 align="center">niraNG</h1>
 
 <p align="center">
-  کلاینت اندروید Xray، sing-box و Aether با رابط Liquid Glass، VPN و پراکسی محلی
+  سرویس VPN اندروید با سرورهای آماده، Xray، sing-box، Aether و رابط Liquid Glass
   <br>
-  An Android Xray, sing-box and Aether client with Liquid Glass UI, VPN and local proxy support
+  An Android VPN service app with managed servers, Xray, sing-box, Aether and Liquid Glass UI
 </p>
 
 <p align="center">
@@ -18,20 +18,28 @@
   <a href="#english">English</a>
 </p>
 
+## دربارهٔ برنامه
+
+**نیرا یک سرویس VPN با سرورهای آماده و اشتراک مدیریت‌شده است؛ کلاینت عمومی برای واردکردن کانفیگ یا ساب شخصی نیست.** پس از تأیید دسترسی، سرورهای سرویس در برنامه دریافت می‌شوند. بخش Aether امکان ساخت اتصال شخصیِ جداگانه را هم دارد.
+
+**nira is a VPN service app with ready-to-use servers and a managed subscription, rather than a general-purpose client for importing your own configurations or subscriptions.** Service servers are delivered after access approval. Aether separately supports personal connection profiles.
+
 ## دانلود اندروید
+
+اگر دانلود گیر کرد، صفحهٔ ریلیز را در مرورگر باز کنید و APK مناسب را از بخش **Assets** بگیرید. اگر GitHub روی اتصال فعلی باز نمی‌شود، با دیتای موبایل، Wi-Fi دیگری یا یک VPN که همین حالا وصل است دوباره امتحان کنید. [صفحهٔ آخرین نسخه](https://github.com/bardia-us/niraNG/releases/latest)
 
 **اگر معماری گوشی را نمی‌دانید، نسخهٔ Universal را بگیرید.** این فایل بزرگ‌تر است و هر سه معماری پشتیبانی‌شده را در خود دارد.
 
 | نسخه | مناسب برای | دانلود |
 | --- | --- | --- |
-| **Universal** | ARM64، ARM32 و x86-64 در یک فایل | [APK](https://github.com/bardia-us/niraNG/releases/download/v1.2.4/niraNG-v1.2.4-universal.apk) |
-| **arm64-v8a** | بیشتر گوشی‌های جدید با اندروید ۶۴بیتی ARM | [APK](https://github.com/bardia-us/niraNG/releases/download/v1.2.4/niraNG-v1.2.4-arm64-v8a.apk) |
-| **armeabi-v7a** | دستگاه‌های ARM با اندروید ۳۲بیتی | [APK](https://github.com/bardia-us/niraNG/releases/download/v1.2.4/niraNG-v1.2.4-armeabi-v7a.apk) |
-| **x86_64** | دستگاه‌ها و شبیه‌سازهای x86-64؛ نه بیشتر گوشی‌ها | [APK](https://github.com/bardia-us/niraNG/releases/download/v1.2.4/niraNG-v1.2.4-x86_64.apk) |
+| **Universal** | ARM64، ARM32 و x86-64 در یک فایل | [APK](https://github.com/bardia-us/niraNG/releases/download/v1.2.5/niraNG-v1.2.5-universal.apk) |
+| **arm64-v8a** | بیشتر گوشی‌های جدید با اندروید ۶۴بیتی ARM | [APK](https://github.com/bardia-us/niraNG/releases/download/v1.2.5/niraNG-v1.2.5-arm64-v8a.apk) |
+| **armeabi-v7a** | دستگاه‌های ARM با اندروید ۳۲بیتی | [APK](https://github.com/bardia-us/niraNG/releases/download/v1.2.5/niraNG-v1.2.5-armeabi-v7a.apk) |
+| **x86_64** | دستگاه‌ها و شبیه‌سازهای x86-64؛ نه بیشتر گوشی‌ها | [APK](https://github.com/bardia-us/niraNG/releases/download/v1.2.5/niraNG-v1.2.5-x86_64.apk) |
 
 نیازمند **Android 7.0 یا جدیدتر** و یکی از معماری‌های بالا است. Universal به معنی پشتیبانی از تمام نسخه‌ها و دستگاه‌های اندروید نیست.
 
-لینک‌های جدول مربوط به **v1.2.4** هستند؛ برای انتشارهای بعدی همیشه [صفحهٔ آخرین نسخه](https://github.com/bardia-us/niraNG/releases/latest) را بررسی کنید. [تغییرات فارسی و انگلیسی این نسخه](assets/release_notes/1.2.4.md)
+لینک‌های جدول مربوط به **v1.2.5** هستند؛ برای انتشارهای بعدی همیشه [صفحهٔ آخرین نسخه](https://github.com/bardia-us/niraNG/releases/latest) را بررسی کنید. [تغییرات فارسی و انگلیسی این نسخه](assets/release_notes/1.2.5.md)
 
 ## نسخهٔ ویندوز: niraN
 
@@ -80,6 +88,8 @@
 
 ### Download
 
+If a download stalls, open the release page in your browser and choose the APK under **Assets**. If GitHub is unreachable on your current connection, retry on mobile data, another Wi-Fi network, or an already working VPN. [Latest Android release](https://github.com/bardia-us/niraNG/releases/latest)
+
 - [Latest Android release](https://github.com/bardia-us/niraNG/releases/latest): choose **Universal** if you are unsure about your device architecture.
 - **arm64-v8a** is for 64-bit ARM Android; **armeabi-v7a** is for 32-bit ARM Android.
 - **x86_64** is for compatible x86-64 devices and emulators, not a universal phone APK.
@@ -90,7 +100,7 @@
 
 VLESS, VMess and Trojan through Xray; VPN and local SOCKS proxy; managed subscriptions and usage information; latency testing and sorting; DNS/routing and CDN/TLS settings; Persian/English UI; sound/haptic feedback; selectable logs.
 
-Version **1.2.4** adds full Xray/sing-box JSON subscriptions, personal Aether profiles with optional Psiphon, real JSON/Aether latency probes, and full-Xray JSON traffic accounting. It improves connection cancellation, restarts and server controls while retaining TLS verification and the existing Xray core. Aether requires Android **10+**. See the [bilingual release notes](assets/release_notes/1.2.4.md). Measured traffic is not provider quota usage; historic gaps remain partial and 120 FPS is not guaranteed on every device.
+Version **1.2.5** adds five Aether modes, connection diagnostics, a 20-second UI timing report, and improvements to update notices and download guidance. Aether requires Android **10+**. See the [bilingual release notes](assets/release_notes/1.2.5.md).
 
 Install updates **over the existing app** to keep your settings. Select a server, tap **Connect**, and approve Android's VPN permission when using VPN mode. Enable **Performance Mode** for a simpler, matte interface without glass shaders or blur.
 

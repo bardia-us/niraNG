@@ -24,12 +24,15 @@ internal class ConnectionCore(
     private val current: () -> Boolean = { true },
 ) {
     @Volatile private var cancelled = false
+    private val endpointProbe=java.util.concurrent.atomic.AtomicReference<dev.nirang.client.ping.ProbeCancellation?>()
+    @Volatile private var rememberedEndpoint: String? = null
     val engine = server.customProfile?.engine ?: "xray"
     val ownsTunnel = engine == "sing-box"
     private val includeTun = settings.connectionMode == "vpn"
-    private val aether = if(engine == "aether") AetherSession(service.applicationContext,onProgress={
-        check(current()) { "Connection cancelled" }
-    }) else null
+    private val aether = if(engine == "aether") AetherSession(service.applicationContext,onProgress={ stage ->
+        check(current() && !cancelled) { "Connection cancelled" }
+        ConnectionStore.updateAetherStage(server.id,stage)
+    }, onEndpoint={ path -> if(current() && !cancelled) ConnectionStore.updateAetherEndpoint(server.id,path) }) else null
     private val trafficLock=Any()
     private var trafficWorker:java.util.concurrent.ScheduledExecutorService?=null
     private var trafficFuture:ScheduledFuture<*>?=null
@@ -68,6 +71,7 @@ internal class ConnectionCore(
             }
             "aether" -> {
                 aether!!.start(service,configuration,fd)
+                if(current() && !cancelled) aether.selectedPath?.let { ConnectionStore.updateAetherEndpoint(server.id,it) }
                 val proxy=ServerRecord("aether-egress",server.name,"","socks","127.0.0.1",aether.outputSocksPort,"","tcp","none",emptyMap())
                 val config=if(includeTun) XrayConfigBuilder.buildVpnConfig(proxy,settings,iranCidrs)
                     else XrayConfigBuilder.buildProxyConfig(proxy,settings,iranCidrs)
@@ -80,7 +84,52 @@ internal class ConnectionCore(
     }
     fun prepare() { aether?.prepare(configuration,if(XrayCore.isRunning()) 10809 else 0) }
 
+    fun diagnosticCurrent():Boolean = current() && !cancelled
+    fun diagnosticRunning():Boolean = diagnosticCurrent() && isRunning()
+    fun diagnosticSocksPort():Int? {
+        if(engine=="aether") return aether?.outputSocksPort
+        if(server.customProfile==null) return settings.localSocksPort
+        // Only inspect the actual configured inputs; never invent a probe input
+        // or replace the user's full JSON just to make diagnostics available.
+        val inputs=runCatching { JSONObject(configuration).optJSONArray("inbounds") }.getOrNull() ?: return null
+        for(i in 0 until inputs.length()) {
+            val node=inputs.optJSONObject(i) ?: continue
+            if(node.optString("listen") !in setOf("127.0.0.1","::1","localhost")) continue
+            if(node.optString("listen")=="::1") continue // probe helper uses IPv4 loopback
+            val type=node.optString(if(engine=="sing-box") "type" else "protocol")
+            if(type !in setOf("socks","mixed")) continue
+            if(engine=="sing-box" && (node.optJSONArray("users")?.length() ?: 0)>0) continue
+            if(engine!="sing-box" && node.optJSONObject("settings")?.optString("auth","noauth") !in setOf(null,"","noauth")) continue
+            val port=node.optInt(if(engine=="sing-box") "listen_port" else "port")
+            if(port in 1024..65535) return port
+        }
+        return null
+    }
+
+    /** Called on the existing diagnostic worker after a successful IP check.
+     * Verify the Aether helper itself: wrapper routing may bypass an IP-check
+     * hostname, so a successful wrapper request alone must not teach history. */
+    fun rememberAetherEndpoint(network:dev.nirang.client.cores.aether.EndpointNetwork?) {
+        val session=aether ?: return
+        if(network==null || !diagnosticRunning()) return
+        if(dev.nirang.client.cores.aether.AetherEndpointMemory.network(service)?.handle!=network.handle) return
+        val path=session.selectedPath ?: return
+        val stamp="${network.handle}:$path"
+        if(rememberedEndpoint==stamp) return
+        val probe=dev.nirang.client.ping.ProbeCancellation(AsyncNativeStop::execute)
+        if(!endpointProbe.compareAndSet(null,probe)) return
+        try {
+            if(!diagnosticCurrent()) return
+            dev.nirang.client.ping.SocksHttpLatencyProbe.measure(session.outputSocksPort,"https://www.gstatic.com/generate_204",probe,3000)
+            if(diagnosticCurrent() && session.selectedPath==path) {
+                dev.nirang.client.cores.aether.AetherEndpointMemory.record(service,configuration,path,network)
+                rememberedEndpoint=stamp
+            }
+        } finally { endpointProbe.compareAndSet(probe,null);probe.cancel() }
+    }
+
     fun stop() {
+        endpointProbe.getAndSet(null)?.cancel()
         if(ownsTunnel) {
             synchronized(trafficLock) {
                 trafficFuture?.cancel(false);trafficFuture=null
@@ -91,7 +140,7 @@ internal class ConnectionCore(
         } else { aether?.stop();XrayCore.stop(this) }
     }
     /** Invalidated synchronously before potentially blocking native teardown is queued. */
-    fun cancel() { cancelled = true }
+    fun cancel() { cancelled = true;endpointProbe.getAndSet(null)?.cancel() }
     private fun sampleTraffic()=synchronized(trafficLock) {
         if(trafficWorker == null) return@synchronized
         val counters=NativeSingBox.counters()

@@ -7,6 +7,7 @@ New-Item -ItemType Directory -Force -Path $out | Out-Null
 $source = Join-Path $project 'android/app/src/main/kotlin/dev/nirang/client/cores/aether'
 $tests = Join-Path $project 'android/app/src/test/kotlin/dev/nirang/client/cores/aether'
 $sources = @(Get-ChildItem -LiteralPath $source -Filter '*.kt' -ErrorAction SilentlyContinue | ForEach-Object FullName)
+$sources += Join-Path $project 'android/app/src/main/kotlin/dev/nirang/client/subscription/SecureSubscriptionCache.kt'
 $sources += @(Get-ChildItem -LiteralPath $tests -Filter '*.kt' | ForEach-Object FullName)
 & $runtime.java -cp $classpath org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -no-stdlib -no-reflect -jvm-target 17 -classpath $classpath -d $out @sources
 if ($LASTEXITCODE -ne 0) { throw 'Aether test compilation failed' }

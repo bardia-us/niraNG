@@ -25,6 +25,6 @@ internal object AetherProfileSave {
 
     private fun connectionValues(payload: String): List<Any?> = AetherOptions.parse(payload).let {
         listOf(it.mode,it.psiphon,it.psiphonMode,it.psiphonRegion,it.scan,it.carrier,
-            it.ipFamily,it.endpoint,it.keepalive,it.dns,it.startupTimeoutSeconds)
+            it.ipFamily,it.endpoint,it.outerEndpoint,it.innerEndpoint,it.fingerprint,it.keepalive,it.dns,it.startupTimeoutSeconds)
     }
 }

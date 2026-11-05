@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as glass;
 
@@ -16,10 +17,10 @@ import '../../core/widgets/glass_dialog.dart';
 import '../../core/widgets/glass_surface.dart';
 import '../../core/widgets/clay_surface.dart';
 import '../../core/widgets/menu_activity.dart';
-import '../../core/widgets/release_notes_markdown.dart';
 import '../../core/widgets/update_dialog.dart';
 import '../../core/widgets/telegram_mark.dart';
 import '../../core/widgets/startup_loading.dart';
+import '../../core/widgets/whats_new_dialog.dart';
 import '../servers/servers_screen.dart';
 import '../settings/settings_screen.dart';
 import 'app_controller.dart';
@@ -37,6 +38,7 @@ class _AppShellState extends ConsumerState<AppShell> {
   int _index = 0;
   final _pageController = PageController();
   bool _tabAnimating = false;
+  Future<void>? _tabTransition;
   int _tabAnimationGeneration = 0;
   bool _reminderQueued = false;
   bool _performancePromptQueued = false;
@@ -100,7 +102,10 @@ class _AppShellState extends ConsumerState<AppShell> {
 
   Future<void> _selectPage(int value) async {
     if (MenuActivity.isOpen.value ||
-        value == _index ||
+        (value == _index &&
+            _pageController.hasClients &&
+            ((_pageController.page ?? value.toDouble()) - value).abs() <
+                .001) ||
         !_pageController.hasClients) {
       return;
     }
@@ -115,14 +120,24 @@ class _AppShellState extends ConsumerState<AppShell> {
     _pageController.position.context.setIgnorePointer(true);
     final generation = ++_tabAnimationGeneration;
     try {
-      await _pageController.animateToPage(
+      final transition = _pageController.animateToPage(
         value,
         duration: const Duration(milliseconds: 240),
         curve: Curves.easeOutCubic,
       );
+      _tabTransition = transition;
+      await transition;
     } finally {
       if (mounted && generation == _tabAnimationGeneration) {
         _tabAnimating = false;
+        _tabTransition = null;
+        if (_pageController.hasClients) {
+          // Layout/startup changes or a gesture can interrupt a driven scroll.
+          // Its completion does not prove the requested page was reached.
+          final actual = _pageController.page?.round();
+          if (actual != null && actual != _index) _activatePage(actual);
+          _pageController.position.context.setIgnorePointer(false);
+        }
       }
     }
   }
@@ -563,41 +578,43 @@ class _AppShellState extends ConsumerState<AppShell> {
       )) {
         return;
       }
-      final notes = await const GitHubUpdateChecker().releaseNotes(
-        app.appVersion,
-      );
-      final body = notes.forLanguage(app.settings.language).trim();
-      if (!mounted || body.isEmpty) return;
+      // Let an early tab tap finish before a startup modal captures input.
+      while (mounted && _tabTransition != null) {
+        await _tabTransition;
+      }
+      if (!mounted) return;
+      if (MenuActivity.isOpen.value) {
+        // Opening another startup modal over a user's menu feels like a lock.
+        // The existing menu-close listener retries this once input is free.
+        _whatsNewQueued = false;
+        return;
+      }
+      // Claim the notice before presenting it, even if the shell is recreated.
+      final claimed = await ref
+          .read(appControllerProvider.notifier)
+          .claimWhatsNew();
+      if (!mounted || !claimed) return;
       final persian = app.settings.language == 'fa';
-      final accepted = await showNirangDialog<bool>(
+      await showNirangDialog<bool>(
         context: context,
-        barrierDismissible: false,
-        builder: (dialogContext) => NirangAlertDialog(
-          icon: const Icon(Icons.auto_awesome_rounded),
-          title: Text(persian ? 'چه چیزهایی جدید است؟' : "What's new"),
-          content: Directionality(
-            textDirection: persian ? TextDirection.rtl : TextDirection.ltr,
-            child: ReleaseNotesMarkdown(data: body),
-          ),
-          actions: [
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: Text(persian ? 'باشه' : 'Got it'),
+        builder: (_) => WhatsNewDialog(
+          persian: persian,
+          loadNotes: () async => parseBilingualReleaseNotes(
+            await rootBundle.loadString(
+              'assets/release_notes/${SemanticVersion.parse(app.appVersion)}.md',
             ),
-          ],
+          ),
         ),
       );
-      if (accepted == true && mounted) {
-        await ref.read(appControllerProvider.notifier).recordWhatsNewSeen();
-      }
     } catch (_) {
-      // Do not mark this build as seen when GitHub is temporarily unavailable.
+      // Optional startup notes must never prevent use of the application.
     } finally {
-      _whatsNewFinished = true;
+      // A user's open menu defers this notice until the menu-close listener.
+      if (_whatsNewQueued) _whatsNewFinished = true;
       final current = mounted
           ? ref.read(appControllerProvider).asData?.value
           : null;
-      if (current != null) _queueTelegramReminder(current);
+      if (_whatsNewFinished && current != null) _queueTelegramReminder(current);
     }
   }
 
@@ -750,7 +767,7 @@ bool shouldShowWhatsNew({
   required int upgradedFromBuild,
 }) =>
     appBuild > 0 &&
-    upgradedFromBuild > 0 &&
+    upgradedFromBuild >= 0 &&
     upgradedFromBuild < appBuild &&
     seenBuild < appBuild;
 

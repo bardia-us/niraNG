@@ -12,6 +12,7 @@ import 'package:nirang/core/theme/app_theme.dart';
 import 'package:nirang/core/theme/app_scroll_behavior.dart';
 import 'package:nirang/core/widgets/glass_surface.dart';
 import 'package:nirang/core/widgets/glass_dialog.dart';
+import 'package:nirang/core/widgets/country_flag_badge.dart';
 import 'package:nirang/features/servers/aether_profile_screen.dart';
 import 'package:nirang/features/vpn/app_controller.dart';
 
@@ -64,10 +65,15 @@ Future<void> _mount(
 Future<void> _reveal(WidgetTester tester, String key) async {
   await tester.scrollUntilVisible(
     find.byKey(ValueKey(key)),
-    180,
+    key == 'aether-mode' ? -180 : 180,
     scrollable: find.byType(Scrollable).first,
   );
   await tester.pumpAndSettle();
+  final rect = tester.getRect(find.byKey(ValueKey(key)));
+  if (rect.top < 70 && !key.contains('save') && !key.contains('prepare')) {
+    await tester.drag(find.byType(Scrollable).first, Offset(0, 85 - rect.top));
+    await tester.pumpAndSettle();
+  }
 }
 
 void main() {
@@ -93,8 +99,11 @@ void main() {
           if (call.method == 'renewAetherIdentity') {
             return {'state': 'prepared'};
           }
-          if (call.method == 'prepareAetherProfile') {
-            return {'state': 'prepared'};
+          if (call.method == 'scanAetherDraft') {
+            return {
+              'state': 'ready',
+              'scan': {'endpoint': '162.159.199.65:443'},
+            };
           }
           return null;
         });
@@ -102,6 +111,53 @@ void main() {
   tearDown(
     () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, null),
+  );
+
+  testWidgets(
+    'changing mode restores its own endpoint and saves bounded history',
+    (tester) async {
+      await _mount(tester);
+      await _reveal(tester, 'aether-endpoint');
+      await tester.enterText(
+        find.byKey(const ValueKey('aether-endpoint')),
+        '162.159.199.65:443',
+      );
+      await _reveal(tester, 'aether-mode');
+      await tester.tap(find.byKey(const ValueKey('aether-mode')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('WireGuard (WARP)'));
+      await tester.pumpAndSettle();
+      await _reveal(tester, 'aether-endpoint');
+      expect(
+        tester
+            .widget<TextFormField>(
+              find.byKey(const ValueKey('aether-endpoint')),
+            )
+            .controller!
+            .text,
+        isEmpty,
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('aether-endpoint')),
+        '188.114.96.1:2408',
+      );
+      await _reveal(tester, 'aether-mode');
+      await tester.tap(find.byKey(const ValueKey('aether-mode')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('MASQUE (Aether)'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('aether-save')));
+      await tester.pumpAndSettle();
+      final values =
+          (calls.singleWhere((c) => c.method == 'saveAetherProfile').arguments
+                  as Map)['values']
+              as Map;
+      expect(values['endpoint'], '162.159.199.65:443');
+      expect(
+        ((values['endpointHistory'] as Map)['wireguard'] as Map)['endpoint'],
+        '188.114.96.1:2408',
+      );
+    },
   );
 
   testWidgets('region picker retains released drag and selects last country', (
@@ -120,6 +176,14 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('aether-psiphonRegion')));
     await tester.pumpAndSettle();
     final dialog = find.byType(NirangAlertDialog);
+    expect(
+      find.descendant(of: dialog, matching: find.byType(CountryFlagBadge)),
+      findsWidgets,
+    );
+    final countries = tester.widget<ListView>(
+      find.descendant(of: dialog, matching: find.byType(ListView)),
+    );
+    expect(countries.physics, isA<BouncingScrollPhysics>());
     for (var i = 0; i < 12; i++) {
       await tester.dragFrom(tester.getCenter(dialog), const Offset(0, -380));
       // Settling after pointer release catches the old snap-back to the top.
@@ -164,39 +228,35 @@ void main() {
     });
   }
 
-  testWidgets('Advanced expands progressively', (tester) async {
-    await tester.binding.setSurfaceSize(const Size(360, 640));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    await _mount(tester, persian: true, textScale: 1.3);
-    await _reveal(tester, 'aether-advanced');
-    final header = find.byKey(const ValueKey('aether-advanced'));
-    final collapsedHeight = tester
-        .getSize(
-          find
-              .ancestor(of: header, matching: find.byType(FrostedSurface))
-              .first,
-        )
-        .height;
-    await tester.tap(header);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 80));
-    final partialHeight = tester
-        .getSize(
-          find
-              .ancestor(of: header, matching: find.byType(FrostedSurface))
-              .first,
-        )
-        .height;
+  testWidgets('five modes are available and draft scan fills an unsaved form', (
+    tester,
+  ) async {
+    await _mount(tester);
+    await tester.tap(find.byKey(const ValueKey('aether-mode')));
     await tester.pumpAndSettle();
-    final expandedHeight = tester
-        .getSize(
-          find
-              .ancestor(of: header, matching: find.byType(FrostedSurface))
-              .first,
-        )
-        .height;
-    expect(partialHeight, greaterThan(collapsedHeight));
-    expect(partialHeight, lessThan(expandedHeight));
+    for (final label in [
+      'MASQUE (Aether)',
+      'WireGuard (WARP)',
+      'WireGuard over MASQUE',
+      'WARP-in-WARP',
+      'MASQUE-in-MASQUE',
+    ]) {
+      expect(find.text(label), findsWidgets);
+    }
+    Navigator.of(tester.element(find.byType(NirangAlertDialog))).pop();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('aether-prepare')));
+    await tester.pumpAndSettle();
+    expect(calls.where((c) => c.method == 'scanAetherDraft'), hasLength(1));
+    expect(calls.where((c) => c.method == 'saveAetherProfile'), isEmpty);
+    await _reveal(tester, 'aether-endpoint');
+    expect(
+      tester
+          .widget<TextFormField>(find.byKey(const ValueKey('aether-endpoint')))
+          .controller!
+          .text,
+      '162.159.199.65:443',
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -206,11 +266,11 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(360, 640));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await _mount(tester, persian: true, textScale: 1.3);
-    await _reveal(tester, 'aether-advanced');
-    await tester.tap(find.byKey(const ValueKey('aether-advanced')));
     await tester.pumpAndSettle();
     await _reveal(tester, 'aether-endpoint');
-    final help = find.text('برای جست‌وجوی خودکار IP، آدرس رو پاک و ذخیره کن.');
+    final help = find.text(
+      'برای انتخاب خودکار خالی بگذار. اسکن، فرم را پر می‌کند؛ ذخیره تغییرات را اعمال می‌کند.',
+    );
     expect(help, findsOneWidget);
     final paragraph = tester.renderObject<RenderParagraph>(help);
     expect(paragraph.didExceedMaxLines, isFalse);
@@ -234,39 +294,32 @@ void main() {
       Directionality.of(tester.element(find.byType(AetherProfileScreen))),
       TextDirection.rtl,
     );
-    await _reveal(tester, 'aether-advanced');
-    await tester.tap(find.byKey(const ValueKey('aether-advanced')));
     await tester.pumpAndSettle();
     await _reveal(tester, 'aether-endpoint');
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets(
-    'new profile keeps advanced settings collapsed and rejects host endpoints',
-    (tester) async {
-      await _mount(tester);
-      expect(find.byKey(const ValueKey('aether-scan')), findsNothing);
-      await tester.tap(find.byKey(const ValueKey('aether-advanced')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('aether-scan')), findsOneWidget);
-      await tester.enterText(
-        find.byKey(const ValueKey('aether-endpoint')),
-        'example.com:443',
-      );
-      await tester.scrollUntilVisible(
-        find.byKey(const ValueKey('aether-save')),
-        250,
-        scrollable: find.byType(Scrollable).first,
-      );
-      await tester.tap(find.byKey(const ValueKey('aether-save')));
-      await tester.pumpAndSettle();
-      expect(
-        calls.where((call) => call.method == 'saveAetherProfile'),
-        isEmpty,
-      );
-      expect(find.text('Enter an IP:port or [IPv6]:port.'), findsOneWidget);
-    },
-  );
+  testWidgets('draft scan is visible and host endpoints are rejected', (
+    tester,
+  ) async {
+    await _mount(tester);
+    expect(find.byKey(const ValueKey('aether-prepare')), findsOneWidget);
+    await tester.pumpAndSettle();
+    await _reveal(tester, 'aether-endpoint');
+    await tester.enterText(
+      find.byKey(const ValueKey('aether-endpoint')),
+      'example.com:443',
+    );
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('aether-save')),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.byKey(const ValueKey('aether-save')));
+    await tester.pumpAndSettle();
+    expect(calls.where((call) => call.method == 'saveAetherProfile'), isEmpty);
+    expect(find.text('Enter an IP:port or [IPv6]:port.'), findsOneWidget);
+  });
 
   testWidgets('editor header uses settings frosted transparency', (
     tester,
@@ -298,10 +351,9 @@ void main() {
         origin: 'local',
       );
       await _mount(tester, server: server);
-      await tester.tap(find.byKey(const ValueKey('aether-advanced')));
       await tester.pumpAndSettle();
-      await _reveal(tester, 'aether-renew-identity');
-      await tester.tap(find.byKey(const ValueKey('aether-renew-identity')));
+      await _reveal(tester, 'aether-renew');
+      await tester.tap(find.byKey(const ValueKey('aether-renew')));
       await tester.pumpAndSettle();
       expect(
         calls.where((call) => call.method == 'renewAetherIdentity'),
@@ -317,7 +369,7 @@ void main() {
         calls.where((call) => call.method == 'renewAetherIdentity'),
         isEmpty,
       );
-      await tester.tap(find.byKey(const ValueKey('aether-renew-identity')));
+      await tester.tap(find.byKey(const ValueKey('aether-renew')));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Renew'));
       await tester.pumpAndSettle();
@@ -370,41 +422,6 @@ void main() {
     expect(((saved.arguments as Map)['values'] as Map)['scan'], 'stealth');
   });
 
-  testWidgets('unsaved manual endpoint cannot test an old saved address', (
-    tester,
-  ) async {
-    const server = ServerInfo(
-      id: 'local',
-      name: 'Local',
-      country: '',
-      protocol: 'AETHER',
-      transport: '',
-      security: '',
-      port: 0,
-      selected: false,
-      status: 'idle',
-      profileKind: 'aether',
-      origin: 'local',
-    );
-    await _mount(tester, server: server);
-    await tester.tap(find.byKey(const ValueKey('aether-advanced')));
-    await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byKey(const ValueKey('aether-endpoint')),
-      '203.0.113.10:443',
-    );
-    await tester.pump();
-    await _reveal(tester, 'aether-prepare');
-    final prepare = tester.widget<OutlinedButton>(
-      find.byKey(const ValueKey('aether-prepare')),
-    );
-    expect(prepare.onPressed, isNull);
-    expect(
-      calls.where((call) => call.method == 'prepareAetherProfile'),
-      isEmpty,
-    );
-  });
-
   testWidgets('leaving during key renewal cancels its native preparation', (
     tester,
   ) async {
@@ -433,10 +450,9 @@ void main() {
       origin: 'local',
     );
     await _mount(tester, server: server);
-    await tester.tap(find.byKey(const ValueKey('aether-advanced')));
     await tester.pumpAndSettle();
-    await _reveal(tester, 'aether-renew-identity');
-    await tester.tap(find.byKey(const ValueKey('aether-renew-identity')));
+    await _reveal(tester, 'aether-renew');
+    await tester.tap(find.byKey(const ValueKey('aether-renew')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Renew'));
     await tester.pump();
@@ -465,7 +481,7 @@ void main() {
           if (call.method == 'getAetherProfile') {
             return {'name': 'Local', 'values': {}};
           }
-          if (call.method == 'prepareAetherProfile') return preparation.future;
+          if (call.method == 'scanAetherDraft') return preparation.future;
           if (call.method == 'cancelAetherPreparation') return true;
           return null;
         });
@@ -530,19 +546,10 @@ void main() {
       expect(
         find.descendant(
           of: find.byKey(const ValueKey('aether-prepare')),
-          matching: find.text(
-            endpoint.isEmpty ? 'Find endpoint IP' : 'Prepare / test path',
-          ),
+          matching: find.text('Scan IP'),
         ),
         findsOneWidget,
       );
-      if (endpoint.isNotEmpty) {
-        expect(
-          find.textContaining('Clear the endpoint and save'),
-          findsOneWidget,
-        );
-        expect(find.text('Find a new endpoint IP'), findsNothing);
-      }
     });
   }
 }

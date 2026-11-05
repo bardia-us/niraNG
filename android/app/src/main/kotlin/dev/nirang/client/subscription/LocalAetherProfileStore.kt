@@ -18,7 +18,7 @@ internal class LocalAetherProfileStore(
         require(profiles.length() <= 100) { "Too many local Aether profiles" }
         val result = (0 until profiles.length()).map { CustomProfileCodec.fromPrivateJson(profiles.getJSONObject(it)) }
         require(result.all { it.kind == "aether" } && result.map { it.id }.toSet().size == result.size) { "Invalid local Aether profiles" }
-        return result
+        return if (result.none { it.id == "builtin_wireguard_irancell" } && result.size < 100) result + AetherProfiles.irancellPreset() else result
     }
 
     fun save(id: String?, name: String, raw: String): CustomProfile {

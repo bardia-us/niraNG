@@ -29,12 +29,15 @@ class AetherSession(
     private val psiphonPort: Int = 10821,
     private val onProgress: (String) -> Unit = {},
     private val storageDirectory: File? = null,
+    private val onEndpoint: (Map<String,String>) -> Unit = {},
 ) {
     private val app = context.applicationContext
     private val owner = AetherProcessOwner()
     private val directory get() = storageDirectory ?: File(app.noBackupFilesDir, "aether")
     @Volatile private var live: Process? = null
     @Volatile private var ready = false
+    @Volatile var selectedPath: Map<String,String>? = null
+        private set
     @Volatile var outputSocksPort: Int = socksPort
         private set
 
@@ -66,13 +69,15 @@ class AetherSession(
     fun rescan(service: VpnService, config: String, tunFd: Int) = startInternal(config, true)
 
     /** Standalone scan keeps a temporary local proxy until its caller stops it in finally. */
-    fun scan(config: String) = startInternal(config, true)
+    fun scan(config: String) = startInternal(config, true, verifyPath = true)
 
-    private fun startInternal(config: String, rescan: Boolean) {
+    private fun startInternal(config: String, rescan: Boolean, verifyPath: Boolean = false) {
         validate(config)
         val token = owner.begin()
         ready = false
         val options = AetherOptions.parse(config)
+        // A configured peer is not evidence that the core selected it.
+        selectedPath = null
         try {
             provision(options, token, 0)
             checkCurrent(token)
@@ -84,7 +89,7 @@ class AetherSession(
             while (System.nanoTime() < deadline) {
                 checkCurrent(token)
                 check(process.isAlive) { "Aether stopped before establishing a tunnel" }
-                if (probe(options.psiphon == "off")) {
+                if (if (verifyPath) probe(options.psiphon == "off") else localListenerReady()) {
                     checkCurrent(token)
                     ready = true
                     onProgress("ready")
@@ -158,10 +163,13 @@ class AetherSession(
         if (!owner.install(token) { terminate(process, marker) }) throw CancellationException("Aether start cancelled")
         live = process
         process.outputStream.close()
-        // Native output may contain device IDs, endpoints or private API errors. Drain and discard.
-        Thread({ runCatching { process.inputStream.use { input ->
-            val bytes = ByteArray(4096)
-            while (input.read(bytes) >= 0) Unit
+        // Never log raw native output: only strict numeric endpoint results are public status.
+        Thread({ runCatching { process.inputStream.bufferedReader().useLines { lines ->
+            lines.forEach { line ->
+                if (owner.current(token) && live === process) {
+                    AetherEndpoint.parse(options.mode,line)?.let { path -> selectedPath=path;onEndpoint(path) }
+                }
+            }
         } } }, "aether-output").apply { isDaemon = true; start() }
         return process
     }
@@ -226,6 +234,11 @@ class AetherSession(
         }
         return target
     }
+
+    private fun localListenerReady(): Boolean = runCatching {
+        Socket().use { it.connect(InetSocketAddress("127.0.0.1",outputSocksPort),300) }
+        true
+    }.getOrDefault(false)
 
     private fun probe(requireWarp: Boolean): Boolean = runCatching {
         val proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", outputSocksPort))

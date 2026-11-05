@@ -5,6 +5,7 @@ import '../../core/formatters.dart';
 import '../../core/localization/app_strings.dart';
 import '../../core/platform/nirang_native.dart';
 import '../../core/widgets/glass_dialog.dart';
+import '../../core/widgets/connection_diagnostics_dialog.dart';
 import '../../core/widgets/glass_surface.dart';
 
 /// Owns only its small display; traffic never enters the Home app snapshot.
@@ -89,14 +90,23 @@ class _MeasuredTrafficPanelState extends State<MeasuredTrafficPanel>
       ),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 320),
-        child: Text(context.s('trafficScope')),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(dialogContext),
-          child: Text(MaterialLocalizations.of(context).closeButtonLabel),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(context.s('trafficScope')),
+            const SizedBox(height: 20),
+            Align(
+              alignment: Alignment.centerRight,
+              child: DiagnosticAction(
+                label: MaterialLocalizations.of(context).closeButtonLabel,
+                icon: Icons.close_rounded,
+                onPressed: () => Navigator.pop(dialogContext),
+              ),
+            ),
+          ],
         ),
-      ],
+      ),
     ),
   );
 

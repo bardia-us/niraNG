@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/registry.php';
+require_once __DIR__ . '/feedback.php';
 header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
 
@@ -420,6 +421,36 @@ function proxy_subscription(PDO $pdo, array $payload): void
     exit;
 }
 
+function handle_feedback(PDO $pdo, array $payload): void
+{
+    $authFields = ['action','schema_version','installation_id','device_key','app_version','app_build','request_timestamp','request_nonce'];
+    $extraFields = ['report_id','message','diagnostics','ui_metrics','selected_server','selected_config'];
+    if (($payload['schema_version'] ?? null) !== 7 || array_diff(array_keys($payload), array_merge($authFields, $extraFields)) !== []
+        || array_diff(array_merge($authFields, ['report_id']), array_keys($payload)) !== []) {
+        respond(400, ['ok' => false, 'error' => 'invalid_fields']);
+    }
+    $reportId = valid_installation_id($payload['report_id']);
+    if ($reportId === null) respond(422, ['ok' => false, 'error' => 'invalid_feedback']);
+    // Only the existing, exact schema-7 authentication DTO reaches the shared auth path.
+    authenticate_device($pdo, array_intersect_key($payload, array_flip($authFields)));
+    try { $content = feedback_content($payload); }
+    catch (InvalidArgumentException $exception) { respond(422, ['ok' => false, 'error' => 'invalid_feedback']); }
+    $statement = $pdo->prepare('SELECT installation_id,device_key,device_name,manufacturer,model,os_version,app_name,app_version,app_build,platform
+        FROM installations WHERE installation_id = ? AND device_key = ? LIMIT 1');
+    $statement->execute([$payload['installation_id'], $payload['device_key']]);
+    $identity = $statement->fetch();
+    if (!is_array($identity)) respond(401, ['ok' => false, 'error' => 'invalid_device_credentials']);
+    try { $result = feedback_store($pdo, $identity, $reportId, $content); }
+    catch (FeedbackRateLimit $exception) {
+        header('Retry-After: ' . $exception->retryAfter);
+        respond(429, ['ok' => false, 'error' => 'feedback_rate_limited', 'retry_after' => $exception->retryAfter]);
+    }
+    catch (DomainException $exception) {
+        respond(409, ['ok' => false, 'error' => 'report_id_conflict']);
+    }
+    respond($result['duplicate'] ? 200 : 201, $result);
+}
+
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     header('Allow: POST');
     respond(405, ['ok' => false, 'error' => 'method_not_allowed']);
@@ -427,14 +458,16 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
 $contentType = strtolower(trim(explode(';', $_SERVER['CONTENT_TYPE'] ?? '')[0]));
 if ($contentType !== 'application/json') respond(415, ['ok' => false, 'error' => 'application_json_required']);
 $length = (int)($_SERVER['CONTENT_LENGTH'] ?? 0);
-if ($length <= 0 || $length > 8192) respond(413, ['ok' => false, 'error' => 'invalid_payload_size']);
-$raw = file_get_contents('php://input', false, null, 0, 8193);
+if ($length <= 0 || $length > 98304) respond(413, ['ok' => false, 'error' => 'invalid_payload_size']);
+$raw = file_get_contents('php://input', false, null, 0, 98305);
+if (!is_string($raw) || strlen($raw) !== $length) respond(413, ['ok' => false, 'error' => 'invalid_payload_size']);
 try {
     $payload = is_string($raw) ? json_decode($raw, true, 16, JSON_THROW_ON_ERROR) : null;
 } catch (JsonException $exception) {
     respond(400, ['ok' => false, 'error' => 'invalid_json']);
 }
 if (!is_array($payload) || substr(ltrim((string)$raw), 0, 1) !== '{') respond(400, ['ok' => false, 'error' => 'invalid_payload']);
+if (($payload['action'] ?? '') !== 'feedback' && $length > 8192) respond(413, ['ok' => false, 'error' => 'invalid_payload_size']);
 
 try {
     $pdo = registry_database();
@@ -447,6 +480,7 @@ try {
         respond(200, registry_access_payload(true, false, $access['minimum'], false, 'allowed', $access['minimum_build']));
     }
     if ($action === 'subscription') proxy_subscription($pdo, $payload);
+    if ($action === 'feedback') handle_feedback($pdo, $payload);
     respond(400, ['ok' => false, 'error' => 'unsupported_action']);
 } catch (Throwable $exception) {
     respond(503, ['ok' => false, 'error' => 'registry_unavailable']);

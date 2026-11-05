@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/registry.php';
 require_once __DIR__ . '/panel.php';
+require_once __DIR__ . '/feedback.php';
 require_once __DIR__ . '/admin_auth.php';
 require_once __DIR__ . '/admin-auth/ui.php';
 header('Cache-Control: no-store');
@@ -10,7 +11,7 @@ header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: DENY');
 header('Referrer-Policy: no-referrer');
 $nonce = base64_encode(random_bytes(18));
-header("Content-Security-Policy: default-src 'none'; style-src 'nonce-{$nonce}'; img-src data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
+header("Content-Security-Policy: default-src 'none'; style-src 'nonce-{$nonce}'; script-src 'nonce-{$nonce}'; img-src data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
 
 if (!in_array(strtolower((string)($_SERVER['HTTPS'] ?? '')), ['on', '1'], true) && (string)($_SERVER['SERVER_PORT'] ?? '') !== '443') {
     http_response_code(400);
@@ -106,7 +107,16 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             } catch (DomainException | InvalidArgumentException $exception) { $error = $exception->getMessage(); if ($exception instanceof NiraAdminRateLimit) { http_response_code(429); header('Retry-After: '.$exception->retryAfter); } }
             catch (Throwable $exception) { $error = 'Authentication action unavailable. Check the external key and storage; no reset is required.'; }
         } elseif ($auth->authenticated() && $database instanceof PDO) {
-            if ($action === 'minimum_versions') {
+            if ($action === 'feedback_read') {
+                $feedbackId = filter_var($_POST['feedback_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+                if ($feedbackId === false || $feedbackId === null) $error = 'Invalid report.';
+                else {
+                    try {
+                        feedback_initialize($database);
+                        $message = feedback_read($database, $feedbackId) ? 'Report marked as read.' : 'Report was not found.';
+                    } catch (Throwable $exception) { $error = 'Feedback storage is unavailable.'; }
+                }
+            } elseif ($action === 'minimum_versions') {
                 $androidMinimum = registry_valid_version($_POST['minimum_android_version'] ?? null);
                 $androidMinimumBuild = registry_valid_build($_POST['minimum_android_build'] ?? null);
                 $windowsMinimum = registry_valid_version($_POST['minimum_windows_version'] ?? null);
@@ -176,9 +186,24 @@ $latestWindowsVersion = $authenticated
     ? registry_latest_release_version($database, 'bardia-us/niraN')
     : null;
 $rows = [];
+$feedbackRows = [];
+$feedbackDetail = null;
+$feedbackUnread = 0;
+$feedbackOnlyUnread = ($_GET['feedback_filter'] ?? '') === 'unread';
+$feedbackBefore = (int)(filter_var($_GET['feedback_before'] ?? 0, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]) ?: 0);
 $search = is_string($_GET['q'] ?? null) ? trim(substr($_GET['q'], 0, 256)) : '';
 if ($authenticated) {
     $rows = panel_device_rows($database, $search);
+    try {
+        $feedbackRows = feedback_inbox($database, $feedbackOnlyUnread, $feedbackBefore);
+        $feedbackUnread = (int)$database->query('SELECT COUNT(*) FROM feedback_reports WHERE read_at IS NULL')->fetchColumn();
+        $feedbackId = filter_var($_GET['feedback_id'] ?? 0, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        if ($feedbackId !== false) {
+            $statement = $database->prepare('SELECT * FROM feedback_reports WHERE id = ?');
+            $statement->execute([$feedbackId]);
+            $feedbackDetail = $statement->fetch() ?: null;
+        }
+    } catch (Throwable $exception) { $error = 'Feedback storage is unavailable.'; }
 }
 $timezoneName = getenv('NIRAN_ADMIN_TIMEZONE');
 try { $displayTimezone = new DateTimeZone(is_string($timezoneName) && $timezoneName !== '' ? $timezoneName : 'Asia/Tehran'); }
@@ -193,9 +218,10 @@ catch (Throwable $exception) { $displayTimezone = new DateTimeZone('UTC'); }
 table{border-collapse:collapse;width:100%;min-width:1050px}th,td{text-align:left;padding:9px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--muted);font-size:12px}.mono{font-family:ui-monospace,monospace;font-size:12px}.device-key{white-space:nowrap;cursor:help}.table-wrap{overflow:auto}.notice{padding:10px;border-radius:9px;margin:10px 0}.error{background:#4b1f2b}.success{background:#173d34}
 .platform{display:inline-flex;align-items:center;gap:6px;font-weight:700}.platform svg{width:17px;height:17px;fill:currentColor;flex:none}.platform.android{color:#82d8a1}.platform.windows{color:#80baff}.auth{max-width:480px;margin:24px auto}.auth form{display:grid;gap:12px}.auth label{display:grid;gap:6px;color:var(--muted)}.auth input{width:100%}
 .policy{gap:12px;align-items:end}.policy label{display:grid;gap:6px;color:var(--muted);font-size:12px}.policy input{width:180px}.policy-note{font-size:12px;line-height:1.6;margin-bottom:0}.search{margin-bottom:12px}.search input{min-width:240px;flex:1}@media(max-width:700px){main{padding:14px}.right{margin-left:0}.search input{min-width:0;width:100%}.policy label,.policy input{width:100%}}
+.feedback-text{display:block;width:100%;min-height:220px;margin:12px 0;padding:12px;resize:vertical;background:#100d18;color:var(--text);border:1px solid var(--line);border-radius:9px;white-space:pre;font:12px ui-monospace,monospace}.feedback-list{min-width:650px}.feedback-preview{white-space:pre-wrap;overflow-wrap:anywhere;max-width:460px}.feedback-unread{border-left:3px solid var(--accent)}
 <?php readfile(__DIR__.'/admin-auth/ui.css'); ?>
 </style></head><body><main>
-<div class="row toolbar"><h1>niraN / niraNG Device Registry</h1><?php if ($authenticated): ?><form class="right" method="post"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="logout"><button class="secondary">Log out</button></form><?php endif; ?></div>
+<div class="row toolbar"><h1>niraN / niraNG Device Registry</h1><?php if ($authenticated): ?><a href="index.php?feedback_filter=unread#feedback">Feedback <span class="badge <?= $feedbackUnread > 0 ? 'reinstall' : 'unknown' ?>"><?= $feedbackUnread ?> unread</span></a><form class="right" method="post"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="logout"><button class="secondary">Log out</button></form><?php endif; ?></div>
 <?php if ($error !== null): ?><div class="notice error"><?= e($error) ?></div><?php endif; ?>
 <?php if ($message !== null): ?><div class="notice success"><?= e($message) ?></div><?php endif; ?>
 <?php if (!$authenticated): ?>
@@ -211,6 +237,7 @@ table{border-collapse:collapse;width:100%;min-width:1050px}th,td{text-align:left
 <?php else: ?><p>Public registration is disabled. Configure NIRAN_ADMIN_SETUP_TOKEN outside the web root; see ADMIN_AUTH.md.</p><?php endif; ?></section>
 <?php else: ?>
 <details class="card" <?= $authResult ? 'open' : '' ?>><summary>Account security · authenticator and trusted devices</summary><?php admin_auth_security($auth, $authResult); ?></details>
+<?php require __DIR__ . '/feedback_ui.php'; ?>
 <section class="card"><h2>Remote access policy</h2><form method="post" class="row policy"><input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="minimum_versions"><label>Android display version <input name="minimum_android_version" value="<?= e($minimumAndroidVersion) ?>" pattern="[0-9]+\.[0-9]+\.[0-9]+.*" required></label><label>Android minimum build <input name="minimum_android_build" type="number" min="0" step="1" value="<?= $minimumAndroidBuild ?>" required></label><label>Windows registry status minimum <input name="minimum_windows_version" value="<?= e($minimumWindowsVersion) ?>" pattern="[0-9]+\.[0-9]+\.[0-9]+.*" required></label><label>Windows forced-update minimum <input name="minimum_windows_update_version" value="<?= e($minimumWindowsUpdateVersion) ?>" pattern="[0-9]+\.[0-9]+\.[0-9]+.*" required></label><button>Save</button></form>
 <p class="policy-note">Android forced updates use build <?= $minimumAndroidBuild ?>; Windows uses version <?= e($minimumWindowsUpdateVersion) ?>. Registry Status follows the display minimum above. Latest GitHub releases: niraNG <?= e($latestAndroidVersion ?? 'unavailable') ?> / niraN <?= e($latestWindowsVersion ?? 'unavailable') ?>.</p></section>
 <section class="card"><h2>Devices (<?= count($rows) ?><?= count($rows) === 1000 ? ' — first 1000 matches' : '' ?>)</h2>

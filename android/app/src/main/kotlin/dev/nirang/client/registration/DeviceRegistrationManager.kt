@@ -144,6 +144,35 @@ object DeviceRegistrationManager {
         return RemoteSubscription(response.bytes, response.usageHeader)
     }
 
+    /** Explicit user feedback; uses existing pinned HTTPS and device authentication. */
+    fun submitFeedback(context: Context, values: JSONObject): Map<String,Any?> {
+        check(hasConsent(context)) { "Registration is required" }
+        val reportId=values.getString("report_id")
+        require(runCatching { UUID.fromString(reportId).version()==4 }.getOrDefault(false)) { "Invalid report ID" }
+        val message=values.optString("message","")
+        require(message.toByteArray(Charsets.UTF_8).size<=4000) { "Feedback text is too long" }
+        val deadline=ApiRequestDeadline(12000)
+        if(accessToken(context)==null) synchronize(context.applicationContext,register=true,deadline=deadline)
+        fun request():JSONObject=authorizedPayload(context,"feedback").apply {
+            put("report_id",reportId);put("message",message)
+            for(key in listOf("diagnostics","selected_server","selected_config","ui_metrics")) if(values.has(key)) put(key,values.get(key))
+            require(toString().toByteArray(Charsets.UTF_8).size<=98304) { "feedback_too_large" }
+        }
+        var response=execute(context,request(),accessToken(context),8192,deadline)
+        if(response.status==401 && response.json?.optString("reason") in setOf("token_expired","invalid_device_credentials")) {
+            SecureTokenStore.clear(context)
+            synchronize(context.applicationContext,register=true,deadline=deadline)
+            response=execute(context,request(),accessToken(context),8192,deadline)
+        }
+        if(response.status !in 200..299 || response.json?.optBoolean("ok")!=true) {
+            // A feedback endpoint failure must not log out/block the working VPN.
+            val code=when(response.status) { 400,404,405->"feedback_unavailable";429->"feedback_rate_limited";409->"feedback_conflict";401,403->"feedback_unauthorized";else->"feedback_failed" }
+            throw java.io.IOException(code)
+        }
+        require(response.json?.optString("report_id")==reportId) { "feedback_invalid_response" }
+        return mapOf("ok" to true,"report_id" to reportId)
+    }
+
     internal fun payload(context: Context, now: String = timestamp()): JSONObject {
         val prefs = preferences(context)
         val installationId = validInstallationId(prefs.getString(INSTALLATION_ID, null))

@@ -9,6 +9,7 @@ if(Test-Path (Join-Path $base 'vpn/CoreTrafficDelta.kt')){$files+=Join-Path $bas
 $files+=@('vpn/AetherPreparationCoordinator.kt','vpn/CustomCoreSwitchPolicy.kt') | ForEach-Object {Join-Path $base $_}
 $tests=@('subscription/CustomProfileCodecTest.kt','subscription/CustomXrayConfigTest.kt','subscription/AetherProfilesTest.kt','subscription/LocalAetherProfileStoreTest.kt','subscription/SubscriptionParserTest.kt','vpn/CoreTrafficDeltaTest.kt','vpn/AetherPreparationCoordinatorTest.kt','vpn/CustomCoreSwitchPolicyTest.kt')
 $files+=@($tests | ForEach-Object {Join-Path $testBase $_})
+$files+=Join-Path $base 'cores/aether/AetherFingerprints.kt'
 $output=Join-Path $project 'build/native/multicore-profile-tests'
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 & $runtime.java -cp $cp org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -no-stdlib -no-reflect -jvm-target 17 -classpath $cp -d $output @files

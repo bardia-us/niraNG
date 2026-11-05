@@ -57,9 +57,9 @@ class AppController extends AsyncNotifier<AppSnapshot> {
 
   AppSnapshot? get _current => state.asData?.value;
   Future<void> reloadServers() async {
-    final bootstrap=await NirangNative.getBootstrap();
-    final parsed=_parseBootstrap(bootstrap);
-    _set((value)=>value.copyWith(servers:parsed.servers));
+    final bootstrap = await NirangNative.getBootstrap();
+    final parsed = _parseBootstrap(bootstrap);
+    _set((value) => value.copyWith(servers: parsed.servers));
   }
 
   Future<void> refreshPublicIp() =>
@@ -81,6 +81,9 @@ class AppController extends AsyncNotifier<AppSnapshot> {
               serverId: previous.serverId,
               serverName: previous.serverName,
               error: previous.error,
+              aetherEndpoint: previous.aetherEndpoint,
+              aetherInnerEndpoint: previous.aetherInnerEndpoint,
+              aetherStage: previous.aetherStage,
             ),
           ),
         );
@@ -458,9 +461,10 @@ class AppController extends AsyncNotifier<AppSnapshot> {
     _set((value) => value.copyWith(telegramEligible: false));
   }
 
-  Future<void> recordWhatsNewSeen() async {
-    await NirangNative.recordWhatsNewSeen();
+  Future<bool> claimWhatsNew() async {
+    final claimed = await NirangNative.claimWhatsNew();
     _set((value) => value.copyWith(whatsNewSeenBuild: value.appBuild));
+    return claimed;
   }
 
   void _handleEvent(Map<dynamic, dynamic> event) {

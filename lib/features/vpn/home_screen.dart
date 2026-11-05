@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -11,8 +13,11 @@ import '../../core/widgets/server_name_text.dart';
 import '../../core/widgets/glass_surface.dart';
 import '../../core/widgets/decorative_glass_surface.dart';
 import '../../core/widgets/liquid_controls.dart';
+import '../../core/widgets/clay_surface.dart';
 import 'app_controller.dart';
 import 'measured_traffic_panel.dart';
+import '../../core/widgets/glass_dialog.dart';
+import '../../core/widgets/connection_diagnostics_dialog.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -183,11 +188,44 @@ class _ConnectionCard extends StatelessWidget {
             padding: EdgeInsets.symmetric(vertical: 14),
             child: Divider(),
           ),
-          Text(
-            context.s('selectedServer').toUpperCase(),
-            style: Theme.of(
-              context,
-            ).textTheme.labelSmall?.copyWith(letterSpacing: .75),
+          Row(
+            textDirection: TextDirection.ltr,
+            children: [
+              Expanded(
+                child: Text(
+                  context.s('selectedServer').toUpperCase(),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelSmall?.copyWith(letterSpacing: .75),
+                ),
+              ),
+              const SizedBox(width: 8),
+              ClaySurface(
+                radius: 13,
+                child: IconButton(
+                  style: IconButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    padding: EdgeInsets.zero,
+                  ),
+                  tooltip: Localizations.localeOf(context).languageCode == 'fa'
+                      ? 'بررسی اتصال'
+                      : 'Check connection',
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 40,
+                    height: 40,
+                  ),
+                  iconSize: 19,
+                  onPressed: () => showNirangDialog<void>(
+                    context: context,
+                    builder: (_) => const ConnectionDiagnosticsDialog(),
+                  ),
+                  icon: const Icon(Icons.troubleshoot_rounded),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 9),
           if (selected == null)
@@ -200,6 +238,7 @@ class _ConnectionCard extends StatelessWidget {
             Row(
               children: [
                 CountryFlagBadge(
+                  key: const ValueKey('selected-server-country'),
                   countryCode: isPsiphon ? observedCountry : selected.country,
                   width: 31,
                   height: 23,
@@ -227,6 +266,17 @@ class _ConnectionCard extends StatelessWidget {
                 ),
               ],
             ),
+            if (selected.profileKind == 'aether' &&
+                connection.serverId == selected.id &&
+                connection.aetherEndpoint != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: SelectableText(
+                  '${Localizations.localeOf(context).languageCode == 'fa' ? 'آدرس اتصال' : 'Endpoint'}: ${connection.aetherEndpoint}${connection.aetherInnerEndpoint == null ? '' : ' → ${connection.aetherInnerEndpoint}'}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                  textDirection: TextDirection.ltr,
+                ),
+              ),
             const SizedBox(height: 14),
             Row(
               children: [
@@ -443,6 +493,50 @@ class _SubscriptionSection extends StatelessWidget {
   const _SubscriptionSection({required this.usage});
   final SubscriptionUsage usage;
 
+  void _showScope(BuildContext context) {
+    final persian = Localizations.localeOf(context).languageCode == 'fa';
+    final total = usage.total;
+    final allowance = total != null && total > 0
+        ? (persian
+              ? 'سهمیهٔ شما ${formatBytes(total)} است.'
+              : 'Your allowance is ${formatBytes(total)}.')
+        : (persian
+              ? 'مقدار سهمیه را پلن اشتراک شما مشخص می‌کند.'
+              : 'Your subscription plan defines the allowance.');
+    showNirangDialog<void>(
+      context: context,
+      builder: (dialogContext) => NirangAlertDialog(
+        title: Text(
+          context.s('subscriptionUsage'),
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 320),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                persian
+                    ? 'این سهمیه فقط برای کانفیگ‌های اختصاصی اشتراک است. $allowance هر روز ساعت ۰۰:۰۰ (۱۲ شب) خودکار شارژ می‌شود.'
+                    : 'This allowance is only for dedicated subscription configs. $allowance It recharges automatically every day at 00:00 (midnight).',
+              ),
+              const SizedBox(height: 20),
+              Align(
+                alignment: Alignment.centerRight,
+                child: DiagnosticAction(
+                  label: MaterialLocalizations.of(context).closeButtonLabel,
+                  icon: Icons.close_rounded,
+                  onPressed: () => Navigator.pop(dialogContext),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final hasUsage = usage.used != null || usage.unlimited;
@@ -453,6 +547,7 @@ class _SubscriptionSection extends StatelessWidget {
     return _Section(
       icon: Icons.data_usage_rounded,
       title: context.s('subscriptionUsage'),
+      onHelp: () => _showScope(context),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 15),
         child: !hasUsage
@@ -533,13 +628,24 @@ class _ReplayUsageBarState extends State<_ReplayUsageBar>
         child: AnimatedBuilder(
           animation: _animation,
           builder: (context, _) {
-            final t = Curves.easeOutCubic.transform(_animation.value);
+            final t = MediaQuery.disableAnimationsOf(context)
+                ? 1.0
+                : Curves.easeOutCubic.transform(_animation.value);
             return Transform.scale(
               scale: 1 + .02 * (1 - t),
-              child: LinearProgressIndicator(
-                value: widget.value * t,
-                minHeight: 6,
-                borderRadius: BorderRadius.circular(8),
+              child: SizedBox(
+                height: 6,
+                width: double.infinity,
+                child: CustomPaint(
+                  painter: _CapsuleUsagePainter(
+                    value: widget.value * t,
+                    color: Theme.of(context).colorScheme.primary,
+                    trackColor: Theme.of(
+                      context,
+                    ).colorScheme.secondaryContainer,
+                    textDirection: Directionality.of(context),
+                  ),
+                ),
               ),
             );
           },
@@ -549,15 +655,81 @@ class _ReplayUsageBarState extends State<_ReplayUsageBar>
   );
 }
 
+class _CapsuleUsagePainter extends CustomPainter {
+  const _CapsuleUsagePainter({
+    required this.value,
+    required this.color,
+    required this.trackColor,
+    required this.textDirection,
+  });
+
+  final double value;
+  final Color color;
+  final Color trackColor;
+  final TextDirection textDirection;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+    final height = math.min(size.height, size.width);
+    final radius = height / 2;
+    final top = (size.height - height) / 2;
+    final track = RRect.fromRectAndRadius(
+      Rect.fromLTWH(0, top, size.width, height),
+      Radius.circular(radius),
+    );
+    canvas.drawRRect(track, Paint()..color = trackColor);
+    final fraction = value.clamp(0.0, 1.0);
+    if (fraction == 0) return;
+
+    // A short fill stays round without claiming a minimum amount of usage.
+    // Its painted area is exactly the same fraction of the capsule track.
+    final capArea = math.pi * radius * radius;
+    final area = (height * (size.width - height) + capArea) * fraction;
+    final paint = Paint()..color = color;
+    canvas.save();
+    if (textDirection == TextDirection.rtl) {
+      canvas.translate(size.width, 0);
+      canvas.scale(-1, 1);
+    }
+    if (area <= capArea) {
+      canvas.drawCircle(
+        Offset(radius, size.height / 2),
+        math.sqrt(area / math.pi),
+        paint,
+      );
+    } else {
+      final width = (area - capArea) / height + height;
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(0, top, width, height),
+          Radius.circular(radius),
+        ),
+        paint,
+      );
+    }
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_CapsuleUsagePainter oldDelegate) =>
+      value != oldDelegate.value ||
+      color != oldDelegate.color ||
+      trackColor != oldDelegate.trackColor ||
+      textDirection != oldDelegate.textDirection;
+}
+
 class _Section extends StatelessWidget {
   const _Section({
     required this.icon,
     required this.title,
     required this.child,
+    this.onHelp,
   });
   final IconData icon;
   final String title;
   final Widget child;
+  final VoidCallback? onHelp;
 
   @override
   Widget build(BuildContext context) => GlassSurface(
@@ -565,7 +737,7 @@ class _Section extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 13, 16, 11),
+          padding: const EdgeInsets.fromLTRB(16, 11, 16, 13),
           child: Row(
             children: [
               Icon(
@@ -574,12 +746,22 @@ class _Section extends StatelessWidget {
                 color: Theme.of(context).colorScheme.primary,
               ),
               const SizedBox(width: 8),
-              Text(
-                title,
-                style: Theme.of(
-                  context,
-                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+              Expanded(
+                child: Text(
+                  title,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                ),
               ),
+              if (onHelp != null)
+                IconButton(
+                  tooltip: title,
+                  visualDensity: VisualDensity.compact,
+                  iconSize: 18,
+                  onPressed: onHelp,
+                  icon: const Icon(Icons.help_outline_rounded),
+                ),
             ],
           ),
         ),

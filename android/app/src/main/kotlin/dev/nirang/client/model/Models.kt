@@ -45,6 +45,8 @@ data class ServerRecord(
         "origin" to origin,
         "name" to name,
         "country" to (aetherOptions()?.takeIf { it.optString("psiphon","off") != "off" }?.optString("psiphonRegion")?.takeIf { it != "auto" && it.isNotEmpty() } ?: country),
+        "aetherMode" to aetherOptions()?.optString("mode","masque"),
+        "psiphonPlacement" to aetherOptions()?.optString("psiphon","off"),
         "psiphonEnabled" to (aetherOptions()?.optString("psiphon","off")?.let { it != "off" } ?: false),
         "protocol" to (customProfile?.engine ?: protocol).uppercase(),
         "transport" to transportLabel(),
@@ -88,6 +90,15 @@ data class ServerRecord(
     }
 
     private fun transportLabel(): String {
+        aetherOptions()?.let { options ->
+            return when(options.optString("mode", "masque")) {
+                "wireguard" -> "WireGuard"
+                "wireguard-over-masque" -> "WireGuard over MASQUE"
+                "warp-in-warp" -> "WARP in WARP"
+                "masque-in-masque" -> "MASQUE in MASQUE"
+                else -> "MASQUE"
+            }
+        }
         val transportName = when (transport.lowercase()) {
             "ws" -> "WebSocket"
             "grpc" -> "gRPC"

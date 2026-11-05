@@ -15,6 +15,10 @@ internal class AetherPreparationCoordinator {
 
     fun current(token: Long): Boolean = synchronized(lock) { active == token }
 
+    // Cleanup may finish before the main-thread reply is delivered. Cancellation
+    // or a newer operation still invalidates that queued result.
+    fun validResult(token: Long): Boolean = synchronized(lock) { generation == token }
+
     fun install(token: Long, stop: () -> Unit): Boolean {
         val accepted = synchronized(lock) {
             if (active == token && stopSession == null) {

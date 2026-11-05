@@ -40,7 +40,8 @@ class NirangVpnService : VpnService() {
     private val startGuard = AtomicBoolean(false)
     private val foregroundActive = AtomicBoolean(false)
     private val operationGate = ConnectionOperationGate()
-    private data class PublicIpRequest(val providerUrl: String, val serverId: String, val operation: Long)
+    private data class PublicIpRequest(val providerUrl: String, val serverId: String, val operation: Long,
+        val network: dev.nirang.client.cores.aether.EndpointNetwork?)
     private val publicIpRefreshGate = PublicIpRefreshGate<PublicIpRequest>(SystemClock::elapsedRealtime)
     private val connectionListener: (ConnectionSnapshot) -> Unit = { snapshot ->
         mainHandler.post {
@@ -277,7 +278,7 @@ class NirangVpnService : VpnService() {
     private fun refreshConnectedServerPing(repository: SubscriptionRepository, serverId: String) {
         lateinit var manager: PingManager
         manager = PingManager(applicationContext, repository)
-        manager.testSingle(serverId) { manager.close() }
+        manager.testSingle(serverId, awaitReady = true) { manager.close() }
     }
 
     private fun buildVpnInterface(serverName: String, settings: NativeSettings): ParcelFileDescriptor? {
@@ -455,7 +456,7 @@ class NirangVpnService : VpnService() {
         }
         val request = publicIpRefreshGate.tryBegin(
             manual,
-            PublicIpRequest(providerUrl, expectedServerId, operation),
+            PublicIpRequest(providerUrl, expectedServerId, operation,dev.nirang.client.cores.aether.AetherEndpointMemory.network(this)),
         ) ?: return false
         return dispatchPublicIpRefresh(request)
     }
@@ -500,6 +501,10 @@ class NirangVpnService : VpnService() {
                         isPublicIpRequestCurrent(parameters) &&
                             ConnectionStore.setPublicIp(parameters.serverId, result.ip, result.countryCode, result.city)
                     }) {
+                    runCatching {
+                        val core=connectionCore
+                        if(core?.engine=="aether" && isPublicIpRequestCurrent(parameters)) core.rememberAetherEndpoint(parameters.network)
+                    }
                     SafeLog.info(this, "Public IP refreshed")
                 }
                 return
@@ -747,7 +752,19 @@ class NirangVpnService : VpnService() {
         private const val CANCELLED_OPERATION = "Connection operation was cancelled"
         @Volatile private var liveInstance: NirangVpnService? = null
 
+        internal fun diagnosticLockdown(): Boolean = android.os.Build.VERSION.SDK_INT>=29 &&
+            runCatching { liveInstance?.isLockdownEnabled == true }.getOrDefault(false)
+
+        internal fun diagnosticUnderlyingNetwork(): Network? = liveInstance?.activeNetwork
+
         internal fun activeServerId(): String? = liveInstance?.currentServerId
+
+        internal fun diagnosticTarget(): Pair<String,ConnectionCore>? {
+            val service=liveInstance ?: return null
+            val id=service.currentServerId ?: return null
+            val core=service.connectionCore ?: return null
+            return id to core
+        }
 
         fun refreshPublicIp(context: Context): Boolean {
             val service = liveInstance ?: return false

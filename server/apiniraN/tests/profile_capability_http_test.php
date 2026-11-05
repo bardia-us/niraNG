@@ -31,12 +31,21 @@ try {
     $pdo->prepare('UPDATE device_keys SET access_status=? WHERE device_key=?')->execute(['blocked',$device]);
     $blocked=$request($payload());if($blocked[0]!==403 || ($blocked[1]['reason']??null)!=='blocked_by_administrator')throw new RuntimeException('Blocked device bypassed authorization');$checks++;
     $pdo->prepare('UPDATE device_keys SET access_status=? WHERE device_key=?')->execute(['allowed',$device]);
-    // Pure boundary check: even a header of 1 cannot negotiate mixed profiles for Windows.
-    if(registry_profile_capability_request_headers('windows',['HTTP_X_NIRA_PROFILE_VERSION'=>'1'])!==[])throw new RuntimeException('Windows forwarded Android capability');$checks++;
+    // The authenticated platform may negotiate only the exact supported header.
+    if(registry_profile_capability_request_headers('windows',['HTTP_X_NIRA_PROFILE_VERSION'=>'1'])!==['X-Nira-Profile-Version: 1'])throw new RuntimeException('Windows explicit version capability was not forwarded');$checks++;
     $windows='12345678-1234-4123-8123-123456789abd';$windowsKey=str_repeat('b',64);
     $pdo->prepare('INSERT INTO device_keys (device_key,created_at,updated_at,last_seen) VALUES (?,?,?,?)')->execute([$windowsKey,$now,$now,$now]);
     $pdo->prepare('INSERT INTO installations (installation_id,app_version,first_seen,last_seen,created_at,updated_at,device_key,platform,app_name,schema_version,access_token_hash) VALUES (?,?,?,?,?,?,?,?,?,?,?)')->execute([$windows,'9.0.0',$now,$now,$now,$now,$windowsKey,'windows','niraN',5,registry_token_hash($token)]);
-    $expect($request(['action'=>'subscription','schema_version'=>5,'platform'=>'windows','installation_id'=>$windows,'device_key'=>$windowsKey,'app_name'=>'niraN','app_version'=>'9.0.0']),503,'subscription_unavailable','Windows exact body remains compatible with ignored Android capability');$checks++;
+    $windowsPayload=['action'=>'subscription','schema_version'=>5,'platform'=>'windows','installation_id'=>$windows,'device_key'=>$windowsKey,'app_name'=>'niraN','app_version'=>'9.0.0'];
+    foreach(['1','2','01','1, 1',null] as $header) {
+        $expect($request($windowsPayload,$header),503,'subscription_unavailable','Authenticated Windows exact body remains compatible with header on or off');$checks++;
+        $capabilityServer=$header===null?[]:['HTTP_X_NIRA_PROFILE_VERSION'=>$header];
+        $expected=$header==='1'?['X-Nira-Profile-Version: 1']:[];
+        if(registry_profile_capability_request_headers('windows',$capabilityServer)!==$expected)throw new RuntimeException('Windows strict header negotiation mismatch');$checks++;
+    }
+    $expect($request($windowsPayload,'1',false),401,'invalid_device_credentials','Windows capability cannot bypass bearer auth');$checks++;
+    $expect($request($windowsPayload+['profile_format_version'=>1]),400,'invalid_fields','Windows body contract remains exact');$checks++;
+    if(registry_profile_capability_request_headers('unknown',['HTTP_X_NIRA_PROFILE_VERSION'=>'1'])!==[])throw new RuntimeException('Unknown platform forwarded profile capability');$checks++;
 } finally {
     proc_terminate($server);foreach($pipes as $pipe)if(is_resource($pipe))fclose($pipe);proc_close($server);unset($pdo,$request,$payload);
     foreach(new DirectoryIterator($directory) as $file)if($file->isFile())unlink($file->getPathname());rmdir($directory);

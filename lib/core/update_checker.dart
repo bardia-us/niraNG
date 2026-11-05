@@ -118,6 +118,7 @@ class GitHubUpdateChecker {
       '1.2.2',
       '1.2.3',
       '1.2.4',
+      '1.2.5',
       '1.3.0',
       '1.3.1',
     }.contains(version)) {

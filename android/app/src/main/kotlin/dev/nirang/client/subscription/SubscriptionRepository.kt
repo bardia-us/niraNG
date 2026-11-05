@@ -46,9 +46,8 @@ class SubscriptionRepository internal constructor(
         ensureLoaded()
         val record=server(id) ?: throw IllegalArgumentException("Aether profile not found")
         val profile=record.customProfile?.takeIf { it.kind == "aether" } ?: throw IllegalArgumentException("Not an Aether profile")
-        val config=StrictProfileJson.objectValue(profile.payload,8192)
         mapOf("id" to record.id,"name" to record.name,"origin" to record.origin,
-            "values" to config.keys().asSequence().associateWith { config.get(it) })
+            "values" to AetherProfiles.editorValues(profile.payload))
     }
 
     fun saveAetherProfile(id: String?, name: String, values: Map<String,*>): List<Map<String,Any?>> = synchronized(lock) {

@@ -400,7 +400,7 @@ function registry_token_hash(string $token): string
 /** Authenticated platform + explicit version, never a spoofable User-Agent. */
 function registry_profile_capability_headers(string $platform, array $payload): array
 {
-    return $platform === 'android' && ($payload['profile_format_version'] ?? null) === 1
+    return in_array($platform, ['android', 'windows'], true) && ($payload['profile_format_version'] ?? null) === 1
         ? ['X-Nira-Profile-Version: 1'] : [];
 }
 

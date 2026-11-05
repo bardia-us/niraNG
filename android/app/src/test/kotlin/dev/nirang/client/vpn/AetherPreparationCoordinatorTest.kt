@@ -4,6 +4,17 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AetherPreparationCoordinatorTest {
+    @Test fun `completed result remains deliverable until cancellation or next operation`() {
+        val owner=AetherPreparationCoordinator()
+        val token=owner.begin()
+        owner.finish(token)
+        assertTrue(owner.validResult(token))
+        owner.cancel()
+        assertFalse(owner.validResult(token))
+        val next=owner.begin()
+        assertFalse(owner.validResult(token))
+        assertTrue(owner.validResult(next))
+    }
     @Test fun `stop before session assignment rejects and closes late session`() {
         val owner = AetherPreparationCoordinator()
         val token = owner.begin()

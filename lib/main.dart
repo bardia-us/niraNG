@@ -8,6 +8,8 @@ import 'package:flutter/services.dart';
 
 import 'core/localization/app_strings.dart';
 import 'core/diagnostics.dart';
+import 'core/ui_lag_capture.dart';
+import 'features/feedback/feedback_screen.dart';
 import 'core/platform/native_models.dart';
 import 'core/platform/nirang_native.dart';
 import 'core/theme/app_theme.dart';
@@ -146,7 +148,18 @@ class NirangApp extends ConsumerWidget {
             systemNavigationBarContrastEnforced: false,
           ),
           child: MediaQuery.withNoTextScaling(
-            child: child ?? const SizedBox.shrink(),
+            child: UiLagCaptureOverlay(
+              onOpenReport: () {
+                if (NirangDiagnostics.currentRoute == '/feedback') return;
+                nirangNavigatorKey.currentState?.push(
+                  MaterialPageRoute<void>(
+                    settings: const RouteSettings(name: '/feedback'),
+                    builder: (_) => const FeedbackScreen(),
+                  ),
+                );
+              },
+              child: child ?? const SizedBox.shrink(),
+            ),
           ),
         );
       },

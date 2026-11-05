@@ -28,7 +28,7 @@ class PingManager(
     // probes of the same server across reconnects.
     private val managerId = java.util.UUID.randomUUID().toString()
 
-    fun testSingle(serverId: String, onComplete: (() -> Unit)? = null) {
+    fun testSingle(serverId: String, awaitReady: Boolean = false, onComplete: (() -> Unit)? = null) {
         cancelTasks(emitEvent = false)
         val currentGeneration = generation.get()
         pending.set(1)
@@ -36,13 +36,13 @@ class PingManager(
         lifecycle.start(serverId)
         emit(serverId, null, "testing")
         val limiter = Semaphore(1)
-        synchronized(tasks) { tasks += executor.submit { test(serverId, currentGeneration, limiter, false, onComplete) } }
+        synchronized(tasks) { tasks += executor.submit { test(serverId, currentGeneration, limiter, false, onComplete, awaitReady) } }
     }
 
     fun testAll() {
         cancelTasks(emitEvent = false)
         val currentGeneration = generation.get()
-        val ids = repository.visibleServerIds()
+        val ids = repository.visibleServerIds().sortedBy { if(repository.server(it)?.customProfile?.kind == "aether") 1 else 0 }
         val limiter = Semaphore(NativeSettings(context).realPingConcurrency)
         pending.set(ids.size)
         if (ids.isEmpty()) NativeEvents.emit("pingCompleted", null)
@@ -57,7 +57,7 @@ class PingManager(
     fun testAllTcp() {
         cancelTasks(emitEvent = false)
         val currentGeneration = generation.get()
-        val ids = repository.visibleServerIds()
+        val ids = repository.visibleServerIds().sortedBy { if(repository.server(it)?.customProfile?.kind == "aether") 1 else 0 }
         val limiter = Semaphore(NativeSettings(context).realPingConcurrency)
         pending.set(ids.size)
         if (ids.isEmpty()) NativeEvents.emit("pingCompleted", null)
@@ -99,6 +99,7 @@ class PingManager(
         limiter: Semaphore,
         tcpOnly: Boolean,
         onComplete: (() -> Unit)?,
+        awaitReady: Boolean = false,
     ) {
         var acquired = false
         try {
@@ -120,12 +121,19 @@ class PingManager(
                 lifecycle.finish(serverId)
                 return
             }
+            // Reuse the running Aether/Psiphon chain. A second cold core measures
+            // another tunnel and its bootstrap, not the connection shown on Home.
+            val active = dev.nirang.client.vpn.NirangVpnService.diagnosticTarget()
+                ?.takeIf { it.first == serverId && it.second.engine == "aether" }
+                ?.second
             val delay = runCatching {
                 val cancellation = ProbeCancellation(dev.nirang.client.vpn.AsyncNativeStop::execute)
-                val started = java.util.concurrent.CountDownLatch(if(server.customProfile != null) 1 else 0)
+                val started = java.util.concurrent.CountDownLatch(if(server.customProfile != null && active == null) 1 else 0)
                 val probe = probeExecutor.submit<Long> {
                     try {
-                    if (server.customProfile != null) {
+                    if (active != null) {
+                        measureActive(active, cancellation, awaitReady)
+                    } else if (server.customProfile != null) {
                         CustomProfileLatencyProbe.measure(context,server.customProfile,TEST_URL,cancellation) { started.countDown() }
                     } else if (tcpOnly) {
                         TcpLatencyProbe.measure(server.address, server.port)
@@ -146,6 +154,10 @@ class PingManager(
                 }
             }.getOrDefault(-1L)
             if (generation.get() != expectedGeneration || Thread.currentThread().isInterrupted) return
+            if (active != null && !active.diagnosticCurrent()) {
+                lifecycle.finish(serverId)
+                return
+            }
             val status = if (delay >= 0) "success" else "timeout"
             repository.updatePing(serverId, delay.takeIf { it >= 0 }, status)
             emit(serverId, delay.takeIf { it >= 0 }, status, expectedGeneration)
@@ -159,6 +171,30 @@ class PingManager(
                 NativeEvents.emit("pingCompleted", null)
             }
             onComplete?.invoke()
+        }
+    }
+
+    private fun measureActive(
+        core: dev.nirang.client.vpn.ConnectionCore,
+        cancellation: ProbeCancellation,
+        awaitReady: Boolean,
+    ): Long {
+        // A local SOCKS listener can be ready before Psiphon has its first tunnel.
+        // Retry readiness only for the automatic post-connect measurement.
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(if (awaitReady) 30 else 6)
+        while (true) {
+            cancellation.check()
+            check(core.diagnosticCurrent()) { "Connection changed" }
+            val remaining = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime()).toInt()
+            if (remaining <= 0) return -1L
+            try {
+                val port = core.diagnosticSocksPort() ?: return -1L
+                return SocksHttpLatencyProbe.measure(port, TEST_URL, cancellation, minOf(remaining, 4000))
+            } catch (_: java.io.IOException) {
+                cancellation.check()
+                if (!awaitReady || System.nanoTime() >= deadline) return -1L
+                Thread.sleep(300)
+            }
         }
     }
 

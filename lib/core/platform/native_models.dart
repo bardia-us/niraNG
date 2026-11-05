@@ -27,6 +27,8 @@ class ServerInfo {
     this.engine = 'xray',
     this.origin = 'subscription',
     this.psiphonEnabled = false,
+    this.aetherMode = '',
+    this.psiphonPlacement = 'off',
     this.credentialLabel = '',
     this.credentialMasked = '',
     this.realityPublicKeyMasked = '',
@@ -55,6 +57,8 @@ class ServerInfo {
     engine: '${map['engine'] ?? 'xray'}',
     origin: '${map['origin'] ?? 'subscription'}',
     psiphonEnabled: map['psiphonEnabled'] == true,
+    aetherMode: '${map['aetherMode'] ?? ''}',
+    psiphonPlacement: '${map['psiphonPlacement'] ?? 'off'}',
     credentialLabel: '${map['credentialLabel'] ?? ''}',
     credentialMasked: '${map['credentialMasked'] ?? ''}',
     realityPublicKeyMasked: '${map['realityPublicKeyMasked'] ?? ''}',
@@ -78,6 +82,7 @@ class ServerInfo {
   final String profileKind, engine;
   final String origin;
   final bool psiphonEnabled;
+  final String aetherMode, psiphonPlacement;
   final String credentialLabel;
   final String credentialMasked;
   final String realityPublicKeyMasked;
@@ -112,6 +117,8 @@ class ServerInfo {
     engine: engine,
     origin: origin,
     psiphonEnabled: psiphonEnabled,
+    aetherMode: aetherMode,
+    psiphonPlacement: psiphonPlacement,
     credentialLabel: credentialLabel,
     credentialMasked: credentialMasked,
     realityPublicKeyMasked: realityPublicKeyMasked,
@@ -128,6 +135,9 @@ class ConnectionInfo {
     this.serverId,
     this.serverName,
     this.publicIp,
+    this.aetherEndpoint,
+    this.aetherStage,
+    this.aetherInnerEndpoint,
     this.publicCountry,
     this.publicCity,
     this.publicIpChecked = false,
@@ -139,6 +149,9 @@ class ConnectionInfo {
     serverId: map['serverId']?.toString(),
     serverName: map['serverName']?.toString(),
     publicIp: map['publicIp']?.toString(),
+    aetherEndpoint: map['aetherEndpoint']?.toString(),
+    aetherStage: map['aetherStage']?.toString(),
+    aetherInnerEndpoint: map['aetherInnerEndpoint']?.toString(),
     publicCountry: map['publicCountry']?.toString(),
     publicCity: map['publicCity']?.toString(),
     publicIpChecked: map['publicIpChecked'] == true,
@@ -149,6 +162,9 @@ class ConnectionInfo {
   final String? serverId;
   final String? serverName;
   final String? publicIp;
+  final String? aetherEndpoint;
+  final String? aetherStage;
+  final String? aetherInnerEndpoint;
   final String? publicCountry;
   final String? publicCity;
   final bool publicIpChecked;

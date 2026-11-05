@@ -115,7 +115,9 @@ void main() {
       await _mount(tester, controller, const HomeScreen());
       expect(
         tester
-            .widget<CountryFlagBadge>(find.byType(CountryFlagBadge))
+            .widget<CountryFlagBadge>(
+              find.byKey(const ValueKey('selected-server-country')),
+            )
             .countryCode,
         state == 'connected' ? 'JP' : '',
       );
@@ -142,7 +144,9 @@ void main() {
     await _mount(tester, controller, const HomeScreen());
     expect(
       tester
-          .widget<CountryFlagBadge>(find.byType(CountryFlagBadge))
+          .widget<CountryFlagBadge>(
+            find.byKey(const ValueKey('selected-server-country')),
+          )
           .countryCode,
       'DE',
     );

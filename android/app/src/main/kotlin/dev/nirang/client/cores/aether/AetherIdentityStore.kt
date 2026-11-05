@@ -165,6 +165,6 @@ internal class AetherIdentityStore(private val directory: File) {
 
     companion object {
         private val lock = ReentrantLock()
-        private val IDENTITY_NAMES=setOf("aether-wg.toml","aether-masque.toml","aether-masque-gool.toml")
+        private val IDENTITY_NAMES=setOf("aether-wg.toml","aether-masque.toml","aether-masque-gool.toml","aether-wg-secondary.toml","aether-masque-secondary.toml")
     }
 }

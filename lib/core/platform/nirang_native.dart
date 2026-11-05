@@ -11,7 +11,7 @@ class NirangNative {
     'dev.nirang.client/update_download',
   );
 
-  static Stream<Map<dynamic, dynamic>> get events => _events
+  static final Stream<Map<dynamic, dynamic>> events = _events
       .receiveBroadcastStream()
       .where((event) => event is Map)
       .cast<Map<dynamic, dynamic>>();
@@ -22,21 +22,44 @@ class NirangNative {
           .where((event) => event is Map)
           .cast<Map<dynamic, dynamic>>();
 
+  static Future<Map<dynamic, dynamic>> uiCaptureContext() async =>
+      await _methods.invokeMethod<Map<dynamic, dynamic>>('uiCaptureContext') ??
+      {};
+
+  static Future<Map<dynamic, dynamic>> feedbackContext({
+    bool includeConfig = false,
+  }) async =>
+      await _methods.invokeMethod<Map<dynamic, dynamic>>('feedbackContext', {
+        'includeConfig': includeConfig,
+      }) ??
+      {};
+  static Future<Map<dynamic, dynamic>> submitFeedback(
+    Map<String, Object?> values,
+  ) async =>
+      await _methods.invokeMethod<Map<dynamic, dynamic>>(
+        'submitFeedback',
+        values,
+      ) ??
+      {};
+
+  static Future<void> shareProblemReport(String text) =>
+      _methods.invokeMethod<void>('shareProblemReport', {'text': text});
+
   static Future<bool> deviceRegistrationStatus() async =>
       await _methods.invokeMethod<bool>('deviceRegistrationStatus') ?? false;
   static Future<void> verifyDeviceAccess() =>
       _methods.invokeMethod('verifyDeviceAccess');
   static Future<void> acceptDeviceRegistration() =>
       _methods.invokeMethod('acceptDeviceRegistration');
-  static Future<void> recordWhatsNewSeen() =>
-      _methods.invokeMethod('recordWhatsNewSeen');
+  static Future<bool> claimWhatsNew() async =>
+      await _methods.invokeMethod<bool>('claimWhatsNew') ?? false;
   static Future<void> exitApplication() =>
       _methods.invokeMethod('exitApplication');
 
   static Future<Map<dynamic, dynamic>> initialize() async =>
       (await _methods.invokeMethod<Map<dynamic, dynamic>>('initialize')) ?? {};
-  static Future<Map<dynamic,dynamic>> getBootstrap() async =>
-      await _methods.invokeMethod<Map<dynamic,dynamic>>('getBootstrap') ?? {};
+  static Future<Map<dynamic, dynamic>> getBootstrap() async =>
+      await _methods.invokeMethod<Map<dynamic, dynamic>>('getBootstrap') ?? {};
 
   static Future<Map<dynamic, dynamic>> refreshSubscription() async =>
       (await _methods.invokeMethod<Map<dynamic, dynamic>>(
@@ -66,18 +89,66 @@ class NirangNative {
 
   static Future<bool> refreshPublicIp() async =>
       await _methods.invokeMethod<bool>('refreshPublicIp') ?? false;
-  static Future<Map<dynamic,dynamic>> getAetherProfile(String id) async =>
-      await _methods.invokeMethod<Map<dynamic,dynamic>>('getAetherProfile',{'id':id}) ?? {};
-  static Future<List<dynamic>> saveAetherProfile({String? id,required String name,required Map<String,Object?> values}) async =>
-      await _methods.invokeMethod<List<dynamic>>('saveAetherProfile',{'id':id,'name':name,'values':values}) ?? [];
-  static Future<Map<dynamic,dynamic>> prepareAetherProfile(String id,{bool rescan=false}) async =>
-      await _methods.invokeMethod<Map<dynamic,dynamic>>('prepareAetherProfile',{'id':id,'rescan':rescan}) ?? {};
+  static Future<Map<dynamic, dynamic>> getAetherProfile(String id) async =>
+      await _methods.invokeMethod<Map<dynamic, dynamic>>('getAetherProfile', {
+        'id': id,
+      }) ??
+      {};
+  static Future<List<dynamic>> saveAetherProfile({
+    String? id,
+    required String name,
+    required Map<String, Object?> values,
+  }) async =>
+      await _methods.invokeMethod<List<dynamic>>('saveAetherProfile', {
+        'id': id,
+        'name': name,
+        'values': values,
+      }) ??
+      [];
+  static Future<Map<dynamic, dynamic>> prepareAetherProfile(
+    String id, {
+    bool rescan = false,
+  }) async =>
+      await _methods.invokeMethod<Map<dynamic, dynamic>>(
+        'prepareAetherProfile',
+        {'id': id, 'rescan': rescan},
+      ) ??
+      {};
+  static Future<Map<dynamic, dynamic>> scanAetherDraft(
+    Map<String, Object?> values,
+  ) async =>
+      await _methods.invokeMethod<Map<dynamic, dynamic>>('scanAetherDraft', {
+        'values': values,
+      }) ??
+      {};
+  static Future<Map<dynamic, dynamic>> aetherEndpointSuggestion(
+    Map<String, Object?> values,
+  ) async =>
+      await _methods.invokeMethod<Map<dynamic, dynamic>>(
+        'getAetherEndpointSuggestion',
+        {'values': values},
+      ) ??
+      {};
+  static Future<Map<dynamic, dynamic>> diagnoseConnection({
+    String? requestId,
+  }) async =>
+      await _methods.invokeMethod<Map<dynamic, dynamic>>('diagnoseConnection', {
+        'requestId': requestId,
+      }) ??
+      {};
+  static Future<void> cancelConnectionDiagnosis() =>
+      _methods.invokeMethod('cancelConnectionDiagnosis');
   static Future<bool> cancelAetherPreparation() async =>
       await _methods.invokeMethod<bool>('cancelAetherPreparation') ?? false;
-  static Future<Map<String,Object?>> renewAetherIdentity(String id) async =>
-      Map<String,Object?>.from(await _methods.invokeMethod<Map>('renewAetherIdentity',{'id':id}) ?? {});
+  static Future<Map<String, Object?>> renewAetherIdentity(String id) async =>
+      Map<String, Object?>.from(
+        await _methods.invokeMethod<Map>('renewAetherIdentity', {'id': id}) ??
+            {},
+      );
   static Future<Map<dynamic, dynamic>> measuredTraffic() async =>
-      await _methods.invokeMethod<Map<dynamic, dynamic>>('getMeasuredTraffic') ??
+      await _methods.invokeMethod<Map<dynamic, dynamic>>(
+        'getMeasuredTraffic',
+      ) ??
       const {};
   static Future<Map<dynamic, dynamic>> deleteServer(String id) async =>
       (await _methods.invokeMethod<Map<dynamic, dynamic>>('deleteServer', {
